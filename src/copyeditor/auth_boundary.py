@@ -13,16 +13,18 @@ REDIRECT_ERRORS = frozenset("invalid_request unauthorized_client access_denied u
 JSON_ERRORS = REDIRECT_ERRORS | {"invalid_client", "invalid_grant", "unsupported_grant_type", "invalid_client_metadata", "invalid_redirect_uri"}
 
 
-def error_location(value):
+def error_location(value, require_valid=True):
+    url = urlsplit(value)
+    query = parse_qsl(url.query, keep_blank_values=True, errors="strict")
+    errors = [v for k, v in query if k == "error"]
+    if not errors and not require_valid:
+        return None
     if any(ord(c) <= 32 or ord(c) >= 127 for c in value) or re.search(r"%(?![0-9a-fA-F]{2})", value):
         raise ValueError()
-    url = urlsplit(value)
     if not url.scheme or url.scheme in ("javascript", "data", "vbscript") or url.fragment or url.username or url.password or "\\" in value:
         raise ValueError()
     if url.scheme in ("http", "https") and (not url.hostname or url.port == 0):
         raise ValueError()
-    query = parse_qsl(url.query, keep_blank_values=True, errors="strict")
-    errors = [v for k, v in query if k == "error"]
     if not errors:
         return None
     if len(errors) != 1:
@@ -52,12 +54,14 @@ def wrap_auth_app(app):
             if message["type"] == "http.response.start":
                 start = message
                 headers = message.get("headers", [])
-                if 300 <= message["status"] < 400:
-                    locations = [v for k, v in headers if k.lower() == b"location"]
-                    if len(locations) > 1:
+                redirect = 300 <= message["status"] < 400
+                locations = [v for k, v in headers if k.lower() == b"location"]
+                if len(locations) > 1:
+                    raise ValueError()
+                if locations:
+                    location = error_location(locations[0].decode("ascii"), require_valid=redirect)
+                    if location is not None and not redirect:
                         raise ValueError()
-                    if locations:
-                        location = error_location(locations[0].decode("ascii"))
                 if message["status"] >= 400 or location is not None:
                     buffered = bytearray()
                     return

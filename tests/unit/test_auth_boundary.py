@@ -64,9 +64,11 @@ async def test_ac_05_3_invalid_redirect_closes_locally(url):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [200, 302])
-async def test_ctr04_success_stream_and_redirect_are_unchanged(status):
-    headers = [(b"location", b"https://c/?code=code&state=saved&code_challenge=pkce&code_challenge_method=S256")]
+@pytest.mark.parametrize("status,target", [(200, None), (200, b"/created"),
+    (200, b"https://c/?code=code&state=saved&code_challenge=pkce&code_challenge_method=S256"),
+    (302, b"https://c/?code=code&state=saved&code_challenge=pkce&code_challenge_method=S256")])
+async def test_ctr04_success_stream_and_redirect_are_unchanged(status, target):
+    headers = [] if target is None else [(b"location", target)]
     result = await run_response(status, headers, chunks=(b"one", b"two"))
     assert result[0] == {"type": "http.response.start", "status": status, "headers": headers}
     assert [m["body"] for m in result[1:]] == [b"one", b"two", b""]
@@ -96,3 +98,14 @@ async def test_ctr04_non_http_scope_is_delegated():
         calls.append(scope)
     await wrap_auth_app(app)({"type": "lifespan"}, None, None)
     assert calls == [{"type": "lifespan"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 201, 400, 500])
+async def test_ac_05_3_error_location_outside_redirect_closes_locally(status):
+    headers = [(b"location", f"https://c/?error=access_denied&error_description={MARKER}".encode()),
+               (b"x-detail", MARKER.encode())]
+    result = await run_response(status, headers)
+    assert result[0]["status"] == 500 and MARKER not in repr(result)
+    assert b"location" not in dict(result[0]["headers"])
+    assert json.loads(result[1]["body"]) == {"error": "server_error", "error_description": DESCRIPTION}
