@@ -87,10 +87,11 @@ def output_schema(tool):
     cost = nullable(obj(amount=pattern(r"[0-9]+\.[0-9]{6}"), currency=pattern(r"[A-Z]{3}")))
     language = {**pattern(LANGUAGE), "maxLength": 35}
     metadata = dict(schema_version={"type": "integer", "const": 1}, language=language,
-                    rules_version=string, common_version=string, model=nullable({**string, "minLength": 1}),
+                    rules_version=pattern(r"sha256:[0-9a-f]{64}"), common_version=pattern(r"sha256:[0-9a-f]{64}"),
+                    model={"type": "null"} if tool == "lint_text" else {**string, "minLength": 1},
                     usage=usage, cost=cost, latency_ms=integer, model_calls={**integer, "maximum": 2})
-    finding = obj(rule_id=string, start=integer, end={**integer, "minimum": 1},
-                  matched={**string, "maxLength": 160}, matched_truncated=boolean, message=string)
+    finding = obj(rule_id=pattern(LANGUAGE + r"-(vocabulary|syntax|structure|translation|context)-[0-9]{3}"), start=integer, end={**integer, "minimum": 1},
+                  matched={**string, "maxLength": 160}, matched_truncated=boolean, message={**body, "maxLength": 160})
     findings = dict(findings=array(finding, maxItems=100), findings_truncated=boolean)
     checks = array({"enum": ["protected_terms", "numbers", "urls", "variables", "length_ratio"]},
                    minItems=1, uniqueItems=True)
@@ -98,7 +99,7 @@ def output_schema(tool):
                                    checks=array(string, maxItems=0)),
                               obj(kind={"const": "rejected"}, reason={"const": "Preservation checks failed."}, checks=checks)]})
     item = dict(text={**body, "maxLength": 16000}, flag=flag, regenerated=boolean,
-                protected_terms=array(string), **findings)
+                protected_terms=array({**body, "maxLength": 128}, uniqueItems=True, maxItems=2048), **findings)
     success = dict(**metadata, status={"const": "ok"}, protected_terms_checked=integer,
                    preservation=obj(length_ratio=obj(min={"type": "number", "exclusiveMinimum": 0, "maximum": 1},
                                                       max={"type": "number", "minimum": 1, "maximum": 4})))
