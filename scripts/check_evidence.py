@@ -141,16 +141,73 @@ def check_provenance(pr, owner):
     return None
 
 
+
+def publication_assets(commit):
+    root = "repos/{owner}/{repo}"
+    value = gh_json(f"{root}/git/commits/{commit}")
+    if value["sha"] != commit:
+        raise ValueError("Unexpected commit")
+    tree_sha = value["tree"]["sha"]
+    if not re.fullmatch(SHA, tree_sha):
+        raise ValueError("Invalid tree")
+    tree = gh_json(f"{root}/git/trees/{tree_sha}?recursive=1")
+    if tree.get("truncated") is not False:
+        raise ValueError("Incomplete tree")
+    assets = {}
+    for entry in tree["tree"]:
+        path = entry["path"]
+        selected = path.startswith(("rules/", "examples/"))
+        if not selected or entry["type"] == "tree":
+            continue
+        if (entry["type"] != "blob" or entry["mode"] not in ("100644", "100755")
+                or not re.fullmatch(SHA, entry["sha"]) or path in assets):
+            raise ValueError("Invalid public asset")
+        assets[path] = entry["sha"]
+    if "rules/ja.md" not in assets or not any(p.startswith("examples/ja/") for p in assets):
+        raise ValueError("Missing Japanese assets")
+    return assets
+
+
+def check_publication(native_pr, provenance_pr, owner, commit):
+    endpoints = [f"repos/{{owner}}/{{repo}}/pulls/{pr}" for pr in (native_pr, provenance_pr)]
+    heads = [gh_json(endpoint)["head"]["sha"] for endpoint in endpoints]
+    if not all(re.fullmatch(SHA, head) for head in heads):
+        raise ValueError("Invalid head")
+    if check_native(native_pr, owner) or check_provenance(provenance_pr, owner):
+        return "Owner approval is missing or invalid."
+    target = publication_assets(commit)
+    for native, head in ((True, heads[0]), (False, heads[1])):
+        approved_assets = publication_assets(head)
+        def scope(assets):
+            return {p: h for p, h in assets.items()
+                    if not native or p == "rules/ja.md" or p.startswith("examples/ja/")}
+        if scope(approved_assets) != scope(target):
+            return "Publication assets differ from approved assets."
+    if [gh_json(endpoint)["head"]["sha"] for endpoint in endpoints] != heads:
+        return "Pull request head changed; retry."
+    return None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["native", "provenance"])
-    parser.add_argument("--pr", required=True, type=int)
+    parser.add_argument("command", choices=["native", "provenance", "publish-gate"])
+    parser.add_argument("--pr", type=int)
+    parser.add_argument("--native-pr", type=int)
+    parser.add_argument("--provenance-pr", type=int)
+    parser.add_argument("--commit")
     parser.add_argument("--owner", required=True)
     args = parser.parse_args(argv)
-    if args.pr < 1 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner):
+    publication = args.command == "publish-gate"
+    prs = [args.native_pr, args.provenance_pr] if publication else [args.pr]
+    if publication and (args.pr is not None or not re.fullmatch(SHA, args.commit or "")):
+        parser.error("Expected publication PRs and a full commit SHA.")
+    if not publication and any(v is not None for v in (args.native_pr, args.provenance_pr, args.commit)):
+        parser.error("Publication arguments require publish-gate.")
+    if any(pr is None or pr < 1 for pr in prs) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner):
         parser.error("Expected a positive PR number and a GitHub login.")
     try:
-        reason = (check_native if args.command == "native" else check_provenance)(args.pr, args.owner)
+        reason = (check_publication(args.native_pr, args.provenance_pr, args.owner, args.commit) if publication
+                  else (check_native if args.command == "native" else check_provenance)(args.pr, args.owner))
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
         # gh stderr and malformed record contents may contain personal data.
         reason = "GitHub evidence could not be read or validated."
