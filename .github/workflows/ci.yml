@@ -13,3 +13,13 @@ jobs:
       - run: python -m pip install -r requirements.generated.txt
       - run: python -m pytest tests --collect-only -q
       - run: python -m pytest -q
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.8.2'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run test:fixtures
