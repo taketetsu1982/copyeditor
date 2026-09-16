@@ -110,3 +110,12 @@ def test_ac_05_1_ac_05_7_ctr04_new_provenance_cannot_replace_native_approval(gat
     for head in (PROVENANCE, TARGET): state["assets"][head][path] = NEW
     if path == "rules/ja.md": state["blob"] = NEW
     assert invoke()[0] == 1
+
+
+@pytest.mark.parametrize("path", ["rules/nested/custom.md", "rules/extra.txt"])
+@pytest.mark.parametrize("change", ["add", "modify", "delete"])
+def test_ac_05_1_ac_05_7_ctr04_all_provenance_rule_blobs_are_compared(gate, path, change):
+    state, invoke, calls = gate
+    if change != "add": state["assets"][PROVENANCE][path] = BLOB
+    if change != "delete": state["assets"][TARGET][path] = NEW
+    assert invoke() == (1, "PUBLISH-GATE FAIL: Publication assets differ from approved assets.\n")

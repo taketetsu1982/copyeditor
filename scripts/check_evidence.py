@@ -156,7 +156,7 @@ def publication_assets(commit):
     assets = {}
     for entry in tree["tree"]:
         path = entry["path"]
-        selected = re.fullmatch(r"rules/[^/]+\.md", path) or path.startswith("examples/")
+        selected = path.startswith(("rules/", "examples/"))
         if not selected or entry["type"] == "tree":
             continue
         if (entry["type"] != "blob" or entry["mode"] not in ("100644", "100755")
