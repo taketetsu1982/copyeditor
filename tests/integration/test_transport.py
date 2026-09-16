@@ -182,3 +182,128 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_raw_asgi(setup, authe
             polished = await client.post("/mcp", json=call({"text": "Hello."}) | {"params": {"name": "polish_text", "arguments": {"text": "Hello."}}})
             assert polished.json()["result"]["structuredContent"]["text"] == "Hello."
             assert len(records) == 8 and len(created) == 1
+
+
+@pytest.fixture
+def tcp_server(setup):
+    import asyncio
+    from contextlib import asynccontextmanager
+    import socket
+    import threading
+    import httpx
+    import uvicorn
+    from fastmcp.server.auth import StaticTokenVerifier
+    from pydantic import AnyHttpUrl
+    make, created, records = setup
+    @asynccontextmanager
+    async def start(authenticated):
+        server, config, snapshot = make("google" if authenticated else "none")
+        if authenticated:
+            server.auth = StaticTokenVerifier(tokens={"tcp-token": {"client_id": "test", "scopes": [], "sub": MARKER}})
+            server.auth.resource_base_url = AnyHttpUrl("https://service.example")
+        listener = socket.socket()
+        thread, runner = None, None
+        try:
+            listener.bind(("127.0.0.1", 0))
+            address = listener.getsockname()
+            runner = uvicorn.Server(uvicorn.Config(server.http_app(json_response=True, stateless_http=True),
+                log_config=None, access_log=False, timeout_graceful_shutdown=2))
+            thread = threading.Thread(target=runner.run, kwargs={"sockets": [listener]}, daemon=True)
+            thread.start()
+            async with asyncio.timeout(5):
+                while not runner.started:
+                    assert thread.is_alive(), "Server exited before startup"
+                    await asyncio.sleep(.02)
+            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{address[1]}", trust_env=False, timeout=5,
+                    headers={"accept": "application/json, text/event-stream", "content-type": "application/json"}) as client:
+                yield client, config, snapshot, created, records
+        finally:
+            if runner:
+                runner.should_exit = True
+            if thread:
+                await asyncio.to_thread(thread.join, 5)
+                if thread.is_alive():
+                    runner.force_exit = True
+                    await asyncio.to_thread(thread.join, 5)
+            listener.close()
+            assert thread is None or not thread.is_alive()
+            assert listener.fileno() == -1
+            if runner and runner.started:
+                with socket.socket() as probe:
+                    probe.settimeout(.2)
+                    assert probe.connect_ex(address) != 0, "Listener survived cleanup"
+    return start
+
+
+@pytest.mark.asyncio
+@pytest.mark.consumer("CTR-01")
+@pytest.mark.consumer("CTR-04")
+@pytest.mark.parametrize("authenticated", [False, True])
+async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_tcp_acceptance(tcp_server, authenticated):
+    def rpc(method, **params):
+        return dict(jsonrpc="2.0", id=1, method=method, params=params)
+    async def chunks(body):
+        for offset in range(0, len(body), 997):
+            yield body[offset:offset + 997]
+    async with tcp_server(authenticated) as (client, config, snapshot, created, records):
+        health = await client.get("/health")
+        assert health.status_code == 200 and health.json() == {"status": "ok"}
+        negatives = [(b'{"jsonrpc":"2.0","id":1,"method":"ping","method":"ping"}', -32700),
+                     (b'{"x":"\xff"}', -32700), (b'{', -32700), (b'{}', -32600),
+                     (json.dumps(rpc(MARKER)).encode(), -32601),
+                     (json.dumps(rpc("tools/call", name=MARKER, arguments={})).encode(), -32602)]
+        if authenticated:
+            for token in (None, MARKER):
+                if token:
+                    client.headers["authorization"] = "Bearer " + token
+                for body in [*[b for b, _ in negatives], b" " * 262145,
+                             json.dumps(rpc("tools/call", name="polish_text", arguments=[])).encode()]:
+                    response = await client.post("/mcp", content=chunks(body))
+                    assert response.status_code == 401
+                    assert 'resource_metadata="https://service.example/.well-known/oauth-protected-resource/mcp"' in response.headers["www-authenticate"]
+                    assert MARKER not in response.text + str(response.headers)
+            assert not created and not records
+            client.headers["authorization"] = "Bearer tcp-token"
+        for body, code in negatives:
+            response = await client.post("/mcp", content=chunks(body))
+            assert response.status_code == 400 and response.json()["error"]["code"] == code
+            assert "result" not in response.json() and MARKER not in response.text + str(response.headers)
+        ping = json.dumps(rpc("ping", padding="界" * 60000), ensure_ascii=False).encode("utf-8")
+        for size in (262143, 262144, 262145):
+            body = ping + b" " * (size - len(ping))
+            for chunked in (False, True):
+                response = await client.post("/mcp", content=chunks(body) if chunked else body)
+                assert response.status_code == (413 if size > 262144 else 200)
+                if size <= 262144:
+                    assert response.json()["result"] == {}
+                assert MARKER not in response.text + str(response.headers)
+        initialized = await client.post("/mcp", json=rpc("initialize", protocolVersion="2025-11-25", capabilities={},
+                                                            clientInfo={"name": "tcp-test", "version": "1"}))
+        assert initialized.json()["result"]["instructions"] == INSTRUCTIONS
+        listed = await client.post("/mcp", json=rpc("tools/list"))
+        tools = listed.json()["result"]["tools"]
+        assert {t["name"] for t in tools} == {"polish_text", "lint_text"}
+        for tool in tools:
+            assert tool["inputSchema"] == input_schema(tool["name"], config, snapshot)
+            assert tool["outputSchema"] == output_schema(tool["name"])
+            assert tool["annotations"]["readOnlyHint"] and not tool["annotations"]["destructiveHint"]
+            assert tool["annotations"]["openWorldHint"] == (tool["name"] == "polish_text")
+        assert not created and not records
+        for tool in ("polish_text", "lint_text"):
+            for arguments in ([], None, 1, True, MARKER, {"text": MARKER, "extra": MARKER}, {"text": "Hello."}):
+                before = len(records)
+                response = await client.post("/mcp", json=rpc("tools/call", name=tool, arguments=arguments))
+                result = response.json()["result"]
+                payload = result["structuredContent"]
+                validate_final(payload)
+                assert response.status_code == 200 and len(result["content"]) == 1
+                assert result["content"][0]["text"] == json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+                failed = arguments != {"text": "Hello."}
+                assert result["isError"] == failed and (payload["status"] == "error") == failed
+                if failed:
+                    assert payload["error"]["code"] == "invalid_input" and payload["model_calls"] == 0
+                assert len(records) == before + 1 and set(records[-1]) == FIELDS
+                assert records[-1]["tool"] == tool and records[-1]["status"] == ("error" if failed else "ok")
+                assert MARKER not in response.text + str(response.headers) + json.dumps(records)
+        assert len(records) == 14 and len(created) == 1
+        assert all(bool(r["user"]) == authenticated for r in records)
