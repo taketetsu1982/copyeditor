@@ -2,7 +2,7 @@
 contract-id: CTR-01
 kind: api
 derives-from: [AC-01-6, AC-01-8, AC-01-9, AC-01-14, AC-02-1, AC-02-2, AC-02-3, AC-02-4, AC-02-5, AC-02-6, AC-02-7, AC-02-8, AC-02-9, AC-02-10, AC-02-11, AC-02-12, AC-02-13, AC-03-1, AC-03-2, AC-03-4]
-revision: 2
+revision: 3
 ---
 
 # MCP tool contract
@@ -228,4 +228,4 @@ Every `json contract-case` block is parsed by `tests/contracts/test_ctr01_tools.
 {"name":"html_incomplete_candidate","tool":"polish_text","input":{"text":"<p>Hello.</p>","format":"html","language":"en"},"provider":[{"items":[{"id":"text","text":"<p title=\"x","flag":null}]},{"items":[{"id":"text","text":"<p title=\"x","flag":null}]}],"expect":{"status":"error","error":{"code":"html_structure"},"model_calls":2}}
 ```
 
-The first implementation task adds the parser/schema tests plus boundaries (limit −1 / limit / limit +1), unknown language, duplicate IDs, missing usage, privacy assertions and both retry-crossing directions. Changes to this contract and its tests are made together.
+The first implementation task introduces fixture loading/expansion, comparison helpers, a fake provider queue and positive/negative tests of those helpers. Before a real consumer exists, collection explicitly reports its contract tests as unconnected; those tests are not executed or represented as passing skips/xfails. Each consumer implementation task makes its corresponding contract cases and schema tests mandatory in CI, including boundaries (limit −1 / limit / limit +1), unknown language, duplicate IDs, missing usage, privacy assertions and both retry-crossing directions as their consumers are introduced. The final integration task executes every contract case against the real consumer with a fake model provider and requires nonempty coverage with no skips, xfails or unconnected cases. Changes to this contract and its tests are made together.

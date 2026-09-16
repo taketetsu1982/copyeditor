@@ -2,7 +2,7 @@
 contract-id: CTR-04
 kind: schema
 derives-from: [AC-05-1, AC-05-2, AC-05-3, AC-05-4, AC-05-5, AC-05-6, AC-05-8, AC-05-9, AC-02-6, AC-02-10, AC-02-11]
-revision: 1
+revision: 2
 ---
 
 # Configuration and image layout
@@ -79,4 +79,4 @@ COPY rules/ja.md /etc/copyeditor/rules.d/ja.md
 
 Ratio thresholds and tool limits are initial engineering choices, **not measured quality or capacity guarantees**. Model `gemini-3.1-flash-lite` preserves the source deployment's baseline; its documented thinking levels include low. This is not a model comparison or an upgrade decision. [Google model documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite)
 
-Startup schema tests and `tests/contracts/test_ctr04_config.py` must exercise the table, absent/empty files, unknown keys, explicit empty overrides, selected/unselected invalid environment values, secret-key rejection, placeholders, and `config.example.yaml` with synthetic environment values. A derived-image test checks both authentication modes and additive rules. Test and schema implementations belong to the first implementation task, not this document-only change.
+Startup schema tests and `tests/contracts/test_ctr04_config.py` must exercise the table, absent/empty files, unknown keys, explicit empty overrides, selected/unselected invalid environment values, secret-key rejection, placeholders, and `config.example.yaml` with synthetic environment values. A derived-image test checks both authentication modes and additive rules. The first implementation task introduces fixture helpers and positive/negative self-tests, not the complete config or image consumer. Collection explicitly reports real-consumer tests as unconnected until the corresponding consumer exists; skips/xfails do not represent contract passes. Each config or image implementation task introduces its schema/consumer tests and makes them mandatory in CI. The final integration task executes the complete config and derived-image checks with nonempty coverage and no skips, xfails or unconnected checks. This document-only change does not introduce executable tests.

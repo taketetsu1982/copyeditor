@@ -2,7 +2,7 @@
 contract-id: CTR-05
 kind: schema
 derives-from: [AC-03-4, AC-04-1, AC-04-4, AC-04-5, AC-04-6, AC-04-7]
-revision: 1
+revision: 2
 ---
 
 # Copyediting examples
@@ -93,4 +93,4 @@ Pin the Promptfoo CLI and Python dependencies in the implementation's lockfiles,
 
 ## Verification
 
-`tests/contracts/test_ctr05_examples.py` validates schema, coverage, conversion ordering and all mapped vars. CI runs the converter and the generated Promptfoo fixture evaluation, with zero failed assertions and zero external model calls. The first implementation task introduces these adapters/checks and the fixtures needed for them; later language edits must add/update their examples in the same PR. Native review and the attribution/originality check remain release/PR evidence, not fabricated automated results.
+`tests/contracts/test_ctr05_examples.py` validates schema, coverage, conversion ordering and all mapped vars. CI runs the converter and the generated Promptfoo fixture evaluation, with zero failed assertions and zero external model calls. The first implementation task introduces fixture helpers and their positive/negative self-tests. Before real consumers exist, collection explicitly reports their tests as unconnected, without executing them or treating skips/xfails as passes. The tasks implementing language examples and the server-backed conversion/evaluation adapters make their corresponding contract checks mandatory in CI as each consumer is introduced. The final integration task evaluates all examples and fixtures, rejects an empty set, and permits no skips, xfails or unconnected checks. Later language edits must add/update their examples in the same PR. Native review and the attribution/originality check remain release/PR evidence, not fabricated automated results.

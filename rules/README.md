@@ -2,7 +2,7 @@
 contract-id: CTR-03
 kind: schema
 derives-from: [AC-03-1, AC-03-2, AC-03-3, AC-03-4, AC-04-1, AC-04-2, AC-04-3, AC-04-6, AC-05-4, AC-02-6, AC-02-11]
-revision: 1
+revision: 2
 ---
 
 # Language rule format
@@ -79,4 +79,4 @@ Config terms and ratios do not change `rules_version`; responses expose matched 
 
 ## Verification
 
-`tests/contracts/test_ctr03_rules.py` validates all language frontmatter, H2 sequences, JSON fields, detector compilation, ID/anchor consistency, overlays and digest stability. It excludes `common.md` and this README from language enumeration. CI fails mismatched headings, unknown fields or invalid rules. Bad/good behavior and section coverage are checked through [CTR-05](../examples/README.md#deterministic-assertions). This verification is introduced by the first implementation task; missing language assets must not be mistaken for a passing empty glob.
+`tests/contracts/test_ctr03_rules.py` validates all language frontmatter, H2 sequences, JSON fields, detector compilation, ID/anchor consistency, overlays and digest stability. It excludes `common.md` and this README from language enumeration. CI fails mismatched headings, unknown fields or invalid rules. Bad/good behavior and section coverage are checked through [CTR-05](../examples/README.md#deterministic-assertions). The first implementation task introduces fixture helpers and their positive/negative self-tests. Collection explicitly reports real-consumer tests as unconnected until their consumers exist, without executing them or treating skips/xfails as passes. Each rule-loader or language-asset task makes the corresponding real contract checks mandatory in CI. The final integration task checks every built-in language and fixture, requires a nonempty asset set and rejects skips, xfails and unconnected checks; missing language assets must not be mistaken for a passing empty glob.
