@@ -27,7 +27,8 @@ def restore_logging():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", ["domain", "email", "upper-domain", "unverified", "truthy", "missing-hd",
     "wrong-hd", "bad-email", "email-case", "sub-mismatch", "empty-sub", "audience", "userinfo-error", "network-error",
-    "missing-verified", "numeric-verified", "numeric-sub", "non-ascii", "missing-email", "invalid-json"])
+    "missing-verified", "numeric-verified", "numeric-sub", "non-ascii", "missing-email", "invalid-json",
+    "kelvin-email", "kelvin-hd", "ascii-k-domain", "invalid-hd", "email-untrusted-hd"])
 async def test_ac_05_3_identity_through_google_verifier(case, capsys, caplog):
     info = {"sub": "synthetic-sub", "email": "A@example.com", "email_verified": True, "hd": "example.com"}
     patches = {"unverified": {"email_verified": False}, "truthy": {"email_verified": "true"},
@@ -36,7 +37,11 @@ async def test_ac_05_3_identity_through_google_verifier(case, capsys, caplog):
                "empty-sub": {"sub": ""}, "upper-domain": {"email": "A@EXAMPLE.COM", "hd": "EXAMPLE.COM"},
                "email": {"hd": None}, "missing-verified": {"email_verified": None},
                "numeric-verified": {"email_verified": 1}, "numeric-sub": {"sub": 1},
-               "non-ascii": {"email": "é@example.com"}, "missing-email": {"email": None}}
+               "non-ascii": {"email": "é@example.com"}, "missing-email": {"email": None},
+               "kelvin-email": {"email": "A@\u212a.example", "hd": "k.example"},
+               "kelvin-hd": {"email": "A@k.example", "hd": "\u212a.example"},
+               "ascii-k-domain": {"email": "A@K.EXAMPLE", "hd": "K.EXAMPLE"},
+               "invalid-hd": {"hd": "example.com."}, "email-untrusted-hd": {"hd": "\u212a.example"}}
     info.update(patches.get(case, {}))
     def respond(request):
         if request.url.path == "/tokeninfo":
@@ -51,10 +56,11 @@ async def test_ac_05_3_identity_through_google_verifier(case, capsys, caplog):
             return httpx2.Response(200, content=b"{")
         return httpx2.Response(500 if case == "userinfo-error" else 200, json=info)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        verifier = IdentityVerifier(domains=["example.com"], emails=["A@example.com"] if case in ("email", "email-case") else [],
+        verifier = IdentityVerifier(domains=["example.com", "k.example"],
+                                    emails=["A@example.com"] if case in ("email", "email-case", "email-untrusted-hd") else [],
                                     audience="client", required_scopes=SCOPES, http_client=client)
         result = await verifier.verify_token("synthetic-token")
-    assert (result is not None) == (case in ("domain", "email", "upper-domain"))
+    assert (result is not None) == (case in ("domain", "email", "upper-domain", "ascii-k-domain", "email-untrusted-hd"))
     assert not caplog.records
     assert capsys.readouterr() == ("", "")
 

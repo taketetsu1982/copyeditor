@@ -7,7 +7,7 @@ from fastmcp.server.auth.providers.google import GoogleTokenVerifier
 from key_value.aio.stores.memory import MemoryStore
 
 from copyeditor.auth_boundary import disable_library_logging
-from copyeditor.config import email
+from copyeditor.config import domain as valid_domain, email
 
 SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
 
@@ -59,10 +59,14 @@ class IdentityVerifier(GoogleTokenVerifier):
                 return None
             if info.get("email_verified") is not True or not isinstance(address, str):
                 return None
+            # Unicode lower can turn a non-ASCII Kelvin sign into ASCII k.
+            if not address.isascii():
+                return None
             local, separator, domain = address.rpartition("@")
             if not separator or not email(local + "@" + domain.lower()):
                 return None
-            domain_allowed = isinstance(hd, str) and hd.lower() == domain.lower() in self.domains
+            domain_allowed = (isinstance(hd, str) and hd.isascii() and valid_domain(hd.lower())
+                              and hd.lower() == domain.lower() and domain.lower() in self.domains)
             if address not in self.emails and not domain_allowed:
                 return None
             # SDK profile fallbacks do not establish verified UserInfo identity.
