@@ -151,6 +151,16 @@ def test_ac_02_2_ctr01_complete_contract_output_shapes(case):
     Draft202012Validator(schema).validate(payload)
 
 
+@pytest.mark.parametrize("tool", ["polish_text", "lint_text"])
+def test_ac_02_1_ctr01_output_schema_is_an_object_for_mcp_discovery(tool):
+    import mcp_types
+
+    schema = output_schema(tool)
+    assert schema["type"] == "object"
+    listed = mcp_types.Tool(name=tool, inputSchema={"type": "object"}, outputSchema=schema)
+    mcp_types.ListToolsResult(tools=[listed]).model_dump(by_alias=True, mode="json", exclude_none=True)
+
+
 @pytest.mark.parametrize("code", MESSAGES)
 def test_ac_02_4_ctr01_error_schema_fixed_messages_and_fields(code):
     for tool in ("polish_text", "lint_text"):

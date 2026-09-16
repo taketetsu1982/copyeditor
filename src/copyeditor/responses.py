@@ -118,4 +118,5 @@ def output_schema(tool):
         errors.append(obj(code={"const": code}, message={"const": message}, field=field))
     variants.append(obj(**{**metadata, "language": nullable(language)}, status={"const": "error"},
                         error={"oneOf": errors}, model_called=boolean, regeneration_attempted=boolean))
-    return {"$schema": "https://json-schema.org/draft/2020-12/schema", "oneOf": variants}
+    # MCP discovery requires outputSchema.type; every variant is an object, so the top-level type is exact.
+    return {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "oneOf": variants}
