@@ -380,3 +380,24 @@ def test_ctr01_final_metadata_order_and_valid_optional_values():
     validate_final(payload)
     final_rejected({**payload, "flag": {**payload["flag"], "checks": ["urls", "numbers"]}})
     final_rejected({**payload, "regenerated": False})
+
+
+@pytest.mark.parametrize("language,rule,accepted", [("en", "en-us-vocabulary-001", False), ("zh", "zh-hans-context-001", False), ("en-us", "en-us-vocabulary-001", True)])
+def test_ctr01_final_finding_language_exact_match(language, rule, accepted):
+    payload = public_fixture(CASES[0]); payload["language"] = language
+    payload["findings"] = [dict(rule_id=rule, start=0, end=1, matched="H", matched_truncated=False, message="Example.")]
+    if accepted: validate_final(payload)
+    else: final_rejected(payload)
+
+
+@pytest.mark.parametrize("route", ["error", "text", "items"])
+@pytest.mark.parametrize("calls", [0, 1, 2])
+@pytest.mark.parametrize("attempted", [False, True])
+def test_ctr01_final_regeneration_matches_call_count(route, calls, attempted):
+    case = dict(tool="polish_text", provider=[], expect={"status": "error", "error": {"code": "provider_error"}}) if route == "error" else CASES[0]
+    payload = public_fixture(case); route_payload(payload, route)
+    payload.update(model_calls=calls, usage=dict.fromkeys(Usage._fields, 0))
+    if route == "error": payload.update(model_called=calls > 0, regeneration_attempted=attempted)
+    else: (payload["items"][0] if route == "items" else payload)["regenerated"] = attempted
+    if attempted == (calls == 2) and (route == "error" or calls > 0): validate_final(payload)
+    else: final_rejected(payload)

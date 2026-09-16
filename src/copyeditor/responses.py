@@ -158,8 +158,7 @@ def validate_final(payload):
         valid(cost is None)
     if payload["status"] == "error":
         valid(payload["model_called"] == (calls > 0))
-        valid(not payload["regeneration_attempted"] or calls > 0)
-        valid(calls != 2 or payload["regeneration_attempted"])
+        valid(payload["regeneration_attempted"] == (calls == 2))
         if payload["error"]["code"] in ("invalid_input", "unsupported_language", "input_limit"):
             valid(calls == 0 and not payload["regeneration_attempted"])
         items = []
@@ -181,7 +180,7 @@ def validate_final(payload):
             valid(keys == sorted(set(keys)))
             valid(not item["findings_truncated"] or len(keys) == 100)
             for finding in item["findings"]:
-                valid(finding["rule_id"].startswith(payload["language"] + "-"))
+                valid(re.fullmatch(re.escape(payload["language"]) + r"-(vocabulary|syntax|structure|translation|context)-[0-9]{3}", finding["rule_id"]) is not None)
                 start, end = finding["start"], finding["end"]
                 valid(start < end and finding["matched_truncated"] == (end - start > 160))
                 valid(len(finding["matched"]) == min(end - start, 160))
