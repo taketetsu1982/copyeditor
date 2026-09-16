@@ -32,7 +32,8 @@ class LexicalAdapter:
         self._unfinished = False
         initial = tokenizer.state.__name__
         for name in dir(tokenizer):
-            if name.endswith('State'):
+            # The fixed tokenizer also has an RCDATA state without the suffix.
+            if name.endswith('State') or name == 'characterReferenceInRcdata':
                 setattr(tokenizer, name, self._state(getattr(tokenizer, name)))
         tokenizer.state = getattr(tokenizer, initial)
         number = tokenizer.consumeNumberEntity

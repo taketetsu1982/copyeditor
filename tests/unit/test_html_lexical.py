@@ -1,3 +1,6 @@
+import ast
+import inspect
+from html5lib._tokenizer import HTMLTokenizer
 import pytest
 from html5lib.html5parser import HTMLParser
 from copyeditor.html_lexical import LexicalAdapter
@@ -94,3 +97,39 @@ def test_ctr02_lexical_precedes_next_chunk_stream_error():
     assert packets[0].token['data'] == 'expected-closing-tag-but-got-right-bracket'
     assert packets[1].lexical is not None
     assert packets[2].token['data'] == 'invalid-codepoint'
+
+
+@pytest.mark.parametrize('tag', ['title', 'textarea'])
+@pytest.mark.parametrize('chunk', [2, 10240])
+@pytest.mark.parametrize('body,references,text', [
+    ('&notit;', ['&not'], 'it;'), ('&#x80;', ['&#x80;'], ''),
+    ('&bogus;', [], '&bogus;'), ('a</x>&amp;', ['&amp;'], 'a</x>'),
+])
+def test_ctr02_rcdata_reference_spans(tag, chunk, body, references, text):
+    raw = f'<{tag}>{body}</{tag}>'
+    parser = parse(raw, chunk)
+    parts = [part for packet in parser.packets for part in packet.parts]
+    assert parser.adapter.eof.input_error is None
+    assert ''.join(raw[a:b] for a, b, kind in parts) == raw
+    assert [raw[a:b] for a, b, kind in parts if kind == 'reference'] == references
+    assert ''.join(raw[a:b] for a, b, kind in parts if kind == 'text') == text
+
+
+def test_ctr02_all_fixed_tokenizer_state_targets_are_instrumented():
+    tree = ast.parse(inspect.getsource(HTMLTokenizer))
+    targets = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name)
+            and target.value.id == 'self' and target.attr == 'state'
+            for target in node.targets
+        ):
+            assert isinstance(node.value, ast.Attribute)
+            assert isinstance(node.value.value, ast.Name) and node.value.value.id == 'self'
+            targets.add(node.value.attr)
+    tokenizer = parse('<p>x</p>').adapter.tokenizer
+    assert targets
+    for name in targets:
+        wrapped = getattr(tokenizer, name).__wrapped__
+        assert wrapped.__self__ is tokenizer
+        assert wrapped.__func__ is getattr(HTMLTokenizer, name)
