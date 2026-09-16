@@ -63,7 +63,7 @@ class Clock:
 
 
 @pytest_asyncio.fixture
-async def oauth(tmp_path, monkeypatch):
+async def oauth(tmp_path, monkeypatch, capsys, caplog):
     previous = logging.root.manager.disable
     for variable in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         monkeypatch.delenv(variable, raising=False)
@@ -133,6 +133,10 @@ async def oauth(tmp_path, monkeypatch):
         logging.disable(previous)
         assert not thread.is_alive()
         assert server.socket.fileno() == -1
+        assert bool(MARKER not in repr(capsys.readouterr()))
+        # Teardown records alone omit logs emitted during the OAuth flow.
+        records = [record for phase in ("setup", "call", "teardown") for record in caplog.get_records(phase)]
+        assert all(MARKER not in logging.Formatter().format(record) for record in records)
 
 
 async def authorize(oauth):
@@ -217,3 +221,120 @@ async def test_ac_05_3_ctr04_real_oauth_round_trip(oauth, capsys):
     grants = [c[2]["grant_type"] for c in oauth.calls if c[0] == "/token"]
     assert grants == [["authorization_code"], ["refresh_token"]]
     assert bool(MARKER not in repr(capsys.readouterr()))
+
+
+def rejected(response, status):
+    assert response.status_code == status
+    assert bool(MARKER not in response.text and MARKER not in repr(response.headers))
+
+
+@pytest.mark.asyncio
+async def test_ac_05_3_ctr04_oauth_rejections_and_expiry(oauth):
+    client_id, upstream_url = await authorize(oauth)
+    txn = parse_qs(urlsplit(upstream_url).query)["state"][0]
+    count = len(oauth.calls)
+    rejected(await oauth.client.get("/auth/callback", params={"state": "unknown", "code": MARKER}), 400)
+    assert len(oauth.calls) == count
+    rejected(await oauth.client.get("/authorize", params={"client_id": client_id, "response_type": "code",
+        "redirect_uri": "https://unregistered.example/callback", "scope": " ".join(SCOPES),
+        "code_challenge": CHALLENGE, "code_challenge_method": "S256"}), 400)
+    code = await callback(oauth, upstream_url)
+    rejected(await oauth.client.get("/auth/callback", params={"state": txn, "code": "synthetic-code"}), 400)
+    rejected(await exchange(oauth, client_id, code, "x" * 43), 401)
+    rejected(await oauth.client.post("/token", data={"client_id": client_id, "grant_type": "authorization_code",
+        "code": code, "redirect_uri": "https://unregistered.example/callback", "code_verifier": VERIFIER}), 400)
+    response = await exchange(oauth, client_id, code)
+    assert response.status_code == 200
+    rejected(await exchange(oauth, client_id, code), 401)
+    access = response.json()["access_token"]
+    headers = {"Authorization": "Bearer " + access}
+    assert (await oauth.client.get("/protected", headers=headers)).status_code == 200
+    oauth.clock.advance(901)
+    count = len(oauth.calls)
+    rejected(await oauth.client.get("/protected", headers=headers), 401)
+    assert len(oauth.calls) == count
+    client_id, upstream_url = await authorize(oauth)
+    txn = parse_qs(urlsplit(upstream_url).query)["state"][0]
+    assert await oauth.proxy._transaction_store.get(key=txn) is not None
+    oauth.clock.advance(901)
+    rejected(await oauth.client.get("/auth/callback", params={"state": txn, "code": "synthetic-code"}), 400)
+    assert await oauth.proxy._transaction_store.get(key=txn) is None
+    client_id, upstream_url = await authorize(oauth)
+    code = await callback(oauth, upstream_url)
+    assert await oauth.proxy._code_store.get(key=code) is not None
+    oauth.clock.advance(301)
+    rejected(await exchange(oauth, client_id, code), 401)
+    assert await oauth.proxy._code_store.get(key=code) is None
+
+
+@pytest.mark.asyncio
+async def test_ac_05_3_ctr04_refresh_identity_and_empty_memory(oauth):
+    rejected(await oauth.client.get("/protected"), 401)
+    client_id, upstream_url = await authorize(oauth)
+    response = await exchange(oauth, client_id, await callback(oauth, upstream_url))
+    assert response.status_code == 200
+    tokens = response.json()
+    assert (await oauth.client.get("/protected", headers={"Authorization": "Bearer " + tokens["access_token"]})).status_code == 200
+    verifier = oauth.proxy._token_validator
+    refreshed = await oauth.client.post("/token", data={"client_id": client_id,
+        "grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]})
+    assert refreshed.status_code == 200
+    headers = {"Authorization": "Bearer " + refreshed.json()["access_token"]}
+    assert (await oauth.client.get("/protected", headers=headers)).status_code == 200
+    oauth.responses["/v1/userinfo"] = (200, {"sub": MARKER + "-sub", "email": MARKER + "@example.com",
+                                          "email_verified": False, "hd": "example.com"})
+    count = len(oauth.calls)
+    rejected(await oauth.client.get("/protected", headers=headers), 401)
+    assert oauth.proxy._token_validator is verifier
+    calls = oauth.calls[count:]
+    assert [c[0] for c in calls] == ["/tokeninfo", "/oauth2/v2/userinfo", "/v1/userinfo"]
+    assert bool(calls[-1][3] == "Bearer " + MARKER + "-new")
+    del oauth.responses["/v1/userinfo"]
+    assert (await oauth.client.get("/protected", headers=headers)).status_code == 200
+    restarted = make_auth(oauth.config)
+    restarted._token_validator._http_client = verifier._http_client
+    restarted._upstream_token_endpoint = oauth.origin + "/token"
+    routes = restarted.get_routes("/mcp")
+    assert restarted.jwt_issuer.verify_token(refreshed.json()["access_token"])
+    app = Starlette(routes=[*routes, Route("/protected", RequireAuthMiddleware(Response("accepted"), required_scopes=SCOPES))])
+    app.add_middleware(AuthenticationMiddleware, backend=BearerAuthBackend(restarted))
+    count = len(oauth.calls)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=ORIGIN) as client:
+        rejected(await client.get("/protected", headers=headers), 401)
+    assert len(oauth.calls) == count
+
+
+@pytest.mark.asyncio
+async def test_ac_05_3_ctr04_real_registration_capacity(oauth):
+    payload = {"redirect_uris": [CALLBACK], "token_endpoint_auth_method": "none"}
+    for _ in range(2000):
+        assert (await oauth.client.post("/register", json=payload)).status_code == 201
+    response = await oauth.client.post("/register", json=payload)
+    rejected(response, 500)
+    assert response.json() == {"error": "server_error", "error_description": "Authentication failed."}
+
+
+@pytest.mark.asyncio
+async def test_ac_05_3_ctr04_idp_errors_and_exception_privacy(oauth):
+    codes = ("invalid_request", "unauthorized_client", "access_denied", "unsupported_response_type",
+             "invalid_scope", "server_error", "temporarily_unavailable", MARKER)
+    for error in codes:
+        _, upstream_url = await authorize(oauth)
+        txn = parse_qs(urlsplit(upstream_url).query)["state"][0]
+        response = await oauth.client.get("/auth/callback", params={"state": txn, "error": error,
+            "error_description": MARKER, "error_uri": "https://untrusted.example/" + MARKER})
+        rejected(response, 302)
+        target = urlsplit(response.headers["location"])
+        assert (target.scheme, target.netloc, target.path) == ("https", "client.example", "/callback")
+        assert parse_qs(target.query) == {"fixed": ["keep"], "state": ["saved-client-state"],
+            "iss": [str(oauth.proxy.issuer_url)], "error": ["server_error" if error == MARKER else error],
+            "error_description": ["Authentication failed."]}
+    _, upstream_url = await authorize(oauth)
+    txn = parse_qs(urlsplit(upstream_url).query)["state"][0]
+    oauth.responses["/token"] = (400, {"error": "invalid_grant", "error_description": MARKER + "-exception",
+        "email": MARKER + "@example.com", "sub": MARKER + "-sub", "access_token": MARKER + "-old"})
+    count = len(oauth.calls)
+    response = await oauth.client.get("/auth/callback", params={"state": txn, "code": "synthetic-code"})
+    rejected(response, 500)
+    assert "Authentication failed." in response.text
+    assert [c[0] for c in oauth.calls[count:]] == ["/token"]
