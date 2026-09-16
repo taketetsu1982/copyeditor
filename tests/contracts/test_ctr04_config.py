@@ -4,6 +4,17 @@ import pytest
 from copyeditor.config import ConfigError, SCHEMA, load_config, strict_yaml
 
 pytestmark = pytest.mark.consumer("CTR-04")
+
+def test_ac_05_1_ac_05_4_ctr04_image_assets():
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "Dockerfile").read_text()
+    assert 'ENTRYPOINT ["python", "-m", "copyeditor"]' in dockerfile
+    assert "USER 65532:65532" in dockerfile and "COPY config" not in dockerfile
+    allowed = (root / ".dockerignore").read_text().splitlines()
+    assert allowed[0] == "**"
+    assert all(line.startswith("!") for line in allowed[1:])
+    assert all(not any(word in line for word in ("docs", "tmp", ".env", "credentials")) for line in allowed[1:])
+
 CASES = [
     ("provider", "vertex", [None, True, "other"]),
     ("model", "model_1-2.3", ["", "é", "a" * 129]),
