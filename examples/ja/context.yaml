@@ -1,0 +1,9 @@
+id: context
+language: ja
+section: context
+bad: 申請内容をご確認のうえ、送信してください。
+good: 申請内容をご確認のうえ、送信してください。
+reason: Retain the courteous instruction appropriate for a public application form.
+lint: null
+must_change: false
+background: {audience: 申請者, purpose: 送信前の確認, tone: 丁寧}

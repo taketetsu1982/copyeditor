@@ -1,0 +1,7 @@
+id: structure
+language: ja
+section: structure
+bad: 送信後は内容を変更できません。送信前に入力内容を確認してください。
+good: 送信前に入力内容を確認してください。送信後は内容を変更できません。
+reason: Lead with the action while retaining the warning about changes after submission.
+lint: null
