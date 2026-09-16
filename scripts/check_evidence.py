@@ -1,5 +1,6 @@
 """Check owner evidence using read-only GitHub CLI requests."""
 import argparse
+import base64
 from datetime import datetime
 import json
 import re
@@ -69,20 +70,92 @@ def check_native(pr, owner):
     return None
 
 
+ACK_EN = "Acknowledgements: natural-japanese (coji/natural-japanese) informed this project's approach."
+ACK_JA = "謝辞: natural-japanese（coji/natural-japanese）を本プロジェクトの方針の参考にしました。"
+
+
+def unique_fields(pairs):
+    if len(dict(pairs)) != len(pairs):
+        raise ValueError("Duplicate evidence field")
+    return dict(pairs)
+
+
+def check_provenance(pr, owner):
+    root = "repos/{owner}/{repo}"
+    endpoint = f"{root}/pulls/{pr}"
+    pull = gh_json(endpoint)
+    head = pull["head"]["sha"]
+    if not re.fullmatch(SHA, head) or not pull["user"]["login"]:
+        raise ValueError("Invalid pull request")
+    commit = gh_json(f"{root}/git/commits/{head}")
+    tree = gh_json(f"{root}/git/trees/{commit['tree']['sha']}?recursive=1")
+    if tree.get("truncated") is not False:
+        raise ValueError("Incomplete tree")
+    blobs, readme = {}, None
+    for entry in tree["tree"]:
+        path = entry["path"]
+        if path == "README.md" or path.startswith(("rules/", "examples/")):
+            if entry["type"] == "tree":
+                continue
+            if entry["type"] != "blob" or entry["mode"] not in ("100644", "100755") or not re.fullmatch(SHA, entry["sha"]):
+                raise ValueError("Invalid public asset")
+            if path == "README.md":
+                readme = entry["sha"]
+            else:
+                blobs[path] = entry["sha"]
+    if not readme or not all(any(p.startswith(prefix) for p in blobs) for prefix in ("rules/", "examples/")):
+        return "Public assets or README are missing."
+    encoded = gh_json(f"{root}/git/blobs/{readme}")
+    if encoded["encoding"] != "base64":
+        raise ValueError("Invalid README encoding")
+    text = base64.b64decode(encoded["content"]).decode("utf-8")
+    if ACK_EN not in text or ACK_JA not in text:
+        return "English and Japanese acknowledgements are required."
+    evidence = []
+    for record in records(f"{root}/issues/{pr}/comments"):
+        if record["user"]["login"].casefold() != owner.casefold():
+            continue
+        blocks = re.findall(r"```copyeditor-provenance-v1\n(.*?)\n```", record["body"].replace("\r\n", "\n"), re.S)
+        for block in blocks:
+            data = json.loads(block, object_pairs_hook=unique_fields)
+            if data.get("head") != head:
+                continue
+            when = datetime.fromisoformat(record["updated_at"].replace("Z", "+00:00"))
+            if when.utcoffset() is None:
+                raise ValueError("Missing timezone")
+            valid = (len(blocks) == 1 and set(data) == {"head", "comparison_revision", "non_reuse", "blobs"}
+                     and data["non_reuse"] == "confirmed" and data["blobs"] == blobs
+                     and isinstance(data["comparison_revision"], str) and re.fullmatch(SHA, data["comparison_revision"]))
+            evidence.append((when, bool(valid), data.get("comparison_revision")))
+    if not evidence:
+        return "No owner provenance record for the current head."
+    latest = max(item[0] for item in evidence)
+    selected = [item for item in evidence if item[0] == latest]
+    if not all(item[1] for item in selected) or len({item[2] for item in selected}) != 1:
+        return "Latest owner provenance is incomplete or not confirmed."
+    revision = selected[0][2]
+    if gh_json(f"repos/coji/natural-japanese/git/commits/{revision}")["sha"] != revision:
+        return "Comparison revision is unavailable."
+    if gh_json(endpoint)["head"]["sha"] != head:
+        return "Pull request head changed; retry."
+    return None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["native"])
+    parser.add_argument("command", choices=["native", "provenance"])
     parser.add_argument("--pr", required=True, type=int)
     parser.add_argument("--owner", required=True)
     args = parser.parse_args(argv)
     if args.pr < 1 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner):
         parser.error("Expected a positive PR number and a GitHub login.")
     try:
-        reason = check_native(args.pr, args.owner)
+        reason = (check_native if args.command == "native" else check_provenance)(args.pr, args.owner)
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
         # gh stderr and malformed record contents may contain personal data.
         reason = "GitHub evidence could not be read or validated."
-    print("NATIVE FAIL: " + reason if reason else "NATIVE PASS")
+    label = args.command.upper()
+    print(label + " FAIL: " + reason if reason else label + " PASS")
     return 1 if reason else 0
 
 
