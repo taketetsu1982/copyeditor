@@ -321,6 +321,8 @@ def input_boundaries():
         error = "input_limit" if offset > 0 else None
         yield f"items-{offset}", {"items": [{"id": f"i{i}", "text": "Hello."} for i in range(32 + offset)]}, "en", error
         yield f"body-{offset}", {"text": "x" * (12000 + offset)}, "en", error
+        yield f"items-body-total-{offset}", {"items": [{"id": "a", "text": "x" * 6000},
+                                                      {"id": "b", "text": "y" * (6000 + offset)}]}, "en", error
         background = {k: "b" * (1000 + (offset if k == "message" else 0)) for k in ("audience", "purpose", "tone", "message")}
         yield f"background-{offset}", dict(text="Hello.", **background), "en", error
         items = [{"id": f"i{i}", "text": "x" * 3000, "context": "c" * 1000} for i in range(3)]
