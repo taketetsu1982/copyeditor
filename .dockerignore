@@ -1,0 +1,13 @@
+**
+!Dockerfile
+!requirements.generated.txt
+!src/
+!src/copyeditor/
+!src/copyeditor/*.py
+!src/copyeditor/providers/
+!src/copyeditor/providers/*.py
+!rules/
+!rules/*.md
+!examples/
+!examples/*/
+!examples/*/*.yaml
