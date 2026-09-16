@@ -1,0 +1,11 @@
+id: protected-terms-overreach
+language: ja
+section: context
+bad: <p>青葉ノートは、チームの予定を一つの画面で確認することが可能です。</p>
+good: <p>青葉ノートでは、チームの予定を一つの画面で確認できます。</p>
+reason: Keep the fictional product name and capability while improving the surrounding landing-page prose.
+lint: {rule_ids: [ja-vocabulary-001]}
+format: html
+protected_terms: [青葉ノート]
+must_change: true
+regression: protected-terms-overreach
