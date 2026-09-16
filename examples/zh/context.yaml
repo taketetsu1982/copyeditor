@@ -1,0 +1,9 @@
+id: context
+language: zh
+section: context
+bad: "请核对申请信息后再提交。"
+good: "请核对申请信息后再提交。"
+reason: "The concise and courteous instruction already suits an application form."
+lint: null
+must_change: false
+background: {audience: Applicants, purpose: Check before submitting, tone: Courteous}

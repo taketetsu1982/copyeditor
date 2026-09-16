@@ -1,0 +1,8 @@
+id: structure
+language: en
+section: structure
+bad: "<p>You cannot edit a request after submission. Check the details before submitting.</p>"
+good: "<p>Check the details before submitting. You cannot edit a request after submission.</p>"
+reason: "The instruction comes first while the consequence remains explicit."
+lint: null
+format: html
