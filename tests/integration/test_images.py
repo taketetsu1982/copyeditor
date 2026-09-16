@@ -169,8 +169,14 @@ def test_ac_05_1_ac_05_4_ctr04_all_images_and_secrets(images, tmp_path):
         docker("stop", name)
         check_image_secrets(tag, tmp_path)
     excluded = ROOT / "tmp" / (label + "-secret")
-    excluded.write_text(MARKER)
+    created = False
     try:
+        excluded.parent.mkdir()
+        created = True
+    except FileExistsError:
+        pass
+    try:
+        excluded.write_text(MARKER)
         context = label + ":context"
         subprocess.run(["docker", "build", "--network", "none", "--label", "copyeditor.test=" + label,
             "-t", context, "-f", "-", str(ROOT)], input="FROM scratch\nCOPY . /context\n",
@@ -183,7 +189,9 @@ def test_ac_05_1_ac_05_4_ctr04_all_images_and_secrets(images, tmp_path):
         with pytest.raises(AssertionError):
             check_image_secrets(poisoned, tmp_path)
     finally:
-        excluded.unlink()
+        excluded.unlink(missing_ok=True)
+        if created:
+            excluded.parent.rmdir()
 
 
 def assert_secret_absent(stream):
