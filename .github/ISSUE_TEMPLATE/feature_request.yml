@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a change to the server, the skill, or the configuration.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        copyeditor keeps a fixed division of labor: the writing agent owns meaning and structure,
+        the polishing model owns wording, and a human confirms the meaning. Proposals that move work
+        across that line (for example, letting the polishing model change facts, or auto-applying
+        results without a human) are unlikely to be accepted. Everything else is welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Observable behavior, not implementation. What would a user see or get?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
