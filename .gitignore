@@ -1,0 +1,47 @@
+# Dotfiles and dotfolders are local by default (editor/agent config, OS metadata, env files).
+# Only the ones the public repo needs are re-included below.
+.*
+!.gitignore
+!.gitattributes
+!.dockerignore
+!.github/
+!.claude-plugin/
+
+# Internal planning docs (product / design / spec / plan). Written in Japanese and versioned in the
+# private internal repo, not here. Public-facing rationale lives in README and CONTRIBUTING.
+docs/
+
+# Agent instructions for the maintainer's own sessions (Japanese, references internal paths).
+# Split a public contributor-facing AGENTS.md out of it when one is needed.
+AGENTS.md
+CLAUDE.md
+
+# Local config with real project ids, domains, or pricing. The tracked example is config.example.yaml.
+config.yaml
+config.*.yaml
+!config.example.yaml
+
+# Credentials and keys
+*.pem
+*.key
+*credentials*.json
+*secret*.json
+*oauth*.json
+*service-account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+venv/
+
+# Node (plugin tooling, if any)
+node_modules/
+
+# Logs and scratch (tmp/ holds request/response files exchanged between agent panes)
+*.log
+tmp/
+work/
+runtime/
