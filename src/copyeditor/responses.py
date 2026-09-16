@@ -120,3 +120,80 @@ def output_schema(tool):
                         error={"oneOf": errors}, model_called=boolean, regeneration_attempted=boolean))
     # MCP discovery requires outputSchema.type; every variant is an object, so the top-level type is exact.
     return {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "oneOf": variants}
+
+
+def validate_final(payload):
+    import math
+    from jsonschema import Draft202012Validator, validators
+
+    def scalar_tree(value):
+        if type(value) is dict:
+            return all(type(k) is str and scalar_tree(k) and scalar_tree(v) for k, v in value.items())
+        if type(value) is list:
+            return all(scalar_tree(v) for v in value)
+        if type(value) is str:
+            return re.search(r"[\ud800-\udfff]", value) is None
+        return value is None or type(value) in (bool, int) or type(value) is float and math.isfinite(value)
+    intact = False
+    try:
+        intact = scalar_tree(payload)
+    except RecursionError:
+        pass
+    valid(intact and type(payload) is dict)
+    tool = "lint_text" if payload.get("model") is None else "polish_text"
+    schema = output_schema(tool)
+    # Body limits must not hide another item's invalid shape or blank text.
+    for variant in schema["oneOf"]:
+        properties = variant["properties"]
+        if "text" in properties:
+            properties["text"].pop("maxLength", None)
+        if "items" in properties:
+            properties["items"]["items"]["properties"]["text"].pop("maxLength", None)
+    checker = Draft202012Validator.TYPE_CHECKER.redefine("integer", lambda _, value: type(value) is int)
+    valid(validators.extend(Draft202012Validator, type_checker=checker)(schema).is_valid(payload))
+    calls, usage, cost = payload["model_calls"], payload["usage"], payload["cost"]
+    if tool == "lint_text" or calls == 0:
+        valid(calls == 0 and all(value == 0 for value in usage.values()) and cost is None)
+    if usage["input_tokens"] is None or usage["output_tokens"] is None:
+        valid(cost is None)
+    if payload["status"] == "error":
+        valid(payload["model_called"] == (calls > 0))
+        valid(not payload["regeneration_attempted"] or calls > 0)
+        valid(calls != 2 or payload["regeneration_attempted"])
+        if payload["error"]["code"] in ("invalid_input", "unsupported_language", "input_limit"):
+            valid(calls == 0 and not payload["regeneration_attempted"])
+        items = []
+    else:
+        items = payload.get("items", [payload] if "text" in payload else [])
+        if items:
+            valid(calls > 0)
+            valid(len({item["id"] for item in items}) == len(items) if "items" in payload else True)
+            valid(any(item["regenerated"] for item in items) == (calls == 2))
+            valid(payload["protected_terms_checked"] == len({term for item in items for term in item["protected_terms"]}))
+        for item in items:
+            valid(item["protected_terms"] == sorted(item["protected_terms"]))
+            if item["flag"] and item["flag"]["kind"] == "rejected":
+                valid(item["regenerated"])
+                order = ["protected_terms", "numbers", "urls", "variables", "length_ratio"]
+                valid(item["flag"]["checks"] == sorted(item["flag"]["checks"], key=order.index))
+        for item in items or [payload]:
+            keys = [(f["start"], f["end"], f["rule_id"]) for f in item["findings"]]
+            valid(keys == sorted(set(keys)))
+            valid(not item["findings_truncated"] or len(keys) == 100)
+            for finding in item["findings"]:
+                valid(finding["rule_id"].startswith(payload["language"] + "-"))
+                start, end = finding["start"], finding["end"]
+                valid(start < end and finding["matched_truncated"] == (end - start > 160))
+                valid(len(finding["matched"]) == min(end - start, 160))
+                if "text" in item:
+                    valid(end <= len(item["text"]) and finding["matched"] == item["text"][start:min(end, start + 160)])
+    if sum(len(item["text"]) for item in items) > 16000:
+        raise ValidationError("output_limit", None)
+    encoded = None
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+    except (ValueError, OverflowError, RecursionError):
+        pass
+    valid(encoded is not None)
+    if len(encoded) > 1048576:
+        raise ValidationError("output_limit", None)
