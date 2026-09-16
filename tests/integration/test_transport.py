@@ -129,3 +129,56 @@ async def test_ctr01_unexpected_service_exception_is_fixed_and_audited(setup, mo
     validate_final(result.structured_content)
     assert len(records) == 1 and records[0]["status"] == "error" and not created
     assert MARKER not in repr(result) and MARKER not in json.dumps(records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.consumer("CTR-01")
+@pytest.mark.consumer("CTR-04")
+@pytest.mark.parametrize("authenticated", [False, True])
+async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_raw_asgi(setup, authenticated):
+    import httpx
+    from fastmcp.server.auth import StaticTokenVerifier
+    make, created, records = setup
+    server, _, _ = make("google" if authenticated else "none")
+    if authenticated:
+        server.auth = StaticTokenVerifier(tokens={"test-token": {"client_id": "test", "scopes": [], "sub": "tester"}})
+    app = server.http_app(path=None, json_response=True, stateless_http=True)
+    headers = {"accept": "application/json, text/event-stream", "content-type": "application/json"}
+    def call(arguments):
+        return dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="lint_text", arguments=arguments))
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost", headers=headers) as client:
+            assert (await client.get("/health")).json() == {"status": "ok"}
+            invalid = [b'{"jsonrpc":"2.0","id":1,"method":"ping","method":"ping"}', b'{"x":"\xff"}',
+                       json.dumps(dict(jsonrpc="2.0", id=1, method=MARKER)).encode(),
+                       json.dumps(call({}) | {"params": {"name": MARKER}}).encode(), b'{}',
+                       json.dumps(dict(jsonrpc="2.0", id="\ud800", method=MARKER)).encode()]
+            if authenticated:
+                for body in [*invalid, b" " * 262145, json.dumps(call([])).encode()]:
+                    denied = await client.post("/mcp", content=body)
+                    assert denied.status_code == 401 and "www-authenticate" in denied.headers
+                    assert MARKER not in denied.text + str(denied.headers)
+                assert not created and not records
+                client.headers["authorization"] = "Bearer test-token"
+            for body, code in zip(invalid, (-32700, -32700, -32601, -32602, -32600, -32600)):
+                rejected = await client.post("/mcp", content=body)
+                assert rejected.status_code == 400 and "error" in rejected.json() and "result" not in rejected.json()
+                assert rejected.json()["error"]["code"] == code
+                assert MARKER not in rejected.text + str(rejected.headers)
+            assert not created and not records
+            ping = b'{"jsonrpc":"2.0","id":1,"method":"ping"}'
+            assert (await client.post("/mcp", content=ping + b" " * (262144 - len(ping)))).json()["result"] == {}
+            assert (await client.post("/mcp", content=ping + b" " * (262145 - len(ping)))).status_code == 413
+            for arguments in ([], None, MARKER, 1, True, {"text": MARKER, "extra": MARKER}, {"text": "Hello."}):
+                response = await client.post("/mcp", json=call(arguments))
+                assert response.status_code == 200
+                result = response.json()["result"]
+                payload = result["structuredContent"]
+                validate_final(payload)
+                assert json.loads(result["content"][0]["text"]) == payload
+                assert result["isError"] == (arguments != {"text": "Hello."})
+                assert MARKER not in response.text + str(response.headers)
+            assert len(records) == 7 and not created and MARKER not in json.dumps(records)
+            polished = await client.post("/mcp", json=call({"text": "Hello."}) | {"params": {"name": "polish_text", "arguments": {"text": "Hello."}}})
+            assert polished.json()["result"]["structuredContent"]["text"] == "Hello."
+            assert len(records) == 8 and len(created) == 1
