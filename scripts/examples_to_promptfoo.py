@@ -50,7 +50,7 @@ def convert(output, cases, live=False):
     require(bool(cases))
     relative = lambda name: "file://" + Path(os.path.relpath(ROOT / "scripts" / name, Path(output).resolve().parent)).as_posix()
     config = dict(prompts=["{{bad}}"], providers=[dict(id=relative("benchmark_provider.py"), config=dict(mode="live" if live else "fixture"))],
-                  tests=[dict(description=c["language"] + "/" + c["id"], vars=c, **{"assert": [dict(type="python", value=relative("benchmark_assert.py"))]}) for c in cases])
+                  tests=[dict(description=c["language"] + "/" + c["id"], vars=c, **{"assert": [dict(type="python", value=relative("benchmark_assert.py"), config=dict(mode="live" if live else "fixture"))]}) for c in cases])
     Path(output).write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

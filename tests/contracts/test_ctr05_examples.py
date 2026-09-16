@@ -49,3 +49,126 @@ if any(p.name != "README.md" for p in (ROOT / "examples").iterdir()) or any(p.na
     def test_ctr05_installed_assets(tmp_path):
         result = subprocess.run([sys.executable, str(ROOT / "scripts/examples_to_promptfoo.py"), "--output", str(tmp_path / "promptfoo.json")], capture_output=True, text=True)
         assert result.returncode == 0, result.stdout + result.stderr
+
+sys.path.insert(0, str(ROOT / "scripts"))
+import benchmark_provider as adapter
+from benchmark_assert import get_assert
+from copyeditor import preservation
+from copyeditor.providers.base import ProviderFailure, Usage
+
+CASES = converter["load_examples"](ROOT / "examples", load_rules(ROOT / "rules", None))
+
+
+def example():
+    return dict(CASES[0], bad="Product has 10 items at https://example.com/a for {name}.",
+                good="Product offers 10 items at https://example.com/a for {name}.",
+                protected_terms=["Product"], lint=None, must_change=True)
+
+
+@pytest.mark.consumer("CTR-03")
+@pytest.mark.consumer("CTR-05")
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c["language"] + "/" + c["id"])
+@pytest.mark.asyncio
+async def test_ac04_3_ac04_4_ac04_5_ctr03_ctr05_real_examples_accepted(case, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Fixture must not construct Vertex")
+    monkeypatch.setattr("copyeditor.providers.vertex.Vertex", forbidden)
+    response = await adapter.call_api(case["bad"], {}, {"vars": case})
+    result = json.loads(response["output"])
+    assert result["text"] == case["good"] and result["flag"] is None and result["model_calls"] == 1
+    assert get_assert(response["output"], {"vars": case})
+
+
+@pytest.mark.parametrize("name,old,new", [("protected_terms", "Product", "Other"), ("numbers", "10", "11"),
+    ("urls", "example.com/a", "example.com/b"), ("variables", "{name}", "{other}"), ("length_ratio", "", "x" * 200)])
+@pytest.mark.asyncio
+async def test_ac04_3_ctr05_mutations_fail_named_checks(name, old, new):
+    case = example()
+    candidate = case["good"].replace(old, new) if old else case["good"] + new
+    config, snapshot = adapter.environment(case, "fixture")
+    checked = preservation.check(case["bad"], candidate, snapshot.languages["en"].protected_terms, {"min": .5, "max": 2})
+    assert name in checked.failed
+    response = await adapter.call_api("", {}, {"vars": case})
+    output = json.loads(response["output"])
+    output["text"] = candidate
+    assert not get_assert(json.dumps(output), {"vars": case})
+    response = await adapter.call_api("", {}, {"vars": case | {"good": candidate}})
+    assert json.loads(response["output"])["flag"]["kind"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_ac04_3_ctr05_html_and_final_schema():
+    case = example() | {"format": "html", "bad": "<p>Product has 10 items.</p>", "good": "<p>Product offers 10 items.</p>"}
+    response = await adapter.call_api("", {}, {"vars": case})
+    assert get_assert(response["output"], {"vars": case})
+    output = json.loads(response["output"])
+    for changed in (output | {"text": output["text"].replace("<p>", "<div>").replace("</p>", "</div>")},
+                    output | {"extra": True}, output | {"flag": {"kind": "unfixable", "reason": "Cannot edit", "checks": []}}):
+        assert not get_assert(json.dumps(changed), {"vars": case})
+    response = await adapter.call_api("", {}, {"vars": case | {"good": "<div>Product offers 10 items.</div>"}})
+    assert json.loads(response["output"])["error"]["code"] == "html_structure"
+
+
+@pytest.mark.asyncio
+async def test_ac04_4_ctr05_fixture_network_attempt_raises(monkeypatch):
+    import socket
+    async def access(self, request):
+        socket.create_connection(("example.com", 443))
+    monkeypatch.setattr(adapter.FixtureProvider, "generate", access)
+    with pytest.raises(RuntimeError, match="Fixture network access denied"):
+        await adapter.call_api("", {}, {"vars": example()})
+
+
+@pytest.mark.asyncio
+async def test_ac04_4_ctr05_live_input_isolation_and_no_fallback(monkeypatch, tmp_path):
+    case = example() | {"reason": "SECRET_REASON", "lint": None, "background": {"audience": "readers"}}
+    config, snapshot = adapter.environment(case, "fixture")
+    monkeypatch.setattr(adapter, "environment", lambda c, m: (config, snapshot))
+    seen = []
+    class Live:
+        def __init__(self, supplied):
+            assert supplied is config
+        async def generate(self, request):
+            seen.append(request)
+            return await adapter.FixtureProvider(case["good"] + " Today.").generate(request)
+    monkeypatch.setattr("copyeditor.providers.vertex.Vertex", Live)
+    response = await adapter.call_api("SECRET_PROMPT", {"config": {"mode": "live"}}, {"vars": case})
+    assert seen[0].items[0].text == case["bad"] and seen[0].background.audience == "readers"
+    assert seen[0].language == "en" and seen[0].format == "text"
+    assert all(value not in repr(seen[0]) for value in (case["good"], case["reason"], "SECRET_PROMPT"))
+    import benchmark_assert
+    monkeypatch.setattr(benchmark_assert, "environment", lambda c, m: (config, snapshot))
+    assert get_assert(response["output"], {"vars": case, "config": {"mode": "live"}})
+    assert not get_assert(response["output"], {"vars": case})
+    async def fail(self, request):
+        return ProviderFailure("provider_error", Usage(None, None, None))
+    monkeypatch.setattr(Live, "generate", fail)
+    response = await adapter.call_api("", {"config": {"mode": "live"}}, {"vars": case})
+    assert json.loads(response["output"])["status"] == "error"
+    assert not get_assert(response["output"], {"vars": case, "config": {"mode": "live"}})
+    converter["convert"](tmp_path / "live.json", [case], live=True)
+    converted = json.loads((tmp_path / "live.json").read_text())
+    assert converted["providers"][0]["config"]["mode"] == converted["tests"][0]["assert"][0]["config"]["mode"] == "live"
+
+
+@pytest.mark.asyncio
+async def test_ac04_3_ctr05_uncapped_lint_and_must_change(monkeypatch):
+    import benchmark_assert
+    case = example() | {"bad": "noise " * 101 + "in order to proceed", "good": "noise " * 101 + "to proceed",
+                        "lint": {"rule_ids": ["en-vocabulary-001"]}}
+    config, snapshot = adapter.environment(case, "fixture")
+    rules = snapshot.languages["en"]
+    noise = dict(id="en-vocabulary-002", description="Noise", detector=dict(kind="literal", value="noise"))
+    snapshot = snapshot._replace(languages=dict(snapshot.languages, en=rules._replace(detectors=rules.detectors + (noise,))))
+    monkeypatch.setattr(adapter, "environment", lambda c, m: (config, snapshot))
+    monkeypatch.setattr(benchmark_assert, "environment", lambda c, m: (config, snapshot))
+    response = await adapter.call_api("", {}, {"vars": case})
+    assert json.loads(response["output"])["findings_truncated"]
+    assert get_assert(response["output"], {"vars": case})
+    lingering = case | {"good": case["bad"] + "."}
+    response = await adapter.call_api("", {}, {"vars": lingering})
+    assert not get_assert(response["output"], {"vars": lingering})
+    unchanged = example() | {"good": example()["bad"]}
+    response = await adapter.call_api("", {}, {"vars": unchanged})
+    assert not get_assert(response["output"], {"vars": unchanged})
+    assert get_assert(response["output"], {"vars": unchanged | {"must_change": False}})
