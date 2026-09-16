@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 
 import pytest
 
@@ -85,7 +86,8 @@ def images(tmp_path):
 @pytest.mark.consumer("CTR-04")
 def test_ac_05_1_ac_05_4_ctr04_base_and_none_images(images, tmp_path):
     if images is None:
-        subprocess.run(["bash", str(ROOT / "scripts/test_images.sh")], check=True, timeout=900)
+        subprocess.run(["bash", str(ROOT / "scripts/test_images.sh")], check=True, timeout=900,
+                       env=dict(os.environ, COPYEDITOR_TEST_PYTHON=sys.executable))
         return
     image, label, start = images
     config = json.loads(docker("image", "inspect", image).stdout)[0]["Config"]
@@ -116,7 +118,7 @@ def test_ac_05_1_ac_05_4_ctr04_base_and_none_images(images, tmp_path):
         assert len(logs.stdout.splitlines()) == 1 and json.loads(logs.stdout)["tool"] == "polish_text"
 
 
-@pytest.mark.parametrize("stage", ["build", "test", "cleanup"])
+@pytest.mark.parametrize("stage", ["build", "test", "cleanup", "path"])
 def test_ac_05_1_ac_05_4_ctr04_failed_run_cleanup(tmp_path, stage):
     binaries, temporary, calls = tmp_path / "bin", tmp_path / "temporary", tmp_path / "calls"
     binaries.mkdir()
@@ -127,14 +129,19 @@ def test_ac_05_1_ac_05_4_ctr04_failed_run_cleanup(tmp_path, stage):
         'if [ "$1" = build ] && [ "$STAGE" = build ]; then exit 23; fi\n'
         'if [ "$1" = rm ] && [ "$STAGE" = cleanup ]; then exit 17; fi\n')
     fake.chmod(0o755)
-    python = binaries / "test-python"
-    python.write_text('#!/bin/sh\nif [ "$STAGE" = cleanup ]; then exit 0; fi\nexit 23\n')
+    python = binaries / "python"
+    python.write_text('#!/bin/sh\nif [ "$STAGE" = path ]; then echo path-python >> "$CALLS"; exit 0; fi\n'
+                      'if [ "$STAGE" = cleanup ]; then exit 0; fi\nexit 23\n')
     python.chmod(0o755)
-    result = subprocess.run(["bash", str(ROOT / "scripts/test_images.sh")], capture_output=True, text=True,
-        env=dict(os.environ, PATH=str(binaries) + ":" + os.environ["PATH"], TMPDIR=str(temporary),
-                 CALLS=str(calls), STAGE=stage, COPYEDITOR_TEST_PYTHON=str(python)), timeout=30)
-    assert result.returncode == (1 if stage == "cleanup" else 23)
+    driver = binaries / "test_images.sh"
+    driver.write_text((ROOT / "scripts/test_images.sh").read_text())
+    assert not (tmp_path / ".venv").exists()
+    result = subprocess.run(["bash", str(driver)], capture_output=True, text=True,
+        env=dict({k: v for k, v in os.environ.items() if k != "COPYEDITOR_TEST_PYTHON"}, PATH=str(binaries) + ":" + os.environ["PATH"], TMPDIR=str(temporary),
+                 CALLS=str(calls), STAGE=stage, **({"COPYEDITOR_TEST_PYTHON": str(python)} if stage != "path" else {})), timeout=30)
+    assert result.returncode == (0 if stage == "path" else 1 if stage == "cleanup" else 23)
     commands = calls.read_text().splitlines()
+    if stage == "path": assert "path-python" in commands
     assert "rm -f owned-container" in commands and "image rm -f owned-image" in commands
     selectors = [line for line in commands if line.startswith(("ps ", "image ls "))]
     assert len(selectors) == 2 and all("--filter label=copyeditor.test=copyeditor-images-" in line for line in selectors)
