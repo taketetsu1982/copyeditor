@@ -1,11 +1,13 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from copyeditor.providers.base import GenerationResult, SourceItem, Usage
-from copyeditor.requests import ValidationError
-from copyeditor.responses import parse_generation
-from .harness import load_cases
+from copyeditor.requests import MESSAGES, ValidationError
+from copyeditor.responses import output_schema, parse_generation
+from .harness import assert_subset, load_cases
 
 pytestmark = pytest.mark.consumer("CTR-01")
 CASES = load_cases(Path(__file__).resolve().parents[2] / "contracts/tools.md", "contract-case")
@@ -103,3 +105,179 @@ def test_ctr01_unicode_space_and_scalar_boundaries():
         rejected({"items": [item(flag={"kind": "unfixable", "reason": reason})]})
     for length in (159, 160):
         assert parse({"items": [item(flag={"kind": "unfixable", "reason": "x"*length})]})[0].flag
+
+
+def complete_subset(base, subset):
+    if isinstance(subset, dict):
+        return {**base, **{k: complete_subset(base.get(k), v) for k, v in subset.items()}}
+    if isinstance(subset, list):
+        return [complete_subset(base[i] if i < len(base) else None, v) for i, v in enumerate(subset)]
+    return deepcopy(subset)
+
+
+def public_fixture(case):
+    expect = case["expect"]
+    lint = case["tool"] == "lint_text"
+    calls = expect.get("model_calls", len(case["provider"]))
+    base = dict(status="ok", schema_version=1, language="en", rules_version="sha256:" + "a"*64, common_version="sha256:" + "b"*64,
+                model=None if lint else "test-model", usage=dict.fromkeys(("input_tokens", "output_tokens", "total_tokens"), None if calls else 0),
+                cost=None, latency_ms=0, model_calls=calls)
+    if expect["status"] == "error":
+        code = expect["error"]["code"]
+        base.update(error=dict(code=code, message=MESSAGES[code], field=None), model_called=calls > 0,
+                    regeneration_attempted=calls > 1)
+    else:
+        base.update(protected_terms_checked=0, preservation=None if lint else {"length_ratio": {"min": 0.5, "max": 2}})
+        result = dict(text="Hello.", flag=None, regenerated=False, protected_terms=[], findings=[], findings_truncated=False)
+        if lint:
+            base.update(findings=[], findings_truncated=False)
+        elif "items" in case["input"]:
+            entries = expect.get("items", case["provider"][0]["items"])
+            base["items"] = [{**deepcopy(result), "id": entry["id"], "text": entry["text"]} for entry in entries]
+            for value, entry in zip(base["items"], entries):
+                if entry.get("flag"):
+                    value["flag"] = dict(kind="rejected", reason="Preservation checks failed.", checks=[])
+        else:
+            base.update(result)
+    return complete_subset(base, expect)
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
+def test_ac_02_2_ctr01_complete_contract_output_shapes(case):
+    schema = output_schema(case["tool"])
+    Draft202012Validator.check_schema(schema)
+    payload = public_fixture(case)
+    assert_subset(payload, case["expect"])
+    Draft202012Validator(schema).validate(payload)
+
+
+@pytest.mark.parametrize("tool", ["polish_text", "lint_text"])
+def test_ac_02_1_ctr01_output_schema_is_an_object_for_mcp_discovery(tool):
+    import mcp_types
+
+    schema = output_schema(tool)
+    assert schema["type"] == "object"
+    listed = mcp_types.Tool(name=tool, inputSchema={"type": "object"}, outputSchema=schema)
+    mcp_types.ListToolsResult(tools=[listed]).model_dump(by_alias=True, mode="json", exclude_none=True)
+
+
+@pytest.mark.parametrize("code", MESSAGES)
+def test_ac_02_4_ctr01_error_schema_fixed_messages_and_fields(code):
+    for tool in ("polish_text", "lint_text"):
+        payload = public_fixture(dict(tool=tool, provider=[], expect={"status": "error", "error": {"code": code}}))
+        validator = Draft202012Validator(output_schema(tool))
+        assert validator.is_valid(payload)
+        assert not validator.is_valid({**payload, "model": "test-model" if tool == "lint_text" else None})
+        for key, value in (("code", "PRIVATE"), ("message", "PRIVATE"), ("field", "items[0].PRIVATE")):
+            bad = deepcopy(payload); bad["error"][key] = value
+            assert not validator.is_valid(bad)
+        for field in ("text", "items[0].text", "items[31].context", "language", None):
+            payload["error"]["field"] = field
+            assert validator.is_valid(payload) == (field is None or code in ("invalid_input", "unsupported_language", "input_limit"))
+        payload["error"]["field"] = None
+
+
+def object_paths(value, path=()):
+    if isinstance(value, dict):
+        yield path
+        for k, v in value.items(): yield from object_paths(v, path + (k,))
+    elif isinstance(value, list):
+        for k, v in enumerate(value): yield from object_paths(v, path + (k,))
+
+
+def at(value, path):
+    for key in path: value = value[key]
+    return value
+
+
+@pytest.mark.parametrize("route", ["text", "items"])
+def test_ctr01_nested_closed_required_and_types(route):
+    payload = public_fixture(CASES[0])
+    payload.update(cost={"amount": "0.000001", "currency": "USD"}, usage=dict.fromkeys(("input_tokens", "output_tokens", "total_tokens"), 0))
+    payload["flag"] = dict(kind="unfixable", reason="Cannot edit.", checks=[])
+    payload["findings"] = [dict(rule_id="en-vocabulary-001", start=0, end=1, matched="H", matched_truncated=False, message="Example.")]
+    route_payload(payload, route)
+    validator = Draft202012Validator(output_schema("polish_text"))
+    assert validator.is_valid(payload)
+    for path in object_paths(payload):
+        for key in (*at(payload, path), "PRIVATE"):
+            bad = deepcopy(payload); target = at(bad, path)
+            if key == "PRIVATE": target[key] = 1
+            else: del target[key]
+            assert not validator.is_valid(bad), (path, key)
+        for key, value in at(payload, path).items():
+            for wrong in (None, {}, [], True, 42, "PRIVATE\ud800"):
+                if type(wrong) is type(value) or type(value) is float and type(wrong) is int or wrong is None and key in ("model", "cost", "flag", "input_tokens", "output_tokens", "total_tokens"): continue
+                bad = deepcopy(payload); at(bad, path)[key] = wrong
+                assert not validator.is_valid(bad), (path, key, wrong)
+    for key, wrong in (("text", " \u3000"), ("text", "x"*16001), ("regenerated", None), ("items", [])):
+        bad = deepcopy(payload)
+        target = bad["items"][0] if route == "items" and key != "items" else bad
+        target[key] = wrong
+        assert not validator.is_valid(bad)
+    assert not Draft202012Validator(output_schema("lint_text")).is_valid(payload)
+    with pytest.raises(ValidationError): output_schema("unknown")
+
+
+@pytest.mark.parametrize("route", ["text", "items"])
+@pytest.mark.parametrize("change", [
+    {"flag": {"kind": "rejected", "reason": "Preservation checks failed.", "checks": []}},
+    {"flag": {"kind": "rejected", "reason": "PRIVATE", "checks": ["numbers"]}},
+    {"flag": {"kind": "unfixable", "reason": "x", "checks": ["numbers"]}},
+    {"flag": {"kind": "unfixable", "reason": "x"*161, "checks": []}},
+    {"cost": {"amount": "1.0", "currency": "USD"}}, {"cost": {"amount": "0.000000", "currency": "usd"}},
+    {"text": "\ud800"}, {"language": "en\n"}, {"schema_version": True}, {"model_calls": 3}, {"model": None},
+    {"usage": {"input_tokens": -1, "output_tokens": 0, "total_tokens": 0}},
+    {"preservation": {"length_ratio": {"min": 0, "max": 2}}}])
+def test_ctr01_schema_constraints(change, route):
+    payload = public_fixture(CASES[0]); route_payload(payload, route)
+    validator = Draft202012Validator(output_schema("polish_text"))
+    assert validator.is_valid(payload)
+    target = payload["items"][0] if route == "items" and set(change) <= {"text", "flag"} else payload
+    target.update(change)
+    assert not validator.is_valid(payload)
+
+
+def test_ctr01_error_closed_and_lint_constants():
+    error = public_fixture(CASES[1])
+    validator = Draft202012Validator(output_schema("polish_text"))
+    for key in error["error"]:
+        bad = deepcopy(error); del bad["error"][key]
+        assert not validator.is_valid(bad)
+    assert not validator.is_valid({**error, "error": {**error["error"], "PRIVATE": 0}})
+    lint = public_fixture(next(c for c in CASES if c["tool"] == "lint_text"))
+    for key, value in (("model", "x"), ("model_calls", 1), ("protected_terms_checked", 1), ("preservation", {})):
+        assert not Draft202012Validator(output_schema("lint_text")).is_valid({**lint, key: value})
+
+
+def route_payload(payload, route):
+    if route == "items":
+        keys = ("text", "flag", "regenerated", "protected_terms", "findings", "findings_truncated")
+        payload["items"] = [{"id": "a", **{key: payload.pop(key) for key in keys}}]
+
+
+@pytest.mark.parametrize("route", ["text", "items", "lint", "polish_error", "lint_error"])
+def test_ctr01_static_versions_findings_and_terms(route):
+    tool = "lint_text" if route.startswith("lint") else "polish_text"
+    case = dict(tool=tool, input={}, provider=[], expect={"status": "error", "error": {"code": "invalid_input"}} if route.endswith("error") else {"status": "ok"})
+    payload = public_fixture(case); route_payload(payload, route)
+    validator = Draft202012Validator(output_schema(tool))
+    assert validator.is_valid(payload)
+    for key in ("rules_version", "common_version"):
+        for value in ("1", "", "sha256:" + "A"*64, "sha256:" + "a"*63):
+            assert not validator.is_valid({**payload, key: value})
+    if route.endswith("error"): return
+    target = payload["items"][0] if route == "items" else payload
+    finding = dict(rule_id="en-vocabulary-001", start=0, end=1, matched="H", matched_truncated=False, message="x"*160)
+    target["findings"] = [finding]
+    assert validator.is_valid(payload)
+    for key, value in (("rule_id", ""), ("rule_id", "en-test"), ("message", " "*161), ("message", " "), ("message", "x"*161)):
+        target["findings"] = [{**finding, key: value}]
+        assert not validator.is_valid(payload)
+    target["findings"] = [finding]
+    if route == "lint": return
+    target["protected_terms"] = ["x"*128, *[str(i) for i in range(2047)]]
+    assert validator.is_valid(payload)
+    for terms in (["", ""], ["x", "x"], [" "], ["x"*129], [str(i) for i in range(2049)]):
+        target["protected_terms"] = terms
+        assert not validator.is_valid(payload)
