@@ -5,6 +5,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import NamedTuple
 from .config import ConfigError, array, freeze, matches, nonblank, strict_yaml
+from .lint import compile_rule
 
 HEADINGS = ("Vocabulary", "Syntax", "Structure", "Translation artifacts", "Context weights", "Machine-readable rules")
 CATEGORIES = ("vocabulary", "syntax", "structure", "translation", "context")
@@ -100,11 +101,11 @@ def parse(raw, language, overlay):
     return prose, data["protected_terms"], data["rules"], anchors
 def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"), config_terms=()):
     try:
-        base, overlay = Path(base), Path(overlay)
-        require(not base.is_symlink() and not overlay.is_symlink())
+        base, overlay = Path(base), Path(overlay) if overlay is not None else None
+        require(not base.is_symlink() and (overlay is None or not overlay.is_symlink()))
         documents, manifest = {}, []
         for root, prefix in ((base, "base"), (overlay, "overlay")):
-            if prefix == "overlay" and not root.exists():
+            if root is None or (prefix == "overlay" and not root.exists()):
                 continue
             for path in sorted(root.iterdir()):
                 require(not path.is_symlink() and path.is_file())
@@ -135,7 +136,7 @@ def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"),
             terms = tuple(sorted(set(terms) | set(config_terms)))
             require(len(terms) <= 2048)
             prose = "\n\n".join("## " + HEADINGS[i] + "\n" + "\n".join(p[i] for p, _, _, _ in parts) for i in range(5))
-            languages[language] = LanguageRules(prose, terms, tuple(freeze(r) for r in rules))
+            languages[language] = LanguageRules(prose, terms, tuple(freeze(compile_rule(r)) for r in rules))
         version = hashlib.sha256(json.dumps(sorted(manifest), ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
         return RuleSnapshot(common, "sha256:" + hashlib.sha256(common).hexdigest(), "sha256:" + version, MappingProxyType(languages))
     except Exception:
