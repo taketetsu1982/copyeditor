@@ -29,7 +29,7 @@ FIELDS = {"timestamp", "user", "tool", "language", "rules_version", "model", "us
 def setup(tmp_path, capsys, caplog):
     disabled = logging.root.manager.disable
     created, records = [], []
-    def make(mode="none", flag=None, asynchronous=False):
+    def make(mode="none", flag=None, asynchronous=False, candidate=None):
         env = {"GOOGLE_CLOUD_PROJECT": "test", "COPYEDITOR_DEFAULT_LANGUAGE": "en"}
         if mode == "google":
             env.update(COPYEDITOR_AUTH_MODE="google", GOOGLE_OAUTH_CLIENT_ID="client", BASE_URL="https://service.example",
@@ -41,6 +41,8 @@ def setup(tmp_path, capsys, caplog):
             async def generate(self, value):
                 items = [dict(id=i.id, text=i.text if flag != "reject" else i.text.replace("10", "11"),
                               flag=dict(kind="unfixable", reason="Cannot edit.") if flag == "unfixable" else None) for i in value.items]
+                if candidate is not None:
+                    items = [dict(item, text=candidate) for item in items]
                 return GenerationResult(json.dumps({"items": items}), "stop", Usage(1, 2, 3))
         def factory():
             created.append(True)
@@ -196,8 +198,8 @@ def tcp_server(setup):
     from pydantic import AnyHttpUrl
     make, created, records = setup
     @asynccontextmanager
-    async def start(authenticated):
-        server, config, snapshot = make("google" if authenticated else "none")
+    async def start(authenticated, candidate=None):
+        server, config, snapshot = make("google" if authenticated else "none", candidate=candidate)
         if authenticated:
             server.auth = StaticTokenVerifier(tokens={"tcp-token": {"client_id": "test", "scopes": [], "sub": MARKER}})
             server.auth.resource_base_url = AnyHttpUrl("https://service.example")
@@ -307,3 +309,64 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_tcp_acceptance(tcp_se
                 assert MARKER not in response.text + str(response.headers) + json.dumps(records)
         assert len(records) == 14 and len(created) == 1
         assert all(bool(r["user"]) == authenticated for r in records)
+
+
+def input_boundaries():
+    yield "items", {"items": [{"id": "a", "text": "Hello."}]}, "en", None
+    yield "both", {"text": "Hello.", "items": [{"id": "a", "text": "Hello."}]}, "en", "invalid_input"
+    yield "neither", {}, "en", "invalid_input"
+    yield "explicit", {"text": "Hello.", "language": "ja"}, "ja", None
+    yield "unsupported", {"text": "Hello.", "language": "zz"}, None, "unsupported_language"
+    for offset in (-1, 0, 1):
+        error = "input_limit" if offset > 0 else None
+        yield f"items-{offset}", {"items": [{"id": f"i{i}", "text": "Hello."} for i in range(32 + offset)]}, "en", error
+        yield f"body-{offset}", {"text": "x" * (12000 + offset)}, "en", error
+        background = {k: "b" * (1000 + (offset if k == "message" else 0)) for k in ("audience", "purpose", "tone", "message")}
+        yield f"background-{offset}", dict(text="Hello.", **background), "en", error
+        items = [{"id": f"i{i}", "text": "x" * 3000, "context": "c" * 1000} for i in range(3)]
+        items.append({"id": "last", "text": "x" * 3000})
+        items[0]["context"] = "c" * (1000 + min(offset, 0))
+        items[-1]["context"] = "c" * max(offset, 0)
+        yield f"combined-total-{offset}", dict(items=items, audience="b" * 1000), "en", error
+        items = [{"id": f"i{i}", "text": "Hello.", "context": "c" * (1000 + (min(offset, 0) if i == 3 else 0))} for i in range(4)]
+        items.append({"id": "last", "text": "Hello.", "context": "c" * max(offset, 0)})
+        yield f"contexts-{offset}", dict(items=items), "en", error
+
+
+@pytest.mark.asyncio
+@pytest.mark.consumer("CTR-01")
+@pytest.mark.parametrize("case,arguments,language,error", list(input_boundaries()), ids=lambda x: x if type(x) is str else None)
+async def test_ac_02_1_ac_02_5_ac_02_6_ctr01_tcp_input_boundaries(tcp_server, case, arguments, language, error):
+    async with tcp_server(False) as (client, config, snapshot, created, records):
+        response = await client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="polish_text", arguments=arguments)))
+        result = response.json()["result"]
+        payload = result["structuredContent"]
+        validate_final(payload)
+        assert response.status_code == 200 and payload["language"] == language
+        assert result["isError"] == bool(error) and payload.get("error", {}).get("code") == error
+        assert payload["model_calls"] == len(created) == (0 if error else 1)
+        if error:
+            assert payload["model_called"] is False
+        else:
+            assert payload["status"] == "ok"
+            if "items" in arguments:
+                assert [item["id"] for item in payload["items"]] == [item["id"] for item in arguments["items"]]
+        assert len(records) == 1 and records[0]["language"] == language and records[0]["error_code"] == error
+        assert records[0]["model_calls"] == payload["model_calls"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["text", "items"])
+async def test_ac_02_8_ctr01_tcp_success_never_logs_private_text(tcp_server, capsys, caplog, route):
+    body, context, background, candidate = (MARKER + suffix for suffix in ("_BODY", "_CONTEXT", "_BACKGROUND", "_CANDIDATE"))
+    arguments = {"text": body} if route == "text" else {"items": [{"id": "a", "text": body, "context": context}]}
+    arguments.update({key: background + key for key in ("audience", "purpose", "tone", "message")})
+    async with tcp_server(False, candidate=candidate) as (client, _, _, created, records):
+        response = await client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="polish_text", arguments=arguments)))
+        payload = response.json()["result"]["structuredContent"]
+        item = payload if route == "text" else payload["items"][0]
+        assert payload["status"] == "ok" and item["flag"] is None and item["text"] == candidate
+        assert len(created) == len(records) == 1
+        assert MARKER not in str(response.headers) + json.dumps(records)
+    captured = repr(capsys.readouterr()) + repr(caplog.records)
+    assert all(secret not in captured for secret in (body, context, background, candidate))
