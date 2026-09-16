@@ -1,0 +1,109 @@
+name: Publish image
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+  gate:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      commit: ${{ steps.gate.outputs.commit }}
+      image: ${{ steps.gate.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: gate
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COPYEDITOR_OWNER: ${{ vars.COPYEDITOR_OWNER }}
+          COPYEDITOR_NATIVE_PR: ${{ vars.COPYEDITOR_NATIVE_PR }}
+          COPYEDITOR_PROVENANCE_PR: ${{ vars.COPYEDITOR_PROVENANCE_PR }}
+        run: |
+          import os, re, subprocess
+          env = os.environ
+          tag = env['GITHUB_REF_NAME']
+          assert env['GITHUB_EVENT_NAME'] == 'push' and env['GITHUB_REF_TYPE'] == 'tag'
+          assert re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
+          assert tuple(map(int, tag[1:].split('.'))) >= (0, 1, 0)
+          owner = env['GITHUB_REPOSITORY_OWNER'].lower()
+          assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,38}', owner)
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD^{commit}'], text=True).strip()
+          assert re.fullmatch(r'[0-9a-f]{40}', commit)
+          subprocess.run(['python', 'scripts/check_evidence.py', 'publish-gate',
+              '--native-pr', env['COPYEDITOR_NATIVE_PR'], '--provenance-pr', env['COPYEDITOR_PROVENANCE_PR'],
+              '--owner', env['COPYEDITOR_OWNER'], '--commit', commit], check=True)
+          with open(env['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'commit={commit}\nimage=ghcr.io/{owner}/copyeditor:{tag}\n')
+  publish:
+    needs: [checks, gate]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.checks.result == 'success' && needs.gate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and publish only an absent tag
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.gate.outputs.image }}
+        run: |
+          import base64, json, os, subprocess, tempfile
+          from urllib.error import HTTPError
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          env = os.environ
+          image = env['IMAGE']
+          repository, tag = image.removeprefix('ghcr.io/').split(':')
+          try:
+              subprocess.run(['docker', 'build', '--label', 'org.opencontainers.image.source=https://github.com/' +
+                  env['GITHUB_REPOSITORY'], '-t', image, '.'], check=True)
+              with tempfile.TemporaryDirectory() as config:
+                  docker = ['docker', '--config', config]
+                  subprocess.run(docker + ['login', 'ghcr.io', '-u', env['GITHUB_ACTOR'], '--password-stdin'],
+                                 input=env['GH_TOKEN'], text=True, capture_output=True, check=True)
+                  basic = base64.b64encode((env['GITHUB_ACTOR'] + ':' + env['GH_TOKEN']).encode()).decode()
+                  query = urlencode({'service': 'ghcr.io', 'scope': 'repository:' + repository + ':pull'})
+                  with urlopen(Request('https://ghcr.io/token?' + query,
+                                      headers={'Authorization': 'Basic ' + basic}), timeout=30) as response:
+                      token = json.load(response)['token']
+                  if not isinstance(token, str) or not token: raise ValueError('Invalid token')
+                  request = Request(f'https://ghcr.io/v2/{repository}/manifests/{tag}', headers={
+                      'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.oci.image.manifest.v1+json, '
+                      'application/vnd.docker.distribution.manifest.v2+json'})
+                  try:
+                      with urlopen(request, timeout=30): pass
+                  except HTTPError as error:
+                      with error:
+                          errors = json.load(error)['errors']
+                      if error.code != 404 or not errors or any(
+                          item['code'] not in ('MANIFEST_UNKNOWN', 'NAME_UNKNOWN') for item in errors): raise
+                  else:
+                      raise ValueError('Tag already exists')
+                  # Only an explicit registry absence permits push; transport errors never do.
+                  subprocess.run(docker + ['push', image], check=True)
+          except Exception:
+              raise SystemExit('Publication failed or tag absence could not be established.') from None
