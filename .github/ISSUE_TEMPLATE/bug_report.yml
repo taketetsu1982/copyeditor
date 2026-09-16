@@ -1,0 +1,50 @@
+name: Bug report
+description: Something behaves differently from what the README or the tool contract says.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste confidential text. If the bug needs an input to reproduce, replace the words
+        with placeholder text that shows the same structure (numbers, URLs, protected terms, markup).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Tag or commit of copyeditor, and how you run it (Docker image, local).
+      placeholder: v0.1.0 (ghcr.io image)
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where does it happen?
+      options:
+        - MCP server (polish_text / lint_text)
+        - Agent skill (Claude Code / Codex)
+        - Language rules or examples
+        - Docker image or configuration
+        - Authentication (google-workspace)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The request you sent (with placeholder text), the config values that matter, and the client you used.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the error, flag, or finding you got. Server logs never contain text, so they are safe to paste.
+    validations:
+      required: true
