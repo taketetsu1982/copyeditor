@@ -6,7 +6,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from copyeditor.providers.base import GenerationResult, SourceItem, Usage
 from copyeditor.requests import MESSAGES, ValidationError
-from copyeditor.responses import output_schema, parse_generation
+from copyeditor.responses import output_schema, parse_generation, validate_final
 from .harness import assert_subset, load_cases
 
 pytestmark = pytest.mark.consumer("CTR-01")
@@ -281,3 +281,123 @@ def test_ctr01_static_versions_findings_and_terms(route):
     for terms in (["", ""], ["x", "x"], [" "], ["x"*129], [str(i) for i in range(2049)]):
         target["protected_terms"] = terms
         assert not validator.is_valid(payload)
+
+
+def final_rejected(payload, code="invalid_response"):
+    with pytest.raises(ValidationError) as caught:
+        validate_final(payload)
+    assert caught.value.code == code and caught.value.field is None
+    assert caught.value.__context__ is None and set(vars(caught.value)) == {"code", "field"}
+    assert str(caught.value) == MESSAGES[code]
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
+def test_ctr01_final_contract_fixtures(case):
+    payload = public_fixture(case)
+    before = deepcopy(payload)
+    validate_final(payload)
+    assert payload == before
+
+
+@pytest.mark.parametrize("route", ["text", "items"])
+@pytest.mark.parametrize("length", [15999, 16000, 16001])
+def test_ac_02_2_ctr01_final_body_and_merged_limits(route, length):
+    payload = public_fixture(CASES[0]); route_payload(payload, route)
+    if route == "text": payload["text"] = "𠮷"*length
+    else:
+        second = {**deepcopy(payload["items"][0]), "id": "b", "text": "x"*(length-8000)}
+        payload["items"][0]["text"] = "x"*8000
+        payload["items"].append(second)
+    if length > 16000: final_rejected(payload, "output_limit")
+    else: validate_final(payload)
+
+
+def test_ac_02_4_ctr01_final_integrity_precedes_limits(capsys):
+    payload = public_fixture(CASES[0]); route_payload(payload, "items")
+    payload["items"][0]["text"] = "PRIVATE"*16001
+    for change in ({"text": " \u3000"}, {"text": "\ud800"}, {"text": None}, {"flag": {}}, {"regenerated": 0}):
+        second = {**deepcopy(payload["items"][0]), "id": "b", **change}
+        for items in ([payload["items"][0], second], [second, payload["items"][0]]):
+            final_rejected({**payload, "items": items})
+    final_rejected({**payload, "items": [payload["items"][0]]*2})
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize("delta", [-1, 0, 1])
+def test_ctr01_final_compact_utf8_payload_boundary(delta):
+    payload = public_fixture(CASES[0])
+    payload["model"] = "日"
+    size = lambda: len(json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8"))
+    payload["model"] += "a"*(1048576 + delta - size())
+    assert size() == 1048576 + delta
+    if delta > 0: final_rejected(payload, "output_limit")
+    else: validate_final(payload)
+
+
+@pytest.mark.parametrize("path,value", [
+    (("schema_version",), 1.0), (("model_calls",), True), (("latency_ms",), 0.0),
+    (("usage", "input_tokens"), 0.0), (("usage", "total_tokens"), True),
+    (("preservation", "length_ratio", "min"), float("nan")),
+    (("preservation", "length_ratio", "max"), float("inf")),
+    (("preservation", "length_ratio", "min"), float("-inf")),
+    (("model",), "PRIVATE\udfff"), (("findings",), ()), (("protected_terms_checked",), 1),
+    (("regenerated",), True), (("model_calls",), 0),
+    (("cost",), {"amount": "0.000001", "currency": "USD"})])
+def test_ctr01_final_strict_types_and_metadata(path, value):
+    payload = public_fixture(CASES[0]); at(payload, path[:-1])[path[-1]] = value
+    final_rejected(payload)
+
+
+def test_ctr01_final_error_and_finding_consistency():
+    error = public_fixture(CASES[1])
+    for change in ({"model_called": True}, {"regeneration_attempted": True}, {"model_calls": 1}, {"usage": dict.fromkeys(error["usage"], None)}):
+        final_rejected({**error, **change})
+    payload = public_fixture(CASES[0])
+    finding = dict(rule_id="en-vocabulary-001", start=0, end=1, matched="H", matched_truncated=False, message="Example.")
+    payload["findings"] = [finding]
+    validate_final(payload)
+    for change in ({"start": 1}, {"end": 99}, {"matched": "x"}, {"matched_truncated": True}, {"start": 0.0}):
+        final_rejected({**payload, "findings": [{**finding, **change}]})
+    cyclic = {}; cyclic["PRIVATE"] = cyclic
+    final_rejected(cyclic)
+
+
+def test_ctr01_final_metadata_order_and_valid_optional_values():
+    payload = public_fixture(CASES[0])
+    payload.update(usage=dict(input_tokens=1, output_tokens=2, total_tokens=None), cost=dict(amount="0.000001", currency="USD"),
+                   protected_terms=["Hello", "𠮷"], protected_terms_checked=2)
+    validate_final(payload)
+    for change in ({"protected_terms": ["𠮷", "Hello"]}, {"findings_truncated": True}, {"latency_ms": 10**5000}):
+        final_rejected({**payload, **change})
+    payload["text"] = "𠮷"*161
+    finding = dict(rule_id="en-vocabulary-001", start=0, end=161, matched="𠮷"*160, matched_truncated=True, message="Example.")
+    payload["findings"] = [finding]
+    validate_final(payload)
+    for findings in ([finding, finding], [{**finding, "rule_id": "ja-vocabulary-001"}]):
+        final_rejected({**payload, "findings": findings})
+    payload.update(findings=[], model_calls=2, regenerated=True,
+                   flag=dict(kind="rejected", reason="Preservation checks failed.", checks=["numbers", "urls"]))
+    validate_final(payload)
+    final_rejected({**payload, "flag": {**payload["flag"], "checks": ["urls", "numbers"]}})
+    final_rejected({**payload, "regenerated": False})
+
+
+@pytest.mark.parametrize("language,rule,accepted", [("en", "en-us-vocabulary-001", False), ("zh", "zh-hans-context-001", False), ("en-us", "en-us-vocabulary-001", True)])
+def test_ctr01_final_finding_language_exact_match(language, rule, accepted):
+    payload = public_fixture(CASES[0]); payload["language"] = language
+    payload["findings"] = [dict(rule_id=rule, start=0, end=1, matched="H", matched_truncated=False, message="Example.")]
+    if accepted: validate_final(payload)
+    else: final_rejected(payload)
+
+
+@pytest.mark.parametrize("route", ["error", "text", "items"])
+@pytest.mark.parametrize("calls", [0, 1, 2])
+@pytest.mark.parametrize("attempted", [False, True])
+def test_ctr01_final_regeneration_matches_call_count(route, calls, attempted):
+    case = dict(tool="polish_text", provider=[], expect={"status": "error", "error": {"code": "provider_error"}}) if route == "error" else CASES[0]
+    payload = public_fixture(case); route_payload(payload, route)
+    payload.update(model_calls=calls, usage=dict.fromkeys(Usage._fields, 0))
+    if route == "error": payload.update(model_called=calls > 0, regeneration_attempted=attempted)
+    else: (payload["items"][0] if route == "items" else payload)["regenerated"] = attempted
+    if attempted == (calls == 2) and (route == "error" or calls > 0): validate_final(payload)
+    else: final_rejected(payload)
