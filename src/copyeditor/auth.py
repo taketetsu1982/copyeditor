@@ -77,7 +77,12 @@ class IdentityVerifier(GoogleTokenVerifier):
 
 
 class CopyeditorOAuthProxy(OAuthProxy):
-    pass
+    def get_routes(self, mcp_path=None):
+        from copyeditor.auth_boundary import wrap_auth_app
+        routes = super().get_routes(mcp_path)
+        for route in routes:
+            route.app = wrap_auth_app(route.app)
+        return routes
 
 
 def make_auth(config):
