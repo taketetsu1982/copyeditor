@@ -5,7 +5,12 @@
 !.gitattributes
 !.dockerignore
 !.github/
+# Plugin distribution files (Claude Code and Codex read these from the checkout; see the spec's
+# plugin layout): manifests, marketplace registrations, and the MCP connection config.
 !.claude-plugin/
+!.codex-plugin/
+!.agents/
+!.mcp.json
 
 # Internal planning docs (product / design / spec / plan). Written in Japanese and versioned in the
 # private internal repo, not here. Public-facing rationale lives in README and CONTRIBUTING.
