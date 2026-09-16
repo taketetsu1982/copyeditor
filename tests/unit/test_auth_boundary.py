@@ -56,7 +56,7 @@ async def test_ctr04_error_redirect_keeps_sdk_destination_state_and_issuer(code)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("url", ["/relative?error=x", "https://[broken?error=x", "https://c/?error=x&error=y",
     "https://c/?error=x%ZZ", "https://c/?error=x#fragment", "https://u:p@c/?error=x", "https://c/\r?error=x",
-    "javascript:alert(1)?error=x", "data:text/html,test?error=x", "https://c:invalid/?error=x"])
+    "javascript:alert(1)?error=x", "data:text/html,test?error=x", "https://c:invalid/?error=x", "https://c/?cursor=%FF"])
 async def test_ac_05_3_invalid_redirect_closes_locally(url):
     result = await run_response(302, [(b"location", url.encode())])
     assert result[0]["status"] == 500 and b"location" not in dict(result[0]["headers"])
@@ -65,6 +65,7 @@ async def test_ac_05_3_invalid_redirect_closes_locally(url):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status,target", [(200, None), (200, b"/created"),
+    (200, b"/created?cursor=%FF"), (200, b"https://c/created?cursor=%FF"),
     (200, b"https://c/?code=code&state=saved&code_challenge=pkce&code_challenge_method=S256"),
     (302, b"https://c/?code=code&state=saved&code_challenge=pkce&code_challenge_method=S256")])
 async def test_ctr04_success_stream_and_redirect_are_unchanged(status, target):
@@ -102,8 +103,9 @@ async def test_ctr04_non_http_scope_is_delegated():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [200, 201, 400, 500])
-async def test_ac_05_3_error_location_outside_redirect_closes_locally(status):
-    headers = [(b"location", f"https://c/?error=access_denied&error_description={MARKER}".encode()),
+@pytest.mark.parametrize("error_query", ["error=access_denied", "error=", "error", "%65rror=&cursor=%FF"])
+async def test_ac_05_3_error_location_outside_redirect_closes_locally(status, error_query):
+    headers = [(b"location", f"https://c/?{error_query}&error_description={MARKER}".encode()),
                (b"x-detail", MARKER.encode())]
     result = await run_response(status, headers)
     assert result[0]["status"] == 500 and MARKER not in repr(result)

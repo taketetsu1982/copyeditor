@@ -1,7 +1,7 @@
 import logging
 import json
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote_plus, urlencode, urlsplit, urlunsplit
 
 
 def disable_library_logging():
@@ -15,10 +15,13 @@ JSON_ERRORS = REDIRECT_ERRORS | {"invalid_client", "invalid_grant", "unsupported
 
 def error_location(value, require_valid=True):
     url = urlsplit(value)
+    if not require_valid:
+        # Unrelated cursor values need not be UTF-8 to pass through unchanged.
+        if any(unquote_plus(part.partition("=")[0]) == "error" for part in url.query.split("&")):
+            raise ValueError()
+        return None
     query = parse_qsl(url.query, keep_blank_values=True, errors="strict")
     errors = [v for k, v in query if k == "error"]
-    if not errors and not require_valid:
-        return None
     if any(ord(c) <= 32 or ord(c) >= 127 for c in value) or re.search(r"%(?![0-9a-fA-F]{2})", value):
         raise ValueError()
     if not url.scheme or url.scheme in ("javascript", "data", "vbscript") or url.fragment or url.username or url.password or "\\" in value:
