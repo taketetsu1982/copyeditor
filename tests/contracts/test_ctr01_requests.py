@@ -120,3 +120,12 @@ def test_ctr01_total_budget_and_size_precedence(settings, delta):
     else: assert parse(settings, value).items
     fail(settings, {"items": [{"id": "a", "text": "x"*6001, "context": "x"*1001},
                              {"id": "b", "text": "x"*6000}]}, "input_limit", "items")
+
+
+def test_ctr01_all_fixed_errors_match_contract():
+    rows = [line.split("|") for line in (ROOT / "contracts/tools.md").read_text().splitlines() if line.startswith("| `")]
+    for row in rows:
+        code, message = row[1].strip().strip("`"), row[2].strip().strip("`")
+        error = ValidationError(code, None)
+        assert str(error) == message and vars(error) == {"code": code, "field": None}
+    with pytest.raises(ValueError, match="^$"): ValidationError("unknown")

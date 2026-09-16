@@ -8,11 +8,20 @@ ID = r"[A-Za-z0-9_-]{1,64}"
 LANGUAGE = r"[a-z]{2,3}(-[a-z0-9]{2,8})*"
 MESSAGES = {"invalid_input": "Invalid tool arguments.",
             "unsupported_language": "Language is not installed; the model was not called.",
-            "input_limit": "Input limits exceeded; the model was not called."}
+            "input_limit": "Input limits exceeded; the model was not called.",
+            "generation_truncated": "Generation was truncated; preserve the original.",
+            "invalid_response": "Model response is incomplete or invalid; preserve the original.",
+            "output_limit": "Output limits exceeded; preserve the original.",
+            "html_structure": "HTML structure changed; preserve the original.",
+            "provider_timeout": "The model request timed out; preserve the original.",
+            "provider_error": "The model request failed; preserve the original.",
+            "internal_error": "Processing failed; preserve the original."}
 
 
 class ValidationError(ValueError):
     def __init__(self, code="invalid_input", field=None):
+        if type(code) is not str or code not in MESSAGES:
+            raise ValueError()
         self.code, self.field = code, field
         super().__init__(MESSAGES[code])
 
