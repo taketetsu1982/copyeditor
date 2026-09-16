@@ -1,0 +1,9 @@
+id: context
+language: en
+section: context
+bad: "Please check your application details before submitting."
+good: "Please check your application details before submitting."
+reason: "A courteous instruction suits a public form, so the original is retained."
+lint: null
+must_change: false
+background: {audience: Applicants, purpose: Check before submitting, tone: Courteous}

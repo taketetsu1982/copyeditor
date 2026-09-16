@@ -1,0 +1,7 @@
+id: translation
+language: en
+section: translation
+bad: "This page serves the purpose of displaying the status of your request."
+good: "This page displays the status of your request."
+reason: "The direct verb states the same function without the roundabout purpose phrase."
+lint: null

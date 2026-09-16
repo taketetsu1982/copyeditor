@@ -1,0 +1,7 @@
+id: vocabulary
+language: zh
+section: vocabulary
+bad: "您可以在列表中对已归档的申请进行查看。"
+good: "您可以在列表中查看已归档的申请。"
+reason: "The direct verb retains the available action and the archived status of the requests."
+lint: {rule_ids: [zh-vocabulary-001]}

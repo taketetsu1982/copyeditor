@@ -1,0 +1,8 @@
+id: structure
+language: zh
+section: structure
+bad: "<p>提交后无法修改申请内容。请在提交前核对信息。</p>"
+good: "<p>请在提交前核对信息。提交后无法修改申请内容。</p>"
+reason: "The instruction is easier to find without removing the warning."
+lint: null
+format: html
