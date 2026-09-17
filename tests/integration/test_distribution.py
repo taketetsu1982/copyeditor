@@ -22,7 +22,9 @@ DIGEST = "sha256:" + "c" * 64
 
 def test_ac_05_7_ctr04_distribution_permissions_and_order():
     assert PUBLISH["on"] == {"push": {"tags": ["v*"]}}
-    assert "workflow_call" in CI["on"] and CI["permissions"] == {"contents": "read"}
+    assert set(CI["on"]) == {"push", "pull_request", "workflow_call"}
+    assert CI["on"]["push"] == {"branches": ["main"]}
+    assert CI["permissions"] == {"contents": "read"}
     assert PUBLISH["permissions"] == {"contents": "read"}
     assert PUBLISH["concurrency"] == {"group": "publish-${{ github.repository }}-${{ github.ref }}", "cancel-in-progress": False}
     jobs = PUBLISH["jobs"]
