@@ -82,7 +82,7 @@ Before login, configure every reverse proxy/load balancer to omit query strings 
 Acknowledgements: natural-japanese (coji/natural-japanese) informed this project's approach.
 Before publication, the owner must confirm that the public rules and examples do not reuse its wording. Its code, including `lint.py`, is not incorporated.
 
-The owner records approval in one PR comment with a `copyeditor-provenance-v1` fenced JSON block: `head` (current PR commit SHA), `comparison_revision` (the reviewed coji/natural-japanese commit SHA), `non_reuse` (`confirmed`), and `blobs` (every public `rules/` and `examples/` file path mapped to its Git blob SHA). Both SHAs must be full 40-character commit IDs. Run `python scripts/check_evidence.py provenance --pr <number> --owner <login>` before publication; changed assets require a new review. This verifies recorded evidence, not originality automatically.
+The owner records approval in one PR comment with a `copyeditor-provenance-v1` fenced JSON block: `head` (current PR commit SHA), `comparison_revision` (the reviewed coji/natural-japanese commit SHA), `non_reuse` (`confirmed`), and `blobs` (every public `rules/` and `examples/` file path mapped to its Git blob SHA). Both SHAs must be full 40-character commit IDs. Before publication, leave this one PR comment and run `python scripts/check_evidence.py provenance --pr <number> --owner <login>` once at that time to validate it. The publication workflow and `release` acceptance do not check provenance. This verifies recorded evidence, not originality automatically.
 
 ## 日本語
 
@@ -169,4 +169,4 @@ login前に、すべてのreverse proxy / load balancerのrequest logからquery
 謝辞: natural-japanese（coji/natural-japanese）を本プロジェクトの方針の参考にしました。
 公開前に、公開するrulesとexamplesへ文言を流用していないことを所有者が確認します。`lint.py`を含むコードは取り込んでいません。
 
-所有者はPRコメント1件の `copyeditor-provenance-v1` JSONコードブロックに、`head`（現在のPR commit SHA）、`comparison_revision`（確認したcoji/natural-japaneseのcommit SHA）、`non_reuse`（`confirmed`）、`blobs`（公開する `rules/` と `examples/` の全ファイルパスとGit blob SHAの対応）を記録します。両commit SHAは40文字の完全なIDです。公開前に `python scripts/check_evidence.py provenance --pr <number> --owner <login>` を実行し、資産変更時は再確認します。記録された証拠の検査であり、独自性を自動判定するものではありません。
+所有者はPRコメント1件の `copyeditor-provenance-v1` JSONコードブロックに、`head`（現在のPR commit SHA）、`comparison_revision`（確認したcoji/natural-japaneseのcommit SHA）、`non_reuse`（`confirmed`）、`blobs`（公開する `rules/` と `examples/` の全ファイルパスとGit blob SHAの対応）を記録します。両commit SHAは40文字の完全なIDです。公開前にこのPRコメントを1件残し、その時点で `python scripts/check_evidence.py provenance --pr <number> --owner <login>` を1度実行して整合を確認します。公開workflowと最終受入の `release` はprovenanceを検査しません。記録された証拠の検査であり、独自性を自動判定するものではありません。

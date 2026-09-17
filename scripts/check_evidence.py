@@ -174,22 +174,18 @@ def publication_assets(commit):
     return assets
 
 
-def check_publication(native_pr, provenance_pr, owner, commit, published_at=None):
-    endpoints = [f"repos/{{owner}}/{{repo}}/pulls/{pr}" for pr in (native_pr, provenance_pr)]
-    heads = [gh_json(endpoint)["head"]["sha"] for endpoint in endpoints]
-    if not all(re.fullmatch(SHA, head) for head in heads):
+def check_publication(native_pr, owner, commit):
+    endpoint = f"repos/{{owner}}/{{repo}}/pulls/{native_pr}"
+    head = gh_json(endpoint)["head"]["sha"]
+    if not re.fullmatch(SHA, head):
         raise ValueError("Invalid head")
-    if check_native(native_pr, owner) or check_provenance(provenance_pr, owner, published_at):
+    if check_native(native_pr, owner):
         return "Owner approval is missing or invalid."
-    target = publication_assets(commit)
-    for native, head in ((True, heads[0]), (False, heads[1])):
-        approved_assets = publication_assets(head)
-        def scope(assets):
-            return {p: h for p, h in assets.items()
-                    if not native or p == "rules/ja.md" or p.startswith("examples/ja/")}
-        if scope(approved_assets) != scope(target):
-            return "Publication assets differ from approved assets."
-    if [gh_json(endpoint)["head"]["sha"] for endpoint in endpoints] != heads:
+    def scope(assets):
+        return {p: h for p, h in assets.items() if p == "rules/ja.md" or p.startswith("examples/ja/")}
+    if scope(publication_assets(head)) != scope(publication_assets(commit)):
+        return "Publication assets differ from approved assets."
+    if gh_json(endpoint)["head"]["sha"] != head:
         return "Pull request head changed; retry."
     return None
 
@@ -285,7 +281,7 @@ def check_release(path, owner):
             raise ValueError("Invalid acceptance evidence")
     data = json.loads(Path(path).read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
     fields = {"schema", "owner", "recorded_at", "repository", "run_url", "run_attempt", "commit", "tag", "digest",
-              "native_pr_url", "provenance_pr_url", "checks"}
+              "native_pr_url", "checks"}
     require(type(data) is dict and set(data) == fields)
     require(all(type(data[k]) is str for k in fields - {"run_attempt", "checks"}))
     require(data["schema"] == "copyeditor-acceptance-evidence-v1" and data["owner"] == owner)
@@ -294,18 +290,15 @@ def check_release(path, owner):
     require(type(data["checks"]) is dict and set(data["checks"]) == checks and all(v is True for v in data["checks"].values()))
     run_id, attempt = parse_release_run_url(data["repository"], data["run_url"])
     require(attempt == data["run_attempt"])
-    prs = []
-    for key in ("native_pr_url", "provenance_pr_url"):
-        match = re.fullmatch(r"https://github\.com/" + re.escape(data["repository"]) + r"/pull/([1-9][0-9]*)", data[key])
-        require(match is not None)
-        prs.append(int(match[1]))
+    match = re.fullmatch(r"https://github\.com/" + re.escape(data["repository"]) + r"/pull/([1-9][0-9]*)", data["native_pr_url"])
+    require(match is not None)
     evidence = load_release_evidence(data["repository"], run_id, attempt, data["tag"])
     require(all(data[k] == evidence[k] for k in ("repository", "run_attempt", "commit", "tag", "digest")))
     require(re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", data["recorded_at"]))
     recorded = datetime.fromisoformat(data["recorded_at"].replace("Z", "+00:00"))
     published = datetime.fromisoformat(evidence["published_at"].replace("Z", "+00:00"))
     require(recorded >= published)
-    require(check_publication(*prs, owner, evidence["commit"], published) is None)
+    require(check_publication(int(match[1]), owner, evidence["commit"]) is None)
 
 
 def main(argv=None):
@@ -314,13 +307,12 @@ def main(argv=None):
     parser.add_argument("--evidence")
     parser.add_argument("--pr", type=int)
     parser.add_argument("--native-pr", type=int)
-    parser.add_argument("--provenance-pr", type=int)
     parser.add_argument("--commit")
     parser.add_argument("--owner", required=True)
     args = parser.parse_args(argv)
     if args.command == "release":
         try:
-            if (not args.evidence or any(v is not None for v in (args.pr, args.native_pr, args.provenance_pr, args.commit))
+            if (not args.evidence or any(v is not None for v in (args.pr, args.native_pr, args.commit))
                     or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner)):
                 raise ValueError("Invalid release arguments")
             check_release(args.evidence, args.owner)
@@ -332,15 +324,15 @@ def main(argv=None):
     if args.evidence is not None:
         parser.error("Evidence path requires release.")
     publication = args.command == "publish-gate"
-    prs = [args.native_pr, args.provenance_pr] if publication else [args.pr]
+    prs = [args.native_pr] if publication else [args.pr]
     if publication and (args.pr is not None or not re.fullmatch(SHA, args.commit or "")):
         parser.error("Expected publication PRs and a full commit SHA.")
-    if not publication and any(v is not None for v in (args.native_pr, args.provenance_pr, args.commit)):
+    if not publication and any(v is not None for v in (args.native_pr, args.commit)):
         parser.error("Publication arguments require publish-gate.")
     if any(pr is None or pr < 1 for pr in prs) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner):
         parser.error("Expected a positive PR number and a GitHub login.")
     try:
-        reason = (check_publication(args.native_pr, args.provenance_pr, args.owner, args.commit) if publication
+        reason = (check_publication(args.native_pr, args.owner, args.commit) if publication
                   else (check_native if args.command == "native" else check_provenance)(args.pr, args.owner))
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
         # gh stderr and malformed record contents may contain personal data.

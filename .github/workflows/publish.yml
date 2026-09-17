@@ -33,7 +33,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COPYEDITOR_OWNER: ${{ vars.COPYEDITOR_OWNER }}
           COPYEDITOR_NATIVE_PR: ${{ vars.COPYEDITOR_NATIVE_PR }}
-          COPYEDITOR_PROVENANCE_PR: ${{ vars.COPYEDITOR_PROVENANCE_PR }}
         run: |
           import os, re, subprocess
           env = os.environ
@@ -46,7 +45,7 @@ jobs:
           commit = subprocess.check_output(['git', 'rev-parse', 'HEAD^{commit}'], text=True).strip()
           assert re.fullmatch(r'[0-9a-f]{40}', commit)
           subprocess.run(['python', 'scripts/check_evidence.py', 'publish-gate',
-              '--native-pr', env['COPYEDITOR_NATIVE_PR'], '--provenance-pr', env['COPYEDITOR_PROVENANCE_PR'],
+              '--native-pr', env['COPYEDITOR_NATIVE_PR'],
               '--owner', env['COPYEDITOR_OWNER'], '--commit', commit], check=True)
           with open(env['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'commit={commit}\nimage=ghcr.io/{owner}/copyeditor:{tag}\n')
