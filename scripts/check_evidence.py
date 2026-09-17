@@ -4,6 +4,7 @@ import base64
 from datetime import datetime
 import io
 import json
+from pathlib import Path
 import re
 import stat
 import subprocess
@@ -83,7 +84,7 @@ def unique_fields(pairs):
     return dict(pairs)
 
 
-def check_provenance(pr, owner):
+def check_provenance(pr, owner, published_at=None):
     root = "repos/{owner}/{repo}"
     endpoint = f"{root}/pulls/{pr}"
     pull = gh_json(endpoint)
@@ -133,6 +134,8 @@ def check_provenance(pr, owner):
     if not evidence:
         return "No owner provenance record for the current head."
     latest = max(item[0] for item in evidence)
+    if published_at is not None and latest > published_at:
+        return "Provenance approval must precede publication."
     selected = [item for item in evidence if item[0] == latest]
     if not all(item[1] for item in selected) or len({item[2] for item in selected}) != 1:
         return "Latest owner provenance is incomplete or not confirmed."
@@ -171,12 +174,12 @@ def publication_assets(commit):
     return assets
 
 
-def check_publication(native_pr, provenance_pr, owner, commit):
+def check_publication(native_pr, provenance_pr, owner, commit, published_at=None):
     endpoints = [f"repos/{{owner}}/{{repo}}/pulls/{pr}" for pr in (native_pr, provenance_pr)]
     heads = [gh_json(endpoint)["head"]["sha"] for endpoint in endpoints]
     if not all(re.fullmatch(SHA, head) for head in heads):
         raise ValueError("Invalid head")
-    if check_native(native_pr, owner) or check_provenance(provenance_pr, owner):
+    if check_native(native_pr, owner) or check_provenance(provenance_pr, owner, published_at):
         return "Owner approval is missing or invalid."
     target = publication_assets(commit)
     for native, head in ((True, heads[0]), (False, heads[1])):
@@ -276,15 +279,58 @@ def load_release_evidence(repository, run_id, run_attempt, tag):
         raise ValueError("GitHub evidence could not be read or validated.") from None
 
 
+def check_release(path, owner):
+    def require(condition):
+        if not condition:
+            raise ValueError("Invalid acceptance evidence")
+    data = json.loads(Path(path).read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
+    fields = {"schema", "owner", "recorded_at", "repository", "run_url", "run_attempt", "commit", "tag", "digest",
+              "native_pr_url", "provenance_pr_url", "checks"}
+    require(type(data) is dict and set(data) == fields)
+    require(all(type(data[k]) is str for k in fields - {"run_attempt", "checks"}))
+    require(data["schema"] == "copyeditor-acceptance-evidence-v1" and data["owner"] == owner)
+    require(type(data["run_attempt"]) is int and data["run_attempt"] > 0)
+    checks = {"google_oauth", "allowed_domain", "allowed_email", "anonymous_401", "none_derived_polish", "google_derived_polish"}
+    require(type(data["checks"]) is dict and set(data["checks"]) == checks and all(v is True for v in data["checks"].values()))
+    run_id, attempt = parse_release_run_url(data["repository"], data["run_url"])
+    require(attempt == data["run_attempt"])
+    prs = []
+    for key in ("native_pr_url", "provenance_pr_url"):
+        match = re.fullmatch(r"https://github\.com/" + re.escape(data["repository"]) + r"/pull/([1-9][0-9]*)", data[key])
+        require(match is not None)
+        prs.append(int(match[1]))
+    evidence = load_release_evidence(data["repository"], run_id, attempt, data["tag"])
+    require(all(data[k] == evidence[k] for k in ("repository", "run_attempt", "commit", "tag", "digest")))
+    require(re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", data["recorded_at"]))
+    recorded = datetime.fromisoformat(data["recorded_at"].replace("Z", "+00:00"))
+    published = datetime.fromisoformat(evidence["published_at"].replace("Z", "+00:00"))
+    require(recorded >= published)
+    require(check_publication(*prs, owner, evidence["commit"], published) is None)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["native", "provenance", "publish-gate"])
+    parser.add_argument("command", choices=["native", "provenance", "publish-gate", "release"])
+    parser.add_argument("--evidence")
     parser.add_argument("--pr", type=int)
     parser.add_argument("--native-pr", type=int)
     parser.add_argument("--provenance-pr", type=int)
     parser.add_argument("--commit")
     parser.add_argument("--owner", required=True)
     args = parser.parse_args(argv)
+    if args.command == "release":
+        try:
+            if (not args.evidence or any(v is not None for v in (args.pr, args.native_pr, args.provenance_pr, args.commit))
+                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner)):
+                raise ValueError("Invalid release arguments")
+            check_release(args.evidence, args.owner)
+        except Exception:
+            print("RELEASE FAIL: GitHub evidence could not be read or validated.")
+            return 1
+        print("RELEASE PASS")
+        return 0
+    if args.evidence is not None:
+        parser.error("Evidence path requires release.")
     publication = args.command == "publish-gate"
     prs = [args.native_pr, args.provenance_pr] if publication else [args.pr]
     if publication and (args.pr is not None or not re.fullmatch(SHA, args.commit or "")):
