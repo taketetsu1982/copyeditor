@@ -9,8 +9,6 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    env:
-      COPYEDITOR_BUILD_CACHE_DIR: ${{ runner.temp }}/copyeditor-build-cache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,10 +20,12 @@ jobs:
       - uses: docker/setup-buildx-action@v4
       - uses: actions/cache@v5
         with:
-          path: ${{ env.COPYEDITOR_BUILD_CACHE_DIR }}
+          path: ${{ runner.temp }}/copyeditor-build-cache
           key: ${{ runner.os }}-${{ runner.arch }}-copyeditor-buildx-v1-${{ hashFiles('Dockerfile', 'tests/fixtures/Dockerfile.benchmark', 'requirements.generated.txt', 'package-lock.json') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-copyeditor-buildx-v1-${{ hashFiles('Dockerfile', 'tests/fixtures/Dockerfile.benchmark', 'requirements.generated.txt', 'package-lock.json') }}-
       - run: python -m pip install -r requirements.generated.txt
       # The strict suite runs the real image and offline benchmark drivers once.
       - run: python -m pytest tests --require-phase1-contracts --junitxml=phase1.xml --durations=20 -q
+        env:
+          COPYEDITOR_BUILD_CACHE_DIR: ${{ runner.temp }}/copyeditor-build-cache
