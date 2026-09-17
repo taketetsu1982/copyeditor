@@ -28,8 +28,7 @@ def phase1_inventory(root):
     def cases(module, function, values, parameter=None):
         values = list(values)
         payloads = {key: {parameter: value} for key, value in values} if parameter else {v: {} for v in values}
-        values = [key for key, _ in values] if parameter else values
-        if not values or len(values) != len(set(values)):
+        if not values or len(values) != len(payloads):
             raise ValueError("Empty or duplicate fixture inventory")
         groups[f"tests/{module}.py::{function}"] = payloads
 
@@ -45,7 +44,25 @@ def phase1_inventory(root):
     cases("contracts/test_ctr04_config", "test_ac_05_2_leaf_validation_and_precedence", ((name, name) for name in SCHEMA), "name")
     cases("contracts/test_ctr05_examples", "test_ac04_3_ac04_4_ac04_5_ctr03_ctr05_real_examples_accepted",
           ((c["language"] + "/" + c["id"], c) for c in examples), "case")
+    cases("unit/test_auth_routes", "test_ac_05_3_sdk_error_routes_remove_details", ((v, v) for v in ("callback", "registration", "token", "callback-exception")), "kind")
+    cases("acceptance/test_publication_gate", "test_ac_05_1_ac_05_7_ctr04_distinct_commits_and_language_scopes", ((str(v), v) for v in (False, True)), "updated")
     for module, function in [
+        ("acceptance/test_native", "test_ac_04_1_login_case_and_crlf_are_accepted"),
+        ("acceptance/test_provenance", "test_ac_04_7_owner_evidence_passes_without_published_run"),
+        ("acceptance/test_release_evidence", "test_ac_05_1_ac_05_3_ac_05_4_ctr03_ctr05_missing_and_null_fields"),
+        ("contracts/test_ctr02_preservation", "test_ctr02_ratio_has_no_rounding_or_whitespace_normalization"),
+        ("unit/test_auth", "test_ctr04_none_does_not_initialize_google"),
+        ("unit/test_auth_boundary", "test_ctr04_non_http_scope_is_delegated"),
+        ("unit/test_html_lexical", "test_ctr02_all_fixed_tokenizer_state_targets_are_instrumented"),
+        ("unit/test_html_source", "test_ctr02_trace_records_are_immutable"),
+        ("unit/test_html_trace", "test_ctr02_trace_context_identity_and_lexical_events"),
+        ("unit/test_lint", "test_ctr03_runtime_failure_is_not_empty"),
+        ("unit/test_metrics", "test_ctr01_no_call_and_pending_failure"),
+        ("unit/test_service", "test_ctr01_final_validator_failure_returns_fixed_error"),
+        ("unit/test_vertex", "test_ac_05_5_startup_and_import_boundary"),
+        ("integration/test_transport", "test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_discovery"),
+        ("integration/test_startup", "test_ac_05_8_ac_05_9_ctr01_ctr04_writers_reject_unstructured_data"),
+        ("integration/test_documentation", "test_ac_05_7_ctr04_bilingual_structure_and_commands"),
         ("contracts/test_ctr03_rules", "test_ctr03_installed_assets"),
         ("contracts/test_ctr03_ja", "test_ac_04_1_ctr03_ctr05_ja_assets_preserve_content"),
         ("contracts/test_ctr03_en_zh", "test_ctr03_ctr05_en_zh_assets_preserve_content"),

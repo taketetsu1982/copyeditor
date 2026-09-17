@@ -80,5 +80,11 @@ def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_asset_inventory(t
     else:
         inventory = phase1_inventory(tmp_path)
         assert inventory and all(inventory.values())
-        assert any("ctr01_contract_service" in entry for entry in inventory)
-        assert any("all_images_and_secrets" in entry for entry in inventory)
+
+
+@pytest.mark.parametrize("module", sorted(str(p.relative_to(ROOT)) for p in ROOT.glob("tests/*/test_*.py") if p.name not in ("test_harness.py", "test_phase1.py")))
+def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_real_consumer_deletion(module):
+    result = run(ROOT, "tests", "--collect-only", "--ignore=" + module)
+    assert result.returncode == 1
+    assert "CONTRACTS FAIL" in result.stdout
+    assert "Inventory mismatch: " + module + "::" in result.stdout
