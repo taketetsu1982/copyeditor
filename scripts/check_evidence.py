@@ -2,9 +2,12 @@
 import argparse
 import base64
 from datetime import datetime
+import io
 import json
 import re
+import stat
 import subprocess
+import zipfile
 
 SECTIONS = ("Vocabulary", "Syntax", "Structure", "Translation artifacts", "Context weights")
 SHA = r"[0-9a-f]{40}"
@@ -186,6 +189,91 @@ def check_publication(native_pr, provenance_pr, owner, commit):
     if [gh_json(endpoint)["head"]["sha"] for endpoint in endpoints] != heads:
         return "Pull request head changed; retry."
     return None
+
+
+def release_repository(repository):
+    if (not isinstance(repository, str) or not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository)
+            or gh_json("repos/{owner}/{repo}")["full_name"] != repository):
+        raise ValueError("Invalid release repository")
+
+
+def parse_release_run_url(repository, run_url):
+    try:
+        release_repository(repository)
+        match = re.fullmatch(r"https://github\.com/" + re.escape(repository)
+                             + r"/actions/runs/([1-9][0-9]*)/attempts/([1-9][0-9]*)", run_url)
+        if not match:
+            raise ValueError("Invalid run URL")
+        return tuple(map(int, match.groups()))
+    except Exception:
+        raise ValueError("GitHub evidence could not be read or validated.") from None
+
+
+def load_release_evidence(repository, run_id, run_attempt, tag):
+    def require(condition):
+        if not condition:
+            raise ValueError("Invalid release evidence")
+    try:
+        release_repository(repository)
+        require(all(type(v) is int and v > 0 for v in (run_id, run_attempt)))
+        require(isinstance(tag, str) and re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag))
+        require(tuple(map(int, tag[1:].split('.'))) >= (0, 1, 0))
+        root = f"repos/{repository}"
+        run_root = f"{root}/actions/runs/{run_id}"
+        attempt_root = f"{run_root}/attempts/{run_attempt}"
+        run = gh_json(attempt_root)
+        expected = dict(id=run_id, run_attempt=run_attempt, status="completed", conclusion="success",
+                        event="push", name="Publish image", head_branch=tag)
+        require(all(type(run[k]) is type(v) and run[k] == v for k, v in expected.items()))
+        require(run["repository"]["full_name"] == repository and re.fullmatch(SHA, run["head_sha"]))
+        workflow_id = run["workflow_id"]
+        require(type(workflow_id) is int and workflow_id > 0)
+        workflow = gh_json(f"{root}/actions/workflows/{workflow_id}")
+        require(workflow["path"] == ".github/workflows/publish.yml" and workflow["name"] == "Publish image")
+        def listing(endpoint, key):
+            pages = gh_json(endpoint + "?per_page=100", paginate=True)
+            require(type(pages) is list and pages and all(type(p[key]) is list for p in pages))
+            return [item for page in pages for item in page[key]]
+        artifacts = [a for a in listing(run_root + "/artifacts", "artifacts") if a["name"] == "release-evidence-" + tag]
+        require(len(artifacts) == 1 and artifacts[0]["expired"] is False)
+        artifact_id = artifacts[0]["id"]
+        require(type(artifact_id) is int and artifact_id > 0)
+        archive = subprocess.run(["gh", "api", f"{root}/actions/artifacts/{artifact_id}/zip", "--method", "GET"],
+                                 capture_output=True, check=True, timeout=60).stdout
+        # Never extract an archive path, including a disguised symlink, onto the filesystem.
+        with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+            entries = zipped.infolist()
+            require(len(entries) == 1 and entries[0].filename == "release-evidence.json")
+            require(not entries[0].is_dir() and stat.S_IFMT(entries[0].external_attr >> 16) in (0, stat.S_IFREG))
+            data = json.loads(zipped.read(entries[0]).decode("utf-8"), object_pairs_hook=unique_fields)
+        fields = {"schema", "repository", "run_id", "run_attempt", "workflow", "commit", "tag", "image", "digest", "published_at"}
+        require(type(data) is dict and set(data) == fields)
+        require(all(type(data[k]) is str for k in fields - {"run_id", "run_attempt"}))
+        require(all(type(data[k]) is int and data[k] > 0 for k in ("run_id", "run_attempt")))
+        expected = dict(schema="copyeditor-release-evidence-v1", repository=repository, run_id=run_id,
+                        run_attempt=run_attempt, workflow="Publish image", commit=run["head_sha"], tag=tag,
+                        image=f"ghcr.io/{repository.split('/')[0].lower()}/copyeditor:{tag}")
+        require(all(data[k] == v for k, v in expected.items()))
+        require(re.fullmatch(r"sha256:[0-9a-f]{64}", data["digest"]))
+        require(re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", data["published_at"]))
+        target = gh_json(f"{root}/git/ref/tags/{tag}")["object"]
+        visited = set()
+        while target["type"] == "tag":
+            sha = target["sha"]
+            require(re.fullmatch(SHA, sha) and sha not in visited)
+            visited.add(sha)
+            target = gh_json(f"{root}/git/tags/{sha}")["object"]
+        require(target["type"] == "commit" and target["sha"] == data["commit"])
+        jobs = [j for j in listing(attempt_root + "/jobs", "jobs") if j["name"] == "publish"]
+        require(len(jobs) == 1 and jobs[0]["conclusion"] == "success")
+        def instant(value):
+            result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            require(result.utcoffset() is not None)
+            return result
+        require(instant(jobs[0]["started_at"]) <= instant(data["published_at"]) <= instant(jobs[0]["completed_at"]))
+        return data
+    except Exception:
+        raise ValueError("GitHub evidence could not be read or validated.") from None
 
 
 def main(argv=None):
