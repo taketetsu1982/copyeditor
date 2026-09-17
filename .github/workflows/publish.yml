@@ -1,0 +1,157 @@
+name: Publish image
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+  gate:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      commit: ${{ steps.gate.outputs.commit }}
+      image: ${{ steps.gate.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: gate
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COPYEDITOR_OWNER: ${{ vars.COPYEDITOR_OWNER }}
+          COPYEDITOR_NATIVE_PR: ${{ vars.COPYEDITOR_NATIVE_PR }}
+          COPYEDITOR_PROVENANCE_PR: ${{ vars.COPYEDITOR_PROVENANCE_PR }}
+        run: |
+          import os, re, subprocess
+          env = os.environ
+          tag = env['GITHUB_REF_NAME']
+          assert env['GITHUB_EVENT_NAME'] == 'push' and env['GITHUB_REF_TYPE'] == 'tag'
+          assert re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
+          assert tuple(map(int, tag[1:].split('.'))) >= (0, 1, 0)
+          owner = env['GITHUB_REPOSITORY_OWNER'].lower()
+          assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,38}', owner)
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD^{commit}'], text=True).strip()
+          assert re.fullmatch(r'[0-9a-f]{40}', commit)
+          subprocess.run(['python', 'scripts/check_evidence.py', 'publish-gate',
+              '--native-pr', env['COPYEDITOR_NATIVE_PR'], '--provenance-pr', env['COPYEDITOR_PROVENANCE_PR'],
+              '--owner', env['COPYEDITOR_OWNER'], '--commit', commit], check=True)
+          with open(env['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'commit={commit}\nimage=ghcr.io/{owner}/copyeditor:{tag}\n')
+  publish:
+    needs: [checks, gate]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.checks.result == 'success' && needs.gate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and publish only an absent tag
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.gate.outputs.image }}
+          GATE_COMMIT: ${{ needs.gate.outputs.commit }}
+        run: |
+          import base64, json, os, re, subprocess, tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          env = os.environ
+          image = env['IMAGE']
+          repository, tag = image.removeprefix('ghcr.io/').split(':')
+          def inspect(target):
+              return json.loads(subprocess.check_output(
+                  ['docker', 'image', 'inspect', '--format', '{{json .}}', target], text=True, stderr=subprocess.PIPE))
+          def validate_evidence(value):
+              patterns = {
+                  'schema': r'copyeditor-release-evidence-v1', 'repository': r'[^/\s]+/[^/\s]+',
+                  'workflow': r'Publish image', 'commit': r'[0-9a-f]{40}',
+                  'tag': r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',
+                  'image': re.escape(image), 'digest': r'sha256:[0-9a-f]{64}',
+                  'published_at': r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'}
+              assert type(value) is dict and value.keys() == patterns.keys() | {'run_id', 'run_attempt'}
+              assert all(type(value[k]) is str and re.fullmatch(p, value[k]) for k, p in patterns.items())
+              assert all(type(value[k]) is int and value[k] > 0 for k in ('run_id', 'run_attempt'))
+              assert tuple(map(int, value['tag'][1:].split('.'))) >= (0, 1, 0)
+              assert value['repository'] == env['GITHUB_REPOSITORY'] and value['tag'] == env['GITHUB_REF_NAME']
+              assert value['image'] == f"ghcr.io/{value['repository'].split('/')[0].lower()}/copyeditor:{value['tag']}"
+              datetime.strptime(value['published_at'], '%Y-%m-%dT%H:%M:%SZ')
+          try:
+              commit = subprocess.check_output(['git', 'rev-parse', 'HEAD^{commit}'], text=True).strip()
+              assert commit == env['GATE_COMMIT']
+              subprocess.run(['docker', 'build', '--label', 'org.opencontainers.image.source=https://github.com/' +
+                  env['GITHUB_REPOSITORY'], '-t', image, '.'], check=True)
+              image_id = inspect(image)['Id']
+              assert isinstance(image_id, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', image_id)
+              with tempfile.TemporaryDirectory() as config:
+                  docker = ['docker', '--config', config]
+                  subprocess.run(docker + ['login', 'ghcr.io', '-u', env['GITHUB_ACTOR'], '--password-stdin'],
+                                 input=env['GH_TOKEN'], text=True, capture_output=True, check=True)
+                  basic = base64.b64encode((env['GITHUB_ACTOR'] + ':' + env['GH_TOKEN']).encode()).decode()
+                  query = urlencode({'service': 'ghcr.io', 'scope': 'repository:' + repository + ':pull'})
+                  with urlopen(Request('https://ghcr.io/token?' + query,
+                                      headers={'Authorization': 'Basic ' + basic}), timeout=30) as response:
+                      token = json.load(response)['token']
+                  if not isinstance(token, str) or not token: raise ValueError('Invalid token')
+                  request = Request(f'https://ghcr.io/v2/{repository}/manifests/{tag}', headers={
+                      'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.oci.image.manifest.v1+json, '
+                      'application/vnd.docker.distribution.manifest.v2+json'})
+                  try:
+                      with urlopen(request, timeout=30): pass
+                  except HTTPError as error:
+                      with error:
+                          errors = json.load(error)['errors']
+                      if error.code != 404 or not errors or any(
+                          item['code'] not in ('MANIFEST_UNKNOWN', 'NAME_UNKNOWN') for item in errors): raise
+                  else:
+                      raise ValueError('Tag already exists')
+                  # Only an explicit registry absence permits push; transport errors never do.
+                  assert inspect(image)['Id'] == image_id
+                  subprocess.run(docker + ['push', image], check=True)
+                  published_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+                  metadata = inspect(image_id)
+                  assert metadata['Id'] == image_id and type(metadata['RepoDigests']) is list
+                  candidates = set()
+                  for entry in metadata['RepoDigests']:
+                      assert isinstance(entry, str) and re.fullmatch(r'[^@\s]+@sha256:[0-9a-f]{64}', entry)
+                      source, digest = entry.split('@')
+                      if source == 'ghcr.io/' + repository: candidates.add(digest)
+                  assert len(candidates) == 1
+                  evidence = dict(schema='copyeditor-release-evidence-v1', repository=env['GITHUB_REPOSITORY'],
+                      run_id=int(env['GITHUB_RUN_ID']), run_attempt=int(env['GITHUB_RUN_ATTEMPT']),
+                      workflow=env['GITHUB_WORKFLOW'], commit=commit, tag=tag, image=image,
+                      digest=candidates.pop(), published_at=published_at)
+                  validate_evidence(evidence)
+                  with (Path(env['RUNNER_TEMP']) / 'release-evidence.json').open('x', encoding='utf-8') as output:
+                      json.dump(evidence, output, ensure_ascii=False)
+          except Exception:
+              raise SystemExit('Publication failed or tag absence could not be established.') from None
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ github.ref_name }}
+          path: ${{ runner.temp }}/release-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false

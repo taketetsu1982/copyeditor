@@ -242,9 +242,10 @@ def test_ac_05_1_ac_05_4_ctr04_failed_run_cleanup(tmp_path, stage):
     python.chmod(0o755)
     driver = binaries / "test_images.sh"
     driver.write_text((ROOT / "scripts/test_images.sh").read_text())
+    (binaries / "build_test_image.sh").write_text((ROOT / "scripts/build_test_image.sh").read_text())
     assert not (tmp_path / ".venv").exists()
     result = subprocess.run(["bash", str(driver)], capture_output=True, text=True,
-        env=dict({k: v for k, v in os.environ.items() if k != "COPYEDITOR_TEST_PYTHON"}, PATH=str(binaries) + ":" + os.environ["PATH"], TMPDIR=str(temporary),
+        env=dict({k: v for k, v in os.environ.items() if k not in ("COPYEDITOR_TEST_PYTHON", "COPYEDITOR_BUILD_CACHE_DIR")}, PATH=str(binaries) + ":" + os.environ["PATH"], TMPDIR=str(temporary),
                  CALLS=str(calls), STAGE=stage, **({"COPYEDITOR_TEST_PYTHON": str(python)} if stage != "path" else {})), timeout=30)
     assert result.returncode == (0 if stage == "path" else 1 if stage == "cleanup" else 23)
     commands = calls.read_text().splitlines()
@@ -253,3 +254,34 @@ def test_ac_05_1_ac_05_4_ctr04_failed_run_cleanup(tmp_path, stage):
     selectors = [line for line in commands if line.startswith(("ps ", "image ls "))]
     assert len(selectors) == 2 and all("--filter label=copyeditor.test=copyeditor-images-" in line for line in selectors)
     assert list(temporary.iterdir()) == []
+
+
+@pytest.mark.parametrize("mode", ["disabled", "cold", "warm", "failure"])
+def test_ac_05_1_ctr04_build_cache_preserves_execution_and_previous_success(tmp_path, mode):
+    binaries, cache, calls = tmp_path / "bin", tmp_path / "cache", tmp_path / "calls"
+    binaries.mkdir()
+    old = cache / "images"
+    old.mkdir(parents=True)
+    (old / "index.json").write_text("previous")
+    docker = binaries / "docker"
+    docker.write_text('#!/usr/bin/env python3\nimport os,sys,json\nfrom pathlib import Path\n'
+        'args=sys.argv[1:]\nPath(os.environ["CALLS"]).write_text(json.dumps(args))\n'
+        'if os.environ["MODE"] == "failure": sys.exit(23)\n'
+        'if "--cache-to" in args:\n'
+        ' dest=args[args.index("--cache-to")+1].split("dest=",1)[1].split(",")[0]\n'
+        ' Path(dest,"index.json").write_text("next")\n')
+    docker.chmod(0o755)
+    if mode == "cold": (old / "index.json").unlink()
+    env = dict(os.environ, PATH=str(binaries) + ":" + os.environ["PATH"], CALLS=str(calls), MODE=mode)
+    env.pop("COPYEDITOR_BUILD_CACHE_DIR", None)
+    if mode != "disabled": env["COPYEDITOR_BUILD_CACHE_DIR"] = str(cache)
+    result = subprocess.run(["bash", str(ROOT / "scripts/build_test_image.sh"), "images", "--tag", "fixture", str(tmp_path)], env=env)
+    assert result.returncode == (23 if mode == "failure" else 0)
+    args = json.loads(calls.read_text())
+    assert args[-3:] == ["--tag", "fixture", str(tmp_path)] and "--push" not in args
+    if mode == "disabled": assert args[0] == "build" and "--cache-to" not in args
+    else:
+        assert args[:2] == ["buildx", "build"] and "--load" in args
+        assert ("--cache-from" in args) == (mode != "cold")
+    assert (old / "index.json").read_text() == ("previous" if mode in ("disabled", "failure") else "next")
+    assert sorted(p.name for p in cache.iterdir()) == ["images"]
