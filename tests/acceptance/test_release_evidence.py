@@ -1,4 +1,5 @@
 import io
+import base64
 import json
 from pathlib import Path
 import runpy
@@ -140,3 +141,122 @@ def test_ac_05_1_ac_05_3_ac_05_4_ctr03_ctr05_run_url_is_repository_and_attempt_b
                 url + "?token=PRIVATE_DETAIL", url + "/", url.replace("runs/12", "runs/0"), url[:-1] + "0"):
         with pytest.raises(ValueError, match="GitHub evidence could not be read or validated"):
             parse(REPO, bad)
+
+
+@pytest.fixture
+def acceptance(release, monkeypatch, tmp_path, capsys):
+    state, _, module, _ = release
+    native, provenance, blob, comparison = [c * 40 for c in "def0"]
+    assets = {"rules/ja.md": blob, "examples/ja/a.yaml": blob, "rules/en.md": blob, "examples/zh/a.yaml": blob}
+    state.update(assets={sha: dict(assets) for sha in (SHA, native, provenance)}, approval_time=STAMP,
+                 approval_owner="owner", native=True, refusal=False, absent=False, acceptance_raw=None)
+    owner_data = dict(schema="copyeditor-acceptance-evidence-v1", owner="owner", recorded_at=STAMP, repository=REPO,
+                      run_url=f"https://github.com/{REPO}/actions/runs/12/attempts/1", run_attempt=1,
+                      commit=SHA, tag=TAG, digest=state["data"]["digest"], native_pr_url=f"https://github.com/{REPO}/pull/7",
+                      provenance_pr_url=f"https://github.com/{REPO}/pull/8", checks=dict.fromkeys(
+                          ["google_oauth", "allowed_domain", "allowed_email", "anonymous_401", "none_derived_polish", "google_derived_polish"], True))
+    original = subprocess.run
+    def fake(command, **kwargs):
+        endpoint = command[2]
+        if endpoint.startswith("repos/coji/"): value = dict(sha=comparison)
+        elif not endpoint.startswith("repos/{owner}/{repo}/"): return original(command, **kwargs)
+        elif "/pulls/" in endpoint and "/reviews" not in endpoint:
+            value = dict(user=dict(login="owner"), head=dict(sha=native if endpoint.endswith("/7") else provenance))
+        elif "/git/commits/" in endpoint:
+            sha = endpoint.rsplit("/", 1)[1]
+            value = dict(sha=sha, tree=dict(sha=sha))
+        elif "/git/trees/" in endpoint:
+            sha = endpoint.rsplit("/", 1)[1].split("?")[0]
+            value = dict(truncated=False, tree=[dict(path=p, sha=h, type="blob", mode="100644")
+                         for p, h in (state["assets"][sha] | {"README.md": blob}).items()])
+        elif "/git/blobs/" in endpoint:
+            value = dict(encoding="base64", content=base64.b64encode((module["ACK_EN"] + module["ACK_JA"]).encode()).decode())
+        else:
+            records = []
+            if "/issues/7/" in endpoint and state["native"]:
+                records = [dict(user=dict(login="owner"), updated_at=STAMP,
+                                body="Head: " + native + "\n" + "\n".join(s + ": approved" for s in module["SECTIONS"]))]
+            if "/issues/8/" in endpoint:
+                proof = dict(head=provenance, comparison_revision=comparison, non_reuse="confirmed", blobs=state["assets"][provenance])
+                body = "```copyeditor-provenance-v1\n" + json.dumps(proof) + "\n```"
+                records = [dict(user=dict(login=state["approval_owner"]), updated_at=state["approval_time"], body=body)]
+                if state["refusal"]:
+                    records.append(dict(records[0], body=body.replace("confirmed", "rejected")))
+            value = [records]
+        return SimpleNamespace(stdout=json.dumps(value))
+    monkeypatch.setattr(subprocess, "run", fake)
+    def invoke():
+        path = tmp_path / "owner.json"
+        if not state["absent"]:
+            path.write_text(state["acceptance_raw"] if state["acceptance_raw"] is not None else json.dumps(owner_data))
+        result = module["main"](["release", "--evidence", str(path), "--owner", "owner"])
+        captured = capsys.readouterr()
+        assert captured.err == "" and captured.out == ("RELEASE PASS\n" if result == 0 else "RELEASE FAIL: " + MESSAGE + "\n")
+        return result
+    return state, owner_data, invoke, native, provenance
+
+
+@pytest.mark.parametrize("change", [None, "approved-en", "approved-zh", "recorded-later", "provenance-earlier"])
+def test_ac_05_1_ac_05_3_ac_05_4_ctr03_ctr05_release_cli_accepts_owner_and_scoped_approval(acceptance, change):
+    state, data, invoke, native, provenance = acceptance
+    if change in ("approved-en", "approved-zh"):
+        path = "rules/en.md" if change == "approved-en" else "examples/zh/a.yaml"
+        for sha in (SHA, provenance): state["assets"][sha][path] = OTHER
+    if change == "recorded-later": data["recorded_at"] = "2026-09-17T02:00:00Z"
+    if change == "provenance-earlier": state["approval_time"] = "2026-09-17T00:00:00Z"
+    assert invoke() == 0
+
+
+@pytest.mark.parametrize("key,value", [("owner", "PRIVATE_DETAIL"), ("commit", OTHER), ("digest", "sha256:" + "d" * 64),
+    ("tag", "v0.2.0"), ("run_attempt", 2), ("run_attempt", True), ("run_attempt", 1.0), ("extra", "PRIVATE_DETAIL"),
+    ("recorded_at", "2026-09-17T00:59:59Z"), ("recorded_at", "2026-09-17T01:00:00+00:00"),
+    ("native_pr_url", "https://evil.test/Owner/copyeditor/pull/7"),
+    ("provenance_pr_url", "https://github.com/Other/repo/pull/8"),
+    ("run_url", f"https://github.com/{REPO}/actions/runs/13/attempts/1"),
+    ("run_url", f"https://github.com/{REPO}/actions/runs/12"),
+    ("run_url", f"https://github.com/{REPO}/actions/runs/12/attempts/2")])
+def test_ac_05_1_ac_05_3_ac_05_4_ctr03_ctr05_release_cli_rejects_owner_mismatch(acceptance, key, value):
+    _, data, invoke, _, _ = acceptance
+    data[key] = value
+    assert invoke() == 1
+
+
+@pytest.mark.parametrize("change", ["missing-file", "bad-json", "duplicate", "future-approval", "wrong-approver",
+                                  "native-missing", "latest-refusal", "missing-artifact", "failed-attempt", "ja", "unapproved-en", "add", "delete"])
+def test_ac_05_1_ac_05_3_ac_05_4_ctr03_ctr05_release_cli_rejects_unproven_acceptance(acceptance, change):
+    state, data, invoke, native, provenance = acceptance
+    if change == "missing-file": state["absent"] = True
+    if change == "bad-json": state["acceptance_raw"] = "PRIVATE_DETAIL"
+    if change == "duplicate": state["acceptance_raw"] = '{"owner":"owner","owner":"PRIVATE_DETAIL"}'
+    if change == "future-approval": state["approval_time"] = "2026-09-17T01:00:01Z"
+    if change == "wrong-approver": state["approval_owner"] = "someone"
+    if change == "native-missing": state["native"] = False
+    if change == "latest-refusal": state["refusal"] = True
+    if change == "missing-artifact": state["missing"] = "artifact"
+    if change == "failed-attempt":
+        data.update(run_attempt=2, run_url=f"https://github.com/{REPO}/actions/runs/12/attempts/2")
+    if change == "ja":
+        for sha in (SHA, provenance): state["assets"][sha]["examples/ja/a.yaml"] = OTHER
+    if change == "unapproved-en": state["assets"][SHA]["rules/en.md"] = OTHER
+    if change == "add": state["assets"][SHA]["rules/nested/extra.txt"] = OTHER
+    if change == "delete": del state["assets"][SHA]["examples/zh/a.yaml"]
+    assert invoke() == 1
+
+
+def test_ac_05_1_ac_05_3_ac_05_4_ctr03_ctr05_release_cli_requires_complete_strict_schema(acceptance):
+    _, data, invoke, _, _ = acceptance
+    for key in list(data):
+        original = data.pop(key)
+        assert invoke() == 1
+        data[key] = None
+        assert invoke() == 1
+        data[key] = original
+    for key in list(data["checks"]):
+        for value in (False, 1, "true", None):
+            data["checks"][key] = value
+            assert invoke() == 1
+        del data["checks"][key]
+        assert invoke() == 1
+        data["checks"][key] = True
+    data["checks"]["extra"] = True
+    assert invoke() == 1
