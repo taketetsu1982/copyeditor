@@ -54,7 +54,7 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
 def runner(monkeypatch, tmp_path):
     values = dict(GITHUB_EVENT_NAME="push", GITHUB_REF_TYPE="tag", GITHUB_REF_NAME="v0.1.0",
                   GITHUB_REPOSITORY_OWNER="Owner", GITHUB_REPOSITORY="Owner/copyeditor", GITHUB_ACTOR="actor",
-                  COPYEDITOR_OWNER="owner", COPYEDITOR_NATIVE_PR="7", COPYEDITOR_PROVENANCE_PR="8",
+                  COPYEDITOR_OWNER="owner", COPYEDITOR_NATIVE_PR="7",
                   GITHUB_OUTPUT=str(tmp_path / "outputs"), GH_TOKEN="synthetic", IMAGE="ghcr.io/owner/copyeditor:v0.1.0")
     values.update(GATE_COMMIT=SHA, GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2",
                   GITHUB_WORKFLOW="Publish image", RUNNER_TEMP=str(tmp_path))
@@ -78,7 +78,7 @@ def runner(monkeypatch, tmp_path):
         stage = "gate" if args[0] == "python" else next(x for x in ("build", "login", "push") if x in args)
         if stage == "gate":
             assert args[1:] == ["scripts/check_evidence.py", "publish-gate", "--native-pr", "7",
-                               "--provenance-pr", "8", "--owner", "owner", "--commit", SHA]
+                               "--owner", "owner", "--commit", SHA]
         if state["failure"] == stage: raise subprocess.CalledProcessError(1, args)
         if stage == "push":
             assert state["inspects"] == [values["IMAGE"], values["IMAGE"]]
