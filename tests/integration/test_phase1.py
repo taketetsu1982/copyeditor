@@ -6,7 +6,9 @@ import sys
 
 import pytest
 
-from tests.conftest import phase1_inventory
+from types import SimpleNamespace
+
+from tests.conftest import Phase1Contracts, phase1_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -82,8 +84,36 @@ def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_asset_inventory(t
         assert inventory and all(inventory.values())
 
 
+@pytest.fixture(scope="module")
+def collected_contracts():
+    class Capture:
+        def pytest_collection_finish(self, session):
+            self.session = session
+    capture = Capture()
+    # Preserve real Items and parameters; synthesized fixtures can hide inventory gaps.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("PYTEST_ADDOPTS", raising=False)
+        assert pytest.main([str(ROOT / "tests"), "--collect-only", "-q",
+                            "-o", "asyncio_default_fixture_loop_scope=function"], plugins=[capture]) == 0
+    session = capture.session
+    session.config.option.collectonly = False
+    gate = Phase1Contracts(session.config)
+    gate.pytest_collection_finish(session)
+    assert gate.errors == []
+    return session
+
+
 @pytest.mark.parametrize("module", sorted(str(p.relative_to(ROOT)) for p in ROOT.glob("tests/*/test_*.py") if p.name not in ("test_harness.py", "test_phase1.py")))
-def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_real_consumer_deletion(module):
+def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_real_consumer_deletion(collected_contracts, module):
+    gate = Phase1Contracts(collected_contracts.config)
+    remaining = [item for item in collected_contracts.items if item.nodeid.split("::")[0] != module]
+    assert len(remaining) < len(collected_contracts.items)
+    gate.pytest_collection_finish(SimpleNamespace(items=remaining))
+    assert any(error.startswith("Inventory mismatch: " + module + "::") for error in gate.errors)
+
+
+def test_ctr02_preservation_deletion_fails_through_cli():
+    module = "tests/contracts/test_ctr02_preservation.py"
     result = run(ROOT, "tests", "--collect-only", "--ignore=" + module)
     assert result.returncode == 1
     assert "CONTRACTS FAIL" in result.stdout
