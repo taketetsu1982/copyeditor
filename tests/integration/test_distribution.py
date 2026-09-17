@@ -1,6 +1,7 @@
 import io
 import json
 import subprocess
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError
@@ -21,7 +22,9 @@ DIGEST = "sha256:" + "c" * 64
 
 def test_ac_05_7_ctr04_distribution_permissions_and_order():
     assert PUBLISH["on"] == {"push": {"tags": ["v*"]}}
-    assert "workflow_call" in CI["on"] and CI["permissions"] == {"contents": "read"}
+    assert set(CI["on"]) == {"push", "pull_request", "workflow_call"}
+    assert CI["on"]["push"] == {"branches": ["main"]}
+    assert CI["permissions"] == {"contents": "read"}
     assert PUBLISH["permissions"] == {"contents": "read"}
     assert PUBLISH["concurrency"] == {"group": "publish-${{ github.repository }}-${{ github.ref }}", "cancel-in-progress": False}
     jobs = PUBLISH["jobs"]
@@ -34,7 +37,12 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
     assert jobs["gate"]["if"] == "github.event_name == 'push' && github.ref_type == 'tag'"
     assert jobs["publish"]["steps"][0]["with"]["ref"] == "${{ needs.gate.outputs.commit }}"
     runs = [s["run"] for job in CI["jobs"].values() for s in job["steps"] if "run" in s]
-    assert {"python -m pytest -q", "bash scripts/test_images.sh", "npm run test:fixtures"} <= set(runs)
+    suites = [shlex.split(command) for command in runs if "pytest" in shlex.split(command)]
+    assert len(suites) == 1
+    assert suites[0][:4] == ["python", "-m", "pytest", "tests"]
+    assert "--require-phase1-contracts" in suites[0]
+    assert not any(flag in suites[0] for flag in ("--collect-only", "--require-phase1-acceptance", "--ignore", "-k"))
+    assert not any(driver in command for command in runs for driver in ("test_images.sh", "test:fixtures"))
     assert all(j["steps"][0]["with"]["ref"] == "${{ github.sha }}" for j in CI["jobs"].values())
     assert not any("continue-on-error" in s or "if" in s for j in CI["jobs"].values() for s in j["steps"])
     readme = (ROOT / "README.md").read_text()
@@ -131,7 +139,7 @@ def test_ac_05_7_ctr04_registry_absence_is_required_immediately_before_push(runn
         assert not (path / "release-evidence.json").exists()
 
 
-@pytest.mark.parametrize("failed", ["python -m pytest -q", "bash scripts/test_images.sh", "npm run test:fixtures"])
+@pytest.mark.parametrize("failed", [s["run"] for job in CI["jobs"].values() for s in job["steps"] if "run" in s])
 def test_ac_05_7_ctr04_each_ci_failure_prevents_publish_sequence(runner, failed):
     state, patch, path = runner
     calls = []
