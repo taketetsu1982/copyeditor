@@ -118,3 +118,51 @@ def test_ctr02_preservation_deletion_fails_through_cli():
     assert result.returncode == 1
     assert "CONTRACTS FAIL" in result.stdout
     assert "Inventory mismatch: " + module + "::" in result.stdout
+
+
+@pytest.mark.parametrize("mode", ["normal", "strict", "env", "flag", "empty", "missing", "owner", "release", "actual_cli",
+                                 "delete", "empty_cases", "skip", "xfail", "fail", "collect", "partial"])
+def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_acceptance(suite, mode):
+    scripts = suite / "scripts"
+    scripts.mkdir()
+    script = scripts / "check_evidence.py"
+    script.write_text('import os, sys\nfrom pathlib import Path\n'
+                      'assert sys.argv[1:] == ["release", "--evidence", "owner.json", "--owner", "owner"]\n'
+                      'assert "COPYEDITOR_ACCEPTANCE_EVIDENCE" not in os.environ\n'
+                      'assert "COPYEDITOR_OWNER" not in os.environ\n'
+                      'Path("release-called").touch()\nprint("PRIVATE RECORD")\n')
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTEST_ADDOPTS", "COPYEDITOR_ACCEPTANCE_EVIDENCE", "COPYEDITOR_OWNER")}
+    args = []
+    if mode not in ("normal", "strict"):
+        env.update(COPYEDITOR_ACCEPTANCE_EVIDENCE="owner.json", COPYEDITOR_OWNER="owner")
+    if mode in ("flag", "missing"):
+        args.append("--require-phase1-acceptance")
+    if mode == "strict": args.append("--require-phase1-contracts")
+    if mode == "missing": env.pop("COPYEDITOR_ACCEPTANCE_EVIDENCE")
+    if mode == "empty": env["COPYEDITOR_ACCEPTANCE_EVIDENCE"] = ""
+    if mode == "owner": env.pop("COPYEDITOR_OWNER")
+    if mode == "release": script.write_text(script.read_text() + 'raise RuntimeError("PRIVATE ERROR")\n')
+    if mode == "actual_cli": shutil.copyfile(ROOT / "scripts/check_evidence.py", script)
+    path = suite / "tests/test_consumer.py"
+    if mode == "delete": path.unlink()
+    elif mode == "empty_cases": path.write_text(path.read_text().replace('["one", "two"]', '[]'))
+    elif mode in ("skip", "xfail", "fail"):
+        path.write_text(path.read_text().replace("    pass", {"skip": "    pytest.skip()", "xfail": "    pytest.xfail()", "fail": "    assert False"}[mode]))
+    elif mode == "collect": args.append("--collect-only")
+    elif mode == "partial": args += ["-k", "one"]
+    with (suite / "tests/test_other.py").open("a") as file:
+        file.write('\ndef test_children_do_not_inherit_acceptance():\n'
+                   '    import os, subprocess, sys\n'
+                   '    assert "COPYEDITOR_ACCEPTANCE_EVIDENCE" not in os.environ\n'
+                   '    child = subprocess.run([sys.executable, "-m", "pytest", "tests/test_consumer.py", "--collect-only", "-q"], capture_output=True)\n'
+                   '    assert b"ACCEPTANCE" not in child.stdout\n')
+    result = subprocess.run([sys.executable, "-m", "pytest", "-q", *args], cwd=suite, env=env, capture_output=True, text=True)
+    success = mode in ("normal", "strict", "env", "flag")
+    assert result.returncode == (0 if success else 1), result.stdout + result.stderr
+    assert "PRIVATE" not in result.stdout + result.stderr
+    if mode in ("normal", "strict"):
+        assert "ACCEPTANCE" not in result.stdout
+    else:
+        assert ("ACCEPTANCE PASS" if success else "ACCEPTANCE FAIL") in result.stdout
+        assert ("ACCEPTANCE FAIL" if success else "ACCEPTANCE PASS") not in result.stdout
+    assert (suite / "release-called").exists() == (mode in ("env", "flag", "release"))

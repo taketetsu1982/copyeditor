@@ -1,6 +1,9 @@
 from collections import Counter, defaultdict
 from pathlib import Path
 import runpy
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -79,11 +82,13 @@ def phase1_inventory(root):
 
 
 def pytest_addoption(parser):
+    parser.addoption("--require-phase1-acceptance", action="store_true", help="Require real release evidence")
     parser.addoption("--require-phase1-contracts", action="store_true", help="Require complete contract execution")
 
 
 def pytest_configure(config):
-    if config.getoption("--require-phase1-contracts"):
+    if (config.getoption("--require-phase1-contracts") or config.getoption("--require-phase1-acceptance")
+            or "COPYEDITOR_ACCEPTANCE_EVIDENCE" in os.environ):
         config.pluginmanager.register(Phase1Contracts(config), "phase1-contracts")
 
 
@@ -92,6 +97,13 @@ class Phase1Contracts:
         self.config, self.errors, self.items = config, [], []
         self.reports = defaultdict(list)
         self.groups = {}
+        self.acceptance = config.getoption("--require-phase1-acceptance") or "COPYEDITOR_ACCEPTANCE_EVIDENCE" in os.environ
+        self.evidence = os.environ.get("COPYEDITOR_ACCEPTANCE_EVIDENCE", "")
+        self.owner = os.environ.get("COPYEDITOR_OWNER", "")
+        if self.acceptance:
+            # Nested image and self-test suites must not inherit final acceptance.
+            captured = {key: os.environ.pop(key) for key in ("COPYEDITOR_ACCEPTANCE_EVIDENCE", "COPYEDITOR_OWNER") if key in os.environ}
+            config.add_cleanup(lambda: os.environ.update(captured))
 
     def pytest_deselected(self, items):
         if items:
@@ -142,3 +154,18 @@ class Phase1Contracts:
             for entry, expected in self.groups.items():
                 executed = sum(n.split("[")[0] == entry for n in complete)
                 terminal.write_line(f"{entry}: expected={len(expected)} executed={executed}")
+
+        if self.acceptance:
+            accepted = False
+            if not self.errors and self.evidence.strip() and self.owner.strip():
+                try:
+                    result = subprocess.run([sys.executable, str(self.config.rootpath / "scripts/check_evidence.py"),
+                                             "release", "--evidence", self.evidence, "--owner", self.owner],
+                                            capture_output=True, timeout=120)
+                    accepted = result.returncode == 0
+                except Exception:
+                    pass
+            if not accepted:
+                session.exitstatus = pytest.ExitCode.TESTS_FAILED
+            if terminal:
+                terminal.write_sep("=", "ACCEPTANCE PASS" if accepted else "ACCEPTANCE FAIL")
