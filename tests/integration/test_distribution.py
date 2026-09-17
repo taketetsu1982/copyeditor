@@ -40,7 +40,7 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
     suites = [shlex.split(command) for command in runs if "pytest" in shlex.split(command)]
     assert len(suites) == 1
     assert suites[0][:4] == ["python", "-m", "pytest", "tests"]
-    assert "--require-phase1-contracts" in suites[0]
+    assert "--require-phase1-contracts" in suites[0] and "--durations=20" in suites[0]
     assert not any(flag in suites[0] for flag in ("--collect-only", "--require-phase1-acceptance", "--ignore", "-k"))
     assert not any(driver in command for command in runs for driver in ("test_images.sh", "test:fixtures"))
     assert all(j["steps"][0]["with"]["ref"] == "${{ github.sha }}" for j in CI["jobs"].values())

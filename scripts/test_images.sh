@@ -17,6 +17,6 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-docker build --label "copyeditor.test=$name" --tag "$name:base" "$root"
+bash "$(dirname "$0")/build_test_image.sh" images --label "copyeditor.test=$name" --tag "$name:base" "$root"
 COPYEDITOR_TEST_IMAGE="$name:base" COPYEDITOR_TEST_LABEL="$name" \
   "${COPYEDITOR_TEST_PYTHON:-python}" -m pytest "$root/tests/integration/test_images.py" --basetemp "$work/pytest" -q

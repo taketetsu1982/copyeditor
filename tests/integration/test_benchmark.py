@@ -73,7 +73,7 @@ def test_ac_04_3_ac_04_4_ctr03_ctr05_failure_cleanup(tmp_path, failure):
                       'if [ "$1" = "$FAILURE" ]; then exit 17; fi\n')
     docker.chmod(0o755)
     result = subprocess.run(["bash", str(driver)], cwd=ROOT, capture_output=True, text=True,
-        env=dict(os.environ, PATH=str(binaries) + ":" + os.environ["PATH"], TMPDIR=str(temporary),
+        env=dict({k: v for k, v in os.environ.items() if k != "COPYEDITOR_BUILD_CACHE_DIR"}, PATH=str(binaries) + ":" + os.environ["PATH"], TMPDIR=str(temporary),
                  COMMANDS=str(commands), FAILURE=failure), timeout=30)
     assert result.returncode == 17
     calls = commands.read_text().splitlines()
