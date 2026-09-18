@@ -8,7 +8,7 @@ import pytest
 
 from types import SimpleNamespace
 
-from tests.conftest import Phase1Contracts, phase1_inventory
+from tests.conftest import PHASE2_MODULES, Phase1Contracts, phase1_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -24,6 +24,9 @@ def suite(tmp_path):
     test = 'import pytest\n' + marks + '\n@pytest.mark.parametrize("case", ["one", "two"])\ndef test_cases(case):\n    pass\n'
     (tmp_path / "tests/test_consumer.py").write_text(test)
     (tmp_path / "tests/test_other.py").write_text('import pytest\n' + marks + '\ndef test_other():\n    pass\n')
+    for module in PHASE2_MODULES:
+        (tmp_path / module).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / module).write_text('def test_present():\n    pass\n')
     return tmp_path
 
 
@@ -103,13 +106,23 @@ def collected_contracts():
     return session
 
 
-@pytest.mark.parametrize("module", sorted(str(p.relative_to(ROOT)) for p in ROOT.glob("tests/*/test_*.py") if p.name not in ("test_harness.py", "test_phase1.py")))
+@pytest.mark.parametrize("module", sorted({entry.split("::")[0] for entry in phase1_inventory(ROOT)}))
 def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_real_consumer_deletion(collected_contracts, module):
     gate = Phase1Contracts(collected_contracts.config)
     remaining = [item for item in collected_contracts.items if item.nodeid.split("::")[0] != module]
     assert len(remaining) < len(collected_contracts.items)
     gate.pytest_collection_finish(SimpleNamespace(items=remaining))
     assert any(error.startswith("Inventory mismatch: " + module + "::") for error in gate.errors)
+
+
+@pytest.mark.parametrize("missing", [None, *sorted(PHASE2_MODULES)])
+def test_ac_06_1_ac_06_2_ac_06_3_ctr02_required_modules_through_strict_cli(suite, missing):
+    if missing:
+        (suite / missing).unlink()
+    result = run(suite, "tests")
+    assert result.returncode == (1 if missing else 0), result.stdout + result.stderr
+    assert ("CONTRACTS FAIL" if missing else "CONTRACTS PASS") in result.stdout
+    assert (f"Missing Phase 2 module: {missing}" in result.stdout) == bool(missing)
 
 
 def test_ctr02_preservation_deletion_fails_through_cli():
