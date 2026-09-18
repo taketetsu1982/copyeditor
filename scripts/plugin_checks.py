@@ -47,9 +47,12 @@ def generated_content(root):
 
 
 def check_layout(root, client, generated_required=True):
-    require(client == "claude")
+    require(client in ("claude", "codex"))
     package = root / "plugins" / client
-    fixed = {Path(".claude-plugin/plugin.json"), Path(".mcp.json")}
+    manifest_path = Path(f".{client}-plugin/plugin.json")
+    fixed = {manifest_path, Path(".mcp.json")}
+    if client == "codex":
+        fixed.add(SKILL / "agents/openai.yaml")
     allowed = fixed | set(GENERATED)
     directories = {p for f in allowed for p in f.parents if p != Path(".")}
     require(not (root / "plugins").is_symlink() and not package.is_symlink() and package.is_dir())
@@ -57,8 +60,9 @@ def check_layout(root, client, generated_required=True):
         require(not entry.is_symlink())
         require(entry.relative_to(package) in (directories if entry.is_dir() else allowed))
     require(all((package / f).is_file() for f in (allowed if generated_required else fixed)))
-    manifest = read_json(package / ".claude-plugin/plugin.json")
-    require(set(manifest) == {"name", "version", "description", "skills", "mcpServers"})
+    manifest = read_json(package / manifest_path)
+    extra = {"author", "interface"} if client == "codex" else set()
+    require(set(manifest) == {"name", "version", "description", "skills", "mcpServers"} | extra)
     require(manifest["name"] == "copyeditor" and manifest["skills"] == "./skills/" and manifest["mcpServers"] == "./.mcp.json")
     require(isinstance(manifest["version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"]))
     require(isinstance(manifest["description"], str) and manifest["description"].strip())
@@ -68,11 +72,36 @@ def check_layout(root, client, generated_required=True):
     require(set(server) == {"type", "url"} and server["type"] == "http" and isinstance(server["url"], str))
     url = urlsplit(server["url"])
     require(url.scheme == "https" and url.hostname and not url.username and not url.password and not url.query and not url.fragment)
+    if client == "codex":
+        check_codex(root, package, manifest)
+        return package
     catalog = root / ".claude-plugin/marketplace.json"
     require(not catalog.parent.is_symlink() and not catalog.is_symlink())
     require(read_json(catalog) == {"name": "copyeditor-local", "owner": {"name": "copyeditor maintainers"},
                                   "plugins": [{"name": "copyeditor", "source": "./plugins/claude"}]})
     return package
+
+
+def check_codex(root, package, manifest):
+    require(manifest["author"] == {"name": "copyeditor maintainers"})
+    ui = manifest["interface"]
+    fields = {"displayName", "shortDescription", "longDescription", "developerName", "category"}
+    require(isinstance(ui, dict) and set(ui) == fields | {"capabilities", "defaultPrompt"})
+    require(all(isinstance(ui[k], str) and ui[k].strip() for k in fields))
+    require(ui["capabilities"] == ["Write"])
+    prompts = ui["defaultPrompt"]
+    require(isinstance(prompts, list) and 1 <= len(prompts) <= 3)
+    require(all(isinstance(p, str) and 0 < len(p.strip()) <= 128 for p in prompts))
+    policy = strict_yaml((package / SKILL / "agents/openai.yaml").read_text())
+    require(isinstance(policy, dict) and set(policy) == {"interface", "policy"})
+    require(isinstance(policy["policy"], dict) and set(policy["policy"]) == {"allow_implicit_invocation"})
+    require(policy["policy"]["allow_implicit_invocation"] is True)
+    require(policy["interface"] == {"display_name": "Copyeditor", "short_description": "Polish writing with shared preservation rules"})
+    catalog = root / ".agents/plugins/marketplace.json"
+    require(not any(p.is_symlink() for p in (catalog, catalog.parent, catalog.parent.parent)))
+    require(read_json(catalog) == {"name": "copyeditor-local", "interface": {"displayName": "Copyeditor Local"},
+        "plugins": [{"name": "copyeditor", "source": {"source": "local", "path": "./plugins/codex"},
+                     "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Productivity"}]})
 
 
 def check_plugin(root, client):
