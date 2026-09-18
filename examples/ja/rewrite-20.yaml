@@ -1,0 +1,12 @@
+id: "rewrite-20"
+language: "ja"
+section: "syntax"
+degree: "rewrite"
+format: "html"
+bad: "<p>管理者が承認した場合に限り、資料の公開を行うことができます。</p>"
+good: "<p>管理者が承認した場合に限り、資料を公開できます。</p>"
+reason: "Replace a nominal action with a verb while preserving the sole enabling condition and the HTML."
+lint: null
+rewrite_expectations:
+  problems: ["The nominal phrase for carrying out publication is wordy."]
+  invariants: ["Condition: publication is permitted only if the administrator approves.", "Do not make publication unconditional or mandatory; retain the complete p element."]

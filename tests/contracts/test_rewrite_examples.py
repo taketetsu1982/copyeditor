@@ -72,3 +72,62 @@ async def test_ac_07_3_ctr05_natural_source_cannot_gain_even_trailing_whitespace
     assert result["error"]["code"] == "invalid_response" and result["model_calls"] == 2
     assert "text" not in result and "diagnosis" not in result
     assert not get_assert(response["output"], {"vars": case})
+
+
+FIXED_IDS = {f"rewrite-{index:02}" for index in range(1, 25)}
+FIXED = [case for case in CASES if case["language"] == "ja" and case["id"] in FIXED_IDS]
+
+
+def test_ac_07_8_ac_07_13_ctr05_fixed_twenty_four_examples_cover_the_frozen_population():
+    from collections import Counter
+    assert {case["id"] for case in FIXED} == FIXED_IDS and len(FIXED) == 24
+    assert all(case["degree"] == "rewrite" for case in FIXED)
+    assert sum(case["must_change"] for case in FIXED) == 18
+    natural = [case for case in FIXED if not case["must_change"]]
+    assert len(natural) == 6 and all(case["bad"] == case["good"] for case in natural)
+    for register in ("polite register", "plain register"):
+        assert sum(any(register in value for value in case["rewrite_expectations"]["invariants"]) for case in natural) == 3
+    assert Counter(case["rewrite_expectations"]["problems"][0].split(":")[0] for case in FIXED[:12]) == dict.fromkeys(
+        ["Fashionable wording", "Aphoristic ending", "Patterned repetition", "Literal translation"], 3)
+    labels = [case["rewrite_expectations"]["invariants"][0].split(":")[0] for case in FIXED[18:]]
+    assert labels == ["Subject binding", "Condition", "Negation", "Promise strength", "Protected term", "URL and variable"]
+    assert sum(case["format"] == "html" for case in FIXED) >= 2
+    assert any(case["format"] == "markdown" for case in FIXED)
+    assert all(case["must_change"] and case["rewrite_expectations"]["problems"] for case in FIXED[18:])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("format", ["text", "markdown"])
+async def test_ac_07_6_ac_07_13_ctr05_fixed_text_items_keep_order_and_frozen_diagnoses(format):
+    from copyeditor.metrics import Metrics
+    from copyeditor.providers.base import GenerationResult, Usage
+    from copyeditor.requests import parse_edit_request
+    from copyeditor.rewrite_response import validate_rewrite_final
+    from copyeditor.rewrite_service import rewrite
+    selected = [case for case in FIXED if case["format"] == format]
+    by_id = {case["id"]: case for case in selected}
+    config, snapshot = adapter.environment(selected[0], "fixture")
+    snapshot = load_rules(ROOT / "rules", None, tuple(term for case in selected for term in case["protected_terms"]))
+    calls = []
+    class Batch(adapter.FixtureProvider):
+        async def generate(self, data):
+            calls.append(data)
+            key = "diagnoses" if data.stage == "diagnose" else "items"
+            values = []
+            for item in reversed(data.items):
+                case = by_id[item.id]
+                single = adapter.FixtureProvider(case["good"], no_issue=not case["must_change"])
+                value = await single.generate(data._replace(items=(item,)))
+                values.extend(json.loads(value.raw_json)[key])
+            return GenerationResult(json.dumps({key: values}), "stop", Usage(0, 0, 0))
+    request = parse_edit_request("polish_text", dict(items=[dict(id=case["id"], text=case["bad"]) for case in selected],
+        language="ja", degree="rewrite", format=format), config, snapshot)
+    meter = Metrics(0, config["model"], config["pricing"], lambda: 0, degree="rewrite")
+    result = await rewrite(request, config, snapshot, lambda: Batch(""), meter, items_route=True)
+    validate_rewrite_final(result, request.items)
+    assert [item["id"] for item in result["items"]] == list(by_id)
+    assert [item["text"] for item in result["items"]] == [case["good"] for case in selected]
+    assert all(item["flag"] is None and not item["regenerated"] for item in result["items"])
+    assert [item["diagnosis"]["status"] for item in result["items"]] == ["issue" if case["must_change"] else "no_issue" for case in selected]
+    assert len(calls) == result["model_calls"] == 1 + (len(selected) + 3) // 4
+    assert all(len(value.items) <= 4 for value in calls[1:])

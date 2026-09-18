@@ -1,0 +1,12 @@
+id: "rewrite-22"
+language: "ja"
+section: "syntax"
+degree: "rewrite"
+format: "text"
+bad: "担当者からの返答は、翌日までにできる場合があります。"
+good: "担当者が翌日までに返答できる場合があります。"
+reason: "Make the actor and verb direct while retaining the explicitly limited possibility."
+lint: null
+rewrite_expectations:
+  problems: ["The nominal reply-from-the-person construction is indirect."]
+  invariants: ["Promise strength: a reply by the following day is possible in some cases, not guaranteed.", "The person responsible remains the actor; do not shorten or remove the time bound."]

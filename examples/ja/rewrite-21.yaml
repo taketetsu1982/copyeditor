@@ -1,0 +1,12 @@
+id: "rewrite-21"
+language: "ja"
+section: "syntax"
+degree: "rewrite"
+format: "text"
+bad: "この操作では、保存済みのファイルの削除を行うことはありません。"
+good: "この操作では、保存済みのファイルは削除しません。"
+reason: "Use a direct negative verb without losing the negation or the class of files it applies to."
+lint: null
+rewrite_expectations:
+  problems: ["The nominal phrase for carrying out deletion obscures the simple negative statement."]
+  invariants: ["Negation: this operation does not delete saved files.", "Do not extend the statement to unsaved files or unrelated operations."]
