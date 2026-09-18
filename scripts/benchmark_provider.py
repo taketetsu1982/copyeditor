@@ -17,6 +17,8 @@ from copyeditor.rewrite_service import rewrite
 
 
 def environment(case, mode):
+    if type(case["protected_terms"]) is not list:
+        raise ValueError("Invalid benchmark protected terms")
     if mode not in ("fixture", "live"):
         raise ValueError("Invalid benchmark mode")
     if mode == "live":
