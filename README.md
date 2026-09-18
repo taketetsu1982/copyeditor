@@ -57,6 +57,8 @@ codex mcp add copyeditor --url http://127.0.0.1:8080/mcp
 
 For Google mode, use your HTTPS origin plus `/mcp` instead and complete the client's OAuth login. Discover `polish_text` and `lint_text`; use a small non-sensitive text for the first polish call and inspect the result before applying it. Client approval is still required for external text submission. `lint_text` does not call a model. Tool inputs, limits and outputs are specified in [CTR-01](contracts/tools.md).
 
+Per-client steps for Claude Desktop, Claude Code, the ChatGPT desktop app, Codex CLI and the Codex app are in [deployment/mcp-clients.md](deployment/mcp-clients.md).
+
 ## Derived images and language rules
 
 In a separate build directory, prepare a non-secret `config.yaml` and an additive `rules/ja.md` following [CTR-03](rules/README.md#overlays), with unique lint IDs. Use this Dockerfile for either auth mode (selected by config):
@@ -143,6 +145,8 @@ codex mcp add copyeditor --url http://127.0.0.1:8080/mcp
 ```
 
 GoogleではURLをHTTPS originと `/mcp` に替え、clientのOAuth loginを完了します。`polish_text` と `lint_text` をdiscoveryで確認し、秘密を含まない短文で最初のpolishを試して、反映前に結果を確認します。外部への本文送信にはclientの承認が必要です。`lint_text` はモデルを呼びません。入力・上限・出力は[CTR-01](contracts/tools.md)に従います。
+
+Claude Desktop、Claude Code、ChatGPT デスクトップ、Codex CLI、Codex アプリの接続手順は [deployment/mcp-clients.md](deployment/mcp-clients.md) を参照してください。
 
 ### 派生imageと言語ルール
 
