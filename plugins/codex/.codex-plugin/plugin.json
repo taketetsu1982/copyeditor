@@ -1,0 +1,17 @@
+{
+  "name": "copyeditor",
+  "version": "0.1.0",
+  "description": "Polish writing through an explicitly configured MCP server.",
+  "author": {"name": "copyeditor maintainers"},
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Copyeditor",
+    "shortDescription": "Polish writing with shared preservation rules",
+    "longDescription": "Review writing candidates from your configured MCP server while preserving client approval controls.",
+    "developerName": "copyeditor maintainers",
+    "category": "Productivity",
+    "capabilities": ["Write"],
+    "defaultPrompt": ["Proofread this text and show me the candidate."]
+  }
+}
