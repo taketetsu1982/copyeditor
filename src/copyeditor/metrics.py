@@ -5,15 +5,27 @@ from copyeditor.providers.base import Usage
 
 
 class Metrics:
-    def __init__(self, started_at, model, pricing, clock=monotonic):
+    def __init__(self, started_at, model, pricing, clock=monotonic, *, degree="polish"):
+        if degree not in ("polish", "rewrite"):
+            raise ValueError("Unknown editing degree")
+        self.degree = degree
+        self.max_calls = 2 if degree == "polish" else 17
+        self.regenerated = False
         self.started_at = started_at
         self.clock = clock
         self.price = dict(pricing[model]) if model in pricing else None
         self.calls = []
 
-    def start_call(self):
-        if len(self.calls) == 2:
-            raise ValueError("At most two model calls are allowed")
+    def start_call(self, *, is_regeneration=None):
+        if len(self.calls) >= self.max_calls:
+            raise ValueError("Model call limit exceeded")
+        if is_regeneration is None:
+            if self.degree == "rewrite":
+                raise ValueError("Rewrite calls require an explicit regeneration marker")
+            is_regeneration = bool(self.calls)
+        if type(is_regeneration) is not bool:
+            raise ValueError("Regeneration marker must be boolean")
+        self.regenerated |= is_regeneration
         self.calls.append(None)
         return len(self.calls) - 1
 
@@ -43,5 +55,5 @@ class Metrics:
             "cost": cost,
             "latency_ms": round((self.clock() - self.started_at) * 1000),
             "model_calls": len(self.calls),
-            "regeneration_attempted": len(self.calls) > 1,
+            "regeneration_attempted": self.regenerated,
         }

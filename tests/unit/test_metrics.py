@@ -104,3 +104,69 @@ def test_ctr01_elapsed_starts_at_tool_entry_and_includes_final_validation():
     assert meter.snapshot()["latency_ms"] == 1000
     now[0] = 11.0
     assert meter.snapshot()["latency_ms"] == 2000
+
+
+def test_ac_07_7_ctr01_diagnosis_and_later_batches_are_not_regeneration():
+    meter = Metrics(0, "model", {}, clock=lambda: 1, degree="rewrite")
+    for _ in range(9):
+        meter.record_usage(meter.start_call(is_regeneration=False), Usage(2, 3, 5))
+    assert meter.snapshot()["model_calls"] == 9
+    assert meter.snapshot()["regeneration_attempted"] is False
+    assert meter.snapshot()["usage"] == Usage(18, 27, 45)._asdict()
+    meter.start_call(is_regeneration=True)
+    assert meter.snapshot()["regeneration_attempted"] is True
+    assert meter.snapshot()["usage"] == dict.fromkeys(Usage._fields)
+    meter.record_usage(meter.start_call(is_regeneration=False), Usage(1, 2, 3))
+    assert meter.snapshot()["regeneration_attempted"] is True
+
+
+def test_ac_07_7_ctr01_maximum_started_calls_and_failure_slots_are_retained():
+    meter = Metrics(0, "model", {}, degree="rewrite")
+    for i in range(17):
+        assert meter.start_call(is_regeneration=i > 8) == i
+    before = meter.snapshot()
+    assert before["model_calls"] == 17
+    assert before["usage"] == dict.fromkeys(Usage._fields)
+    assert before["cost"] is None
+    with pytest.raises(ValueError):
+        meter.start_call(is_regeneration=False)
+    after = meter.snapshot()
+    assert after["model_calls"] == before["model_calls"]
+    assert after["regeneration_attempted"] is True
+
+
+@pytest.mark.parametrize("marker", [None, 0, 1, "true"])
+def test_inv11_rewrite_requires_explicit_boolean_before_start(marker):
+    meter = Metrics(0, "model", {}, degree="rewrite")
+    with pytest.raises(ValueError):
+        meter.start_call(is_regeneration=marker)
+    assert meter.snapshot()["model_calls"] == 0
+    assert meter.snapshot()["regeneration_attempted"] is False
+
+
+@pytest.mark.parametrize("missing", [None, 0, 1, 2])
+def test_inv11_all_rewrite_stages_preserve_partial_usage_and_actual_cost(missing):
+    prices = {"model": {"input_per_million": 1, "output_per_million": 2, "currency": "USD"}}
+    meter = Metrics(0, "model", prices, degree="rewrite")
+    for regeneration in (False, False, True, False):
+        values = [10, 20, 35]
+        if missing is not None:
+            values[missing] = None
+        meter.record_usage(meter.start_call(is_regeneration=regeneration), Usage(*values))
+    values = [40, 80, 140]
+    if missing is not None:
+        values[missing] = None
+    result = meter.snapshot()
+    assert result["usage"] == Usage(*values)._asdict()
+    assert result["cost"] == (None if missing in (0, 1) else {"amount": "0.000200", "currency": "USD"})
+    assert result["model_calls"] == 4 and result["regeneration_attempted"] is True
+
+
+def test_ctr01_legacy_defaults_and_explicit_polish_marker():
+    for degree in ("polish", "rewrite"):
+        meter = Metrics(0, "model", {}, degree=degree)
+        meter.start_call(is_regeneration=False)
+        meter.start_call(is_regeneration=False)
+        assert meter.snapshot()["regeneration_attempted"] is False
+    with pytest.raises(ValueError):
+        Metrics(0, "model", {}, degree="other")
