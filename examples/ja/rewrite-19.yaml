@@ -1,0 +1,12 @@
+id: "rewrite-19"
+language: "ja"
+section: "syntax"
+degree: "rewrite"
+format: "text"
+bad: "東支店は月に10件、西支店は月に20件の相談を受けます。東支店の相談も西支店の相談も、担当者が記録します。"
+good: "東支店は月に10件、西支店は月に20件の相談を受け、いずれも担当者が記録します。"
+reason: "Remove repeated branch references without swapping the numerical facts attached to each branch."
+lint: null
+rewrite_expectations:
+  problems: ["Repeated branch references make the second sentence heavy; combine them without changing the facts."]
+  invariants: ["Subject binding: East receives 10 consultations per month and West receives 20, never the reverse.", "The person responsible records consultations for both branches; keep polite register."]

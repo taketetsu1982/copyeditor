@@ -1,0 +1,13 @@
+id: "rewrite-18"
+language: "ja"
+section: "context"
+degree: "rewrite"
+format: "text"
+bad: "下書きは公開前に保存しておく。"
+good: "下書きは公開前に保存しておく。"
+reason: "The original is a concise natural plain-register instruction; retain it exactly."
+lint: null
+must_change: false
+rewrite_expectations:
+  problems: []
+  invariants: ["Save the draft before publication.", "Keep plain register and every decoded character unchanged."]
