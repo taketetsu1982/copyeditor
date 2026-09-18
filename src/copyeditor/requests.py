@@ -31,6 +31,7 @@ class Request(NamedTuple):
     language: str
     format: str
     background: Background
+    degree: str = "polish"
 
 
 def check(condition, field=None, code="invalid_input"):
@@ -121,4 +122,20 @@ def input_schema(tool, config, snapshot):
         schema["description"] = ("Decoded Unicode code points, without normalization: body total <=12000; contexts total <=4000; "
             "background total <=4000; contexts plus background <=4000; body plus contexts plus background <=16000. "
             "Item IDs must be unique. Aggregate budgets and ID uniqueness are validated by the server.")
+    return schema
+
+
+def parse_edit_request(tool, arguments, config, snapshot):
+    check(type(arguments) is dict)
+    degree = arguments.get("degree", "polish")
+    check(tool == "polish_text" or "degree" not in arguments, "degree")
+    check(type(degree) is str and degree in ("polish", "rewrite"), "degree")
+    body = {key: value for key, value in arguments.items() if key != "degree"}
+    return parse_request(tool, body, config, snapshot)._replace(degree=degree)
+
+
+def edit_input_schema(tool, config, snapshot):
+    schema = input_schema(tool, config, snapshot)
+    if tool == "polish_text":
+        schema["properties"]["degree"] = {"type": "string", "enum": ["polish", "rewrite"], "default": "polish"}
     return schema
