@@ -45,3 +45,30 @@ async def test_ac_07_3_ac_07_8_ctr05_synthetic_mutations_do_not_pass(identity, m
         assert result["text"] == case["bad"]
     else:
         assert result["status"] == "ok" and result["text"] == case["bad"]
+
+
+SECOND_IDS = {f"rewrite-{index:02}" for index in range(9, 17)}
+SECOND = [case for case in CASES if case["language"] == "ja" and case["id"] in SECOND_IDS]
+
+
+def test_ac_07_8_ctr05_remaining_problem_types_and_natural_subset():
+    assert {case["id"] for case in SECOND} == SECOND_IDS
+    problems, natural = SECOND[:4], SECOND[4:]
+    assert [case["rewrite_expectations"]["problems"][0].split(":")[0] for case in problems] == [
+        "Patterned repetition", "Literal translation", "Literal translation", "Literal translation"]
+    assert all(case["must_change"] and case["bad"] != case["good"] for case in problems)
+    assert all(case["must_change"] is False and case["bad"] == case["good"] and
+               case["rewrite_expectations"]["problems"] == [] for case in natural)
+    assert sum(any("polite register" in value for value in case["rewrite_expectations"]["invariants"]) for case in natural) == 3
+    assert sum(any("plain register" in value for value in case["rewrite_expectations"]["invariants"]) for case in natural) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("identity", [f"rewrite-{index:02}" for index in range(13, 17)])
+async def test_ac_07_3_ctr05_natural_source_cannot_gain_even_trailing_whitespace(identity):
+    case = next(case for case in SECOND if case["id"] == identity)
+    response = await adapter.call_api("", {}, {"vars": case | dict(good=case["bad"] + " ")})
+    result = json.loads(response["output"])
+    assert result["error"]["code"] == "invalid_response" and result["model_calls"] == 2
+    assert "text" not in result and "diagnosis" not in result
+    assert not get_assert(response["output"], {"vars": case})
