@@ -1,8 +1,8 @@
 ---
 contract-id: CTR-05
 kind: schema
-derives-from: [AC-03-4, AC-04-1, AC-04-4, AC-04-5, AC-04-6, AC-04-7]
-revision: 2
+derives-from: [AC-03-4, AC-04-1, AC-04-4, AC-04-5, AC-04-6, AC-04-7, AC-07-8, AC-07-9, AC-07-13]
+revision: 3
 ---
 
 # Copyediting examples
@@ -23,6 +23,8 @@ Store one YAML 1.2 mapping in `examples/<lang>/<id>.yaml`, UTF-8, with no duplic
 | `protected_terms` | optional string array | additional exact terms, CTR-04 bounds; default `[]` |
 | `lint` | required null or mapping | null for a semantic-only example; otherwise exactly `rule_ids`: nonempty distinct array of IDs from its language rules |
 | `must_change` | optional boolean | default true; if true bad and good must differ |
+| `degree` | optional enum | `polish` (default), `rewrite` |
+| `rewrite_expectations` | required mapping exactly when degree is rewrite; forbidden otherwise | exactly `problems` and `invariants`, defined below; evaluation-only, never model input |
 | `regression` | optional enum | `protected-terms-overreach`; omitted otherwise |
 
 No per-example ratio override: use the image defaults in CTR-04, so fixtures cannot quietly loosen the preservation gate. `must_change: false` permits a naturally worded original; reason must explain why to retain it. The example's protected terms add to built-in rules for fixture evaluation, not a public tool argument. No arbitrary assertion code is allowed in examples.
@@ -42,6 +44,14 @@ lint:
   rule_ids: [en-vocabulary-001]
 must_change: true
 ```
+
+## Rewrite evaluation examples
+
+`rewrite_expectations.problems` and `.invariants` are arrays of distinct, nonblank English strings, each 1–320 code points, at most eight entries each. Invariants has at least one entry and states source facts, relationships, negation/conditions/promise strength and register that must not change. Problems names undesirable source expressions and why they must not survive; it is nonempty when `must_change: true`, empty when false. For rewrite with `must_change: false`, require `bad == good` exactly. A naturally phrased source must remain byte-for-byte equivalent as decoded Unicode, not merely pass length/preservation checks. Nulls and extra keys are forbidden. `good` is one human-authored acceptable example, not the unique live answer.
+
+Use newly composed Japanese examples for the observed LP failure types (fashionable wording, aphoristic endings, patterned repetition and literal translation), natural nonchange including polite/plain register, and tempting changes to facts, numbers, negation and promises. Do not copy the owner's LP. Keep all existing lint coverage and protected-terms-overreach examples. Adding semantic rewrite examples does not replace detector-backed examples or Japanese native review.
+
+CI validates this schema, runs fixture candidates through the actual rewrite pipeline with fake diagnosis and generation, and checks preservation and nonchange. Human review of live synthetic examples decides whether the listed problems were resolved without new problems or meaning changes; regex matching or a model's own diagnosis is not proof. Criteria and the repetition protocol are frozen before running, and a report must identify their revision, fixture hashes, model, thinking, prompt and rules versions. No live evaluation is run by default CI.
 
 ## Deterministic assertions
 
@@ -74,6 +84,7 @@ tests:
       good: "Open the page to view 10 results."
       reason: "The shorter phrase retains the purpose and the number of results."
       format: text
+      degree: polish
       background: {}
       protected_terms: []
       lint: {rule_ids: [en-vocabulary-001]}
@@ -83,11 +94,11 @@ tests:
         value: file://../scripts/benchmark_assert.py
 ```
 
-This path example assumes output in a direct child of the repository. Omitted optional source fields become their explicit defaults in vars; omitted regression becomes an omitted vars key. No other source field is dropped or inferred. This uses Promptfoo's [test vars and assertions](https://www.promptfoo.dev/docs/configuration/test-cases/) and [Python provider interface](https://www.promptfoo.dev/docs/providers/python/).
+This path example assumes output in a direct child of the repository. Omitted optional source fields become their explicit defaults in vars; omitted degree becomes `polish`; omitted regression and rewrite_expectations remain omitted vars keys. No other source field is dropped or inferred. This uses Promptfoo's [test vars and assertions](https://www.promptfoo.dev/docs/configuration/test-cases/) and [Python provider interface](https://www.promptfoo.dev/docs/providers/python/).
 
-`benchmark_provider.py` implements `call_api(prompt, options, context)` with `context.vars` as validated example data. In `fixture` mode it invokes the server's in-process polish pipeline with a fake provider returning `good`; returns `{"output": <compact JSON string of the full CTR-01 text result>}`. No auth bypass is exposed by the production server; this is a test-only dependency injection. It must raise on any attempted network access. The assertion adapter `get_assert(output, context)` returns a boolean: schema-valid successful result, null flag, deterministic bad→returned-text checks, must-change if required, and the lint expectations evaluated on the fixture pair. In fixture mode it also requires returned text exactly equal to good. Failures are test failures, never converted to passing empty outputs.
+`benchmark_provider.py` implements `call_api(prompt, options, context)` with `context.vars` as validated example data. In `fixture` mode it invokes the server's in-process polish pipeline with a fake provider returning `good`; for rewrite the fake first returns one valid diagnosis (no_issue for nonchange, otherwise an issue expression from bad with a short reason), then good through the real candidate path; returns `{"output": <compact JSON string of the full CTR-01 text result>}`. No auth bypass is exposed by the production server; this is a test-only dependency injection. It must raise on any attempted network access. The assertion adapter `get_assert(output, context)` returns a boolean: schema-valid successful result, null flag, deterministic bad→returned-text checks, must-change if required, and the lint expectations evaluated on the fixture pair. In fixture mode it also requires returned text exactly equal to good. Failures are test failures, never converted to passing empty outputs.
 
-`--live` emits `mode: live` instead; it is an explicit benchmark opt-in with synthetic public examples and runtime ADC/config. The adapter uses the same in-process service and real configured provider. It does not pass good/reason/lint assertions to the model, only bad, language, format and permitted background. Live assertions do not require equality with good, but still require the returned candidate's preservation, null flag, and must-change where declared. Lint expectations for bad/good remain fixture tests; semantic quality of live candidates requires human review. Live mode never runs on default PR CI and never silently falls back to fixture mode.
+`--live` emits `mode: live` instead; it is an explicit benchmark opt-in with synthetic public examples and runtime ADC/config. The adapter uses the same in-process service and real configured provider. It does not pass good/reason/lint assertions to the model, only bad, language, format, degree and permitted background. Neither rewrite_expectations, good, reason nor the evaluator’s diagnosis is sent to the live provider. The production server creates its own diagnosis. For rewrite nonchange examples the live assertion additionally requires returned text exactly equal to bad. Other live assertions do not require equality with good, but still require the returned candidate's preservation, null flag, and must-change where declared. Lint expectations for bad/good remain fixture tests; semantic quality of live candidates requires human review. Live mode never runs on default PR CI and never silently falls back to fixture mode.
 
 Pin the Promptfoo CLI and Python dependencies in the implementation's lockfiles, turn off Promptfoo telemetry, and run fixture mode with networking denied. Generated reports may contain example text; never feed private production requests into this benchmark. The server audit restrictions remain unchanged.
 
