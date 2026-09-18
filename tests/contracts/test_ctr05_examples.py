@@ -75,7 +75,7 @@ async def test_ac04_3_ac04_4_ac04_5_ctr03_ctr05_real_examples_accepted(case, mon
     monkeypatch.setattr("copyeditor.providers.vertex.Vertex", forbidden)
     response = await adapter.call_api(case["bad"], {}, {"vars": case})
     result = json.loads(response["output"])
-    assert result["text"] == case["good"] and result["flag"] is None and result["model_calls"] == 1
+    assert result["text"] == case["good"] and result["flag"] is None and result["model_calls"] == (2 if case.get("degree") == "rewrite" else 1)
     assert get_assert(response["output"], {"vars": case})
 
 
@@ -172,3 +172,107 @@ async def test_ac04_3_ctr05_uncapped_lint_and_must_change(monkeypatch):
     response = await adapter.call_api("", {}, {"vars": unchanged})
     assert not get_assert(response["output"], {"vars": unchanged})
     assert get_assert(response["output"], {"vars": unchanged | {"must_change": False}})
+
+
+def rewrite_example(change=True):
+    case = example()
+    return case | dict(degree="rewrite", good=case["good"] if change else case["bad"], must_change=change,
+        rewrite_expectations=dict(problems=["Awkward expression."] if change else [], invariants=["Keep facts and register."]))
+
+
+@pytest.mark.parametrize("change", [dict(degree=None), dict(degree=True), dict(degree="other"),
+    dict(rewrite_expectations=None), dict(rewrite_expectations={}),
+    dict(rewrite_expectations=dict(problems=[], invariants=["Fact"])),
+    dict(rewrite_expectations=dict(problems=["Problem"], invariants=[])),
+    dict(rewrite_expectations=dict(problems=["Problem"], invariants=["Fact", "Fact"])),
+    dict(rewrite_expectations=dict(problems=[" "], invariants=["Fact"])),
+    dict(rewrite_expectations=dict(problems=["x" * 321], invariants=["Fact"])),
+    dict(rewrite_expectations=dict(problems=[str(i) for i in range(9)], invariants=["Fact"])),
+    dict(rewrite_expectations=dict(problems=["Problem"], invariants=["Fact"], extra=True)),
+    dict(degree="polish"), dict(must_change=False)])
+def test_ac_07_8_ctr05_rewrite_schema_is_closed_and_bounded(assets, change):
+    base, examples = assets
+    path = examples / "ja/vocabulary.yaml"
+    case = json.loads(path.read_text()) | dict(degree="rewrite",
+        rewrite_expectations=dict(problems=["Problem"], invariants=["Fact"]))
+    path.write_text(json.dumps(case | change))
+    with pytest.raises(ValueError, match="^Invalid examples$"):
+        converter["load_examples"](examples, load_rules(base, None))
+
+
+@pytest.mark.parametrize("change", [True, False])
+def test_ac_07_8_ctr05_rewrite_vars_preserve_expectations_and_nonchange(assets, tmp_path, change):
+    base, examples = assets
+    path = examples / "ja/vocabulary.yaml"
+    case = json.loads(path.read_text()) | dict(degree="rewrite", must_change=change, lint=None)
+    if not change: case["good"] = case["bad"]
+    case["rewrite_expectations"] = dict(problems=["p" * 320] if change else [], invariants=["f" * 320])
+    path.write_text(json.dumps(case))
+    cases = converter["load_examples"](examples, load_rules(base, None))
+    selected = next(c for c in cases if c["id"] == "vocabulary")
+    assert selected["rewrite_expectations"] == case["rewrite_expectations"]
+    assert all(c["degree"] == "polish" and "rewrite_expectations" not in c for c in cases if c is not selected)
+    output = tmp_path / "rewrite.json"
+    converter["convert"](output, cases)
+    assert [test["vars"] for test in json.loads(output.read_text())["tests"]] == cases
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", [True, False])
+async def test_ac_07_8_ac_07_13_ctr05_fixture_uses_real_diagnosis_and_candidate_flow(change, monkeypatch):
+    case = rewrite_example(change)
+    seen = []
+    original = adapter.FixtureProvider.generate
+    async def record(self, data):
+        seen.append(data)
+        return await original(self, data)
+    monkeypatch.setattr(adapter.FixtureProvider, "generate", record)
+    response = await adapter.call_api("IGNORED_PROMPT", {}, {"vars": case})
+    result = json.loads(response["output"])
+    assert result["schema_version"] == 2 and result["degree"] == "rewrite" and result["model_calls"] == 2
+    assert result["text"] == case["good"] and result["diagnosis"]["status"] == ("issue" if change else "no_issue")
+    assert [value.stage for value in seen] == ["diagnose", "rewrite"]
+    assert get_assert(response["output"], {"vars": case})
+    assert not get_assert(response["output"], {"vars": case | {"degree": "polish"}})
+
+
+@pytest.mark.asyncio
+async def test_ac_07_9_ctr05_rewrite_live_input_never_contains_evaluation_metadata(monkeypatch):
+    case = rewrite_example() | {"reason": "EVALUATOR_REASON", "rewrite_expectations": {
+        "problems": ["EVALUATOR_PROBLEMS"], "invariants": ["EVALUATOR_INVARIANTS"]}}
+    config, snapshot = adapter.environment(case, "fixture")
+    monkeypatch.setattr(adapter, "environment", lambda c, m: (config, snapshot))
+    import benchmark_assert
+    monkeypatch.setattr(benchmark_assert, "environment", lambda c, m: (config, snapshot))
+    seen, counts = [], []
+    class Live:
+        def __init__(self, supplied): assert supplied is config
+        async def estimate_input(self, data):
+            counts.append(data)
+            return 0
+        async def generate(self, data):
+            seen.append(data)
+            return await adapter.FixtureProvider(case["good"]).generate(data)
+    monkeypatch.setattr("copyeditor.providers.vertex.Vertex", Live)
+    response = await adapter.call_api("EVALUATOR_PROMPT", {"config": {"mode": "live"}}, {"vars": case})
+    assert [value.stage for value in seen] == ["diagnose", "rewrite"] and counts == seen
+    assert all("EVALUATOR" not in repr(value) and case["good"] not in repr(value) for value in seen)
+    assert all(value.items[0].text == case["bad"] for value in seen)
+    assert get_assert(response["output"], {"vars": case, "config": {"mode": "live"}})
+    # Nonchange applies to actual live output, independently of valid server diagnostics.
+    natural = case | dict(must_change=False, good=case["bad"])
+    assert not get_assert(response["output"], {"vars": natural, "config": {"mode": "live"}})
+    async def fail(self, data): return ProviderFailure("provider_error", Usage(None, None, None))
+    monkeypatch.setattr(Live, "estimate_input", fail)
+    seen.clear()
+    response = await adapter.call_api("", {"config": {"mode": "live"}}, {"vars": case})
+    assert json.loads(response["output"])["error"]["code"] == "provider_error" and not seen
+
+
+@pytest.mark.asyncio
+async def test_ac_07_9_ctr05_rewrite_fixture_denies_network_during_preflight(monkeypatch):
+    import socket
+    async def access(self, data): socket.create_connection(("example.com", 443))
+    monkeypatch.setattr(adapter.FixtureProvider, "estimate_input", access)
+    with pytest.raises(RuntimeError, match="Fixture network access denied"):
+        await adapter.call_api("", {}, {"vars": rewrite_example()})
