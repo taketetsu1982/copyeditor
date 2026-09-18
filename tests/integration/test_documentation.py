@@ -46,3 +46,16 @@ def test_ac_05_7_ctr04_authentication_and_retention_in_both_languages():
                      "polish_text", "lint_text", "natural-japanese", "copyeditor-provenance-v1"):
             assert term in section
         assert 'httpRequest.requestUrl=~"/auth/callback([?]|$)"' in section
+
+
+def test_ac_06_1_ac_06_6_ctr02_plugin_instructions_in_both_languages():
+    assert re.findall(r"^### (.+)$", EN, re.M) == ["Claude Code plugin", "Codex plugin", "Submission permission and results"]
+    assert re.findall(r"^#### (.+)$", JA, re.M) == ["Claude Code plugin", "Codex plugin", "送信許可と結果の扱い"]
+    for section in (EN, JA):
+        for client, install in (("claude", "install"), ("codex", "add")):
+            assert f"plugins/{client}/.mcp.json" in section
+            assert section.count(f"{client} plugin marketplace add .") == 1
+            assert section.count(f"{client} plugin {install} copyeditor@copyeditor-local") == 1
+        for term in ("CLAUDE.md", "AGENTS.md", "Vertex AI", "OAuth", "flag", "rules/common.md#meaning-and-adoption"):
+            assert term in section
+        assert "deployment/" not in section

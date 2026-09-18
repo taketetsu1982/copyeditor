@@ -7,7 +7,8 @@ import sys
 
 import pytest
 
-PHASE2_MODULES = {"tests/integration/test_plugin_claude.py", "tests/integration/test_plugin_codex.py"}
+PHASE2_MODULES = {"tests/integration/test_plugin_claude.py", "tests/integration/test_plugin_codex.py",
+                  "tests/integration/test_plugin_distribution.py"}
 
 
 def pytest_report_collectionfinish(items):

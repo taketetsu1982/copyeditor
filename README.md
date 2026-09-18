@@ -48,7 +48,59 @@ Connect with an OAuth-capable MCP client and complete browser login and proxy co
 
 ## Client connection
 
-Choose one client; for local none mode:
+### Claude Code plugin
+
+1. Check out the repository and enter it:
+
+```sh
+git clone https://github.com/taketetsu1982/copyeditor.git
+cd copyeditor
+```
+
+2. In your checkout, edit `plugins/claude/.mcp.json`: replace `https://copyeditor.invalid/mcp` with your server's HTTPS endpoint ending in `/mcp`. The placeholder is not a hosted service. Complete the Google authentication and callback log setup above before login.
+3. Register this local checkout and install the plugin:
+
+```sh
+claude plugin marketplace add .
+claude plugin install copyeditor@copyeditor-local
+```
+
+4. Start a new Claude Code session, open `/mcp`, select the server belonging to the `copyeditor` plugin, and complete its browser OAuth sign-in and consent with an allowed account. Check the displayed server name rather than assuming it matches a separately registered MCP server.
+5. Confirm that this plugin exposes `polish_text` and `lint_text`. Try non-sensitive text through the plugin's Skill, review the approval request and returned candidate, and confirm `lint_text` independently. Installation alone does not verify the connection.
+
+### Codex plugin
+
+1. Check out the repository and enter it:
+
+```sh
+git clone https://github.com/taketetsu1982/copyeditor.git
+cd copyeditor
+```
+
+2. In your checkout, edit `plugins/codex/.mcp.json`: replace `https://copyeditor.invalid/mcp` with your server's HTTPS endpoint ending in `/mcp`. Complete the Google authentication and callback log setup above before login.
+3. Register this local checkout and install the compatibility plugin:
+
+```sh
+codex plugin marketplace add .
+codex plugin add copyeditor@copyeditor-local
+```
+
+4. Start a new Codex session and complete the installed plugin's OAuth sign-in prompt with an allowed account, including proxy consent. Confirm the plugin's actual server identity in the client's MCP status; do not authenticate a separate direct registration as a substitute. The version-specific plugin OAuth interaction still requires live verification.
+5. Confirm `polish_text` and `lint_text` under the installed plugin. Try a small non-sensitive text with the Skill, review the tool approval and candidate, and check `lint_text` independently.
+
+The command forms above were checked with Claude Code 2.1.276 and codex-cli 0.154.0; live plugin authentication and invocation remain operator checks. See the [Claude plugin reference](https://code.claude.com/docs/en/plugins-reference) and [OpenAI package documentation](https://developers.openai.com/plugins/build/plugins).
+
+For updates, keep your endpoint configuration outside version control, update the original checkout, then preserve or reapply its `.mcp.json` URL before reinstalling through the same local marketplace. Remove the old plugin through the client's plugin manager if needed, reinstall, and start a new session. Do not edit cached plugin copies or commit your deployment settings.
+
+### Submission permission and results
+
+Put a scoped permission statement in your project's `CLAUDE.md` or `AGENTS.md`, for example: “When I request copyediting, you may send only the non-confidential paragraphs I explicitly select to my configured copyeditor server and its Vertex AI provider. Ask before sending anything else.” This permits a content scope; it does not bypass client approval. Do not add automatic tool approvals or permission-skip settings.
+
+The server does not persist text or candidates; provider retention and infrastructure logs remain outside that guarantee, as described below. Both packages currently provide a minimal confirm → `polish_text` → present workflow. Detailed permission classification, extraction, item comparison and selective application are not implemented by this Skill yet.
+
+Under [CTR-02](rules/common.md#meaning-and-adoption), a **skip** leaves the original unchanged when safe adoption cannot be established. A **flag** marks a candidate for review, not permission to apply it; a **rejection** reports a failed check. Never adopt a flagged or rejected candidate. A successful check alone does not prove that meaning is preserved.
+
+For a server-only connection without the plugin Skill, choose one client; for local none mode:
 
 ```sh
 claude mcp add --transport http copyeditor http://127.0.0.1:8080/mcp
@@ -135,7 +187,59 @@ OAuth対応MCP clientで接続し、ブラウザloginとproxy consentを完了�
 
 ### クライアント接続
 
-ローカルnoneでは、使うclientを1つ選びます。
+#### Claude Code plugin
+
+1. リポジトリをcheckoutし、そのdirectoryへ移動します。
+
+```sh
+git clone https://github.com/taketetsu1982/copyeditor.git
+cd copyeditor
+```
+
+2. 自分のcheckout内の `plugins/claude/.mcp.json` を編集し、`https://copyeditor.invalid/mcp` を自分のサーバーの `/mcp` で終わるHTTPS endpointに替えます。初期URLは稼働サービスではありません。login前に、上記のGoogle認証とcallbackログの設定を済ませます。
+3. このローカルcheckoutを登録し、pluginを導入します。
+
+```sh
+claude plugin marketplace add .
+claude plugin install copyeditor@copyeditor-local
+```
+
+4. 新しいClaude Code sessionを開き、`/mcp` で `copyeditor` pluginのserverを選び、許可されたアカウントでブラウザのOAuth loginと同意を完了します。server名は画面で確認し、別途直接登録したMCP serverと同じ名前だと決めつけないでください。
+5. pluginに `polish_text` と `lint_text` が表示されることを確認します。秘密を含まない本文でpluginのSkillを試し、承認要求と候補を確認して、`lint_text` も個別に試します。導入だけでは接続確認にはなりません。
+
+#### Codex plugin
+
+1. リポジトリをcheckoutし、そのdirectoryへ移動します。
+
+```sh
+git clone https://github.com/taketetsu1982/copyeditor.git
+cd copyeditor
+```
+
+2. 自分のcheckout内の `plugins/codex/.mcp.json` を編集し、`https://copyeditor.invalid/mcp` を自分のサーバーの `/mcp` で終わるHTTPS endpointに替えます。login前に、上記のGoogle認証とcallbackログの設定を済ませます。
+3. このローカルcheckoutを登録し、compatibility pluginを導入します。
+
+```sh
+codex plugin marketplace add .
+codex plugin add copyeditor@copyeditor-local
+```
+
+4. 新しいCodex sessionを開き、導入したpluginのOAuth login案内に従い、許可されたアカウントでproxy consentまで完了します。clientのMCP状態表示でpluginの実際のserver名を確認し、別の直接登録に対する認証で代用しないでください。版ごとのplugin OAuth操作は実機での確認が必要です。
+5. pluginの `polish_text` と `lint_text` を確認します。秘密を含まない短文でSkillを試し、toolの承認と候補を確認して、`lint_text` も個別に試します。
+
+上のコマンド形はClaude Code 2.1.276とcodex-cli 0.154.0で確認しました。pluginの実認証と起動は運用者が確認してください。[Claude plugin reference](https://code.claude.com/docs/en/plugins-reference)と[OpenAI package documentation](https://developers.openai.com/plugins/build/plugins)も参照できます。
+
+更新時はendpoint設定を版管理の外に控え、元のcheckoutを更新し、その `.mcp.json` のURLを保持または再設定してから同じlocal marketplace経由で再導入します。必要ならclientのplugin管理画面で旧pluginを削除し、再導入後は新しいsessionを開きます。cache内のコピーを直接編集したり、デプロイ設定をcommitしたりしないでください。
+
+#### 送信許可と結果の扱い
+
+projectの `CLAUDE.md` または `AGENTS.md` に、例えば「校正を依頼したときは、私が明示的に選んだ機密ではない段落だけを、設定済みのcopyeditorサーバーとそのVertex AI providerへ送信してよい。それ以外は送信前に確認する」と記します。これは本文の対象範囲の許可で、clientの承認を省くものではありません。toolの自動承認やpermission skipは追加しません。
+
+サーバーは本文・候補を永続保存しません。providerの保持やインフラログはその保証に含まれず、後述の確認が必要です。両packageのSkillは現在、対象確認→ `polish_text` →候補提示の最小手順です。詳細な送信許可判定・抽出・item比較・局所反映はまだ実装していません。
+
+[CTR-02](rules/common.md#meaning-and-adoption)では、安全に採用できると確認できない場合の**見送り**は原文を残すことです。**flag**は確認が必要な候補を示し、反映の許可ではありません。**拒否**は検査不合格を示します。flag付き・拒否された候補は採用しません。検査成功だけでは意味の保持を証明できません。
+
+pluginのSkillを使わないサーバー単体の接続では、ローカルnone用にclientを1つ選びます。
 
 ```sh
 claude mcp add --transport http copyeditor http://127.0.0.1:8080/mcp
