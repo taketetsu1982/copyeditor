@@ -95,10 +95,19 @@ The examples assume `v0.1.0` is published and public; substitute an available re
      does not guarantee exactly one instance; Cloud Run can temporarily exceed the
      [maximum](https://docs.cloud.google.com/run/docs/configuring/max-instances).
    Deploy and confirm the URL matches step 3.
-6. Before the first login, exclude callback requests from request logs: **Logging** → **Log
-   Router** → `_Default` → **Edit sink** → **Add exclusion**, name `copyeditor-callback`, filter
+6. Before the first login, open **Logging** → **Log Router** and inspect every sink in the project,
+   including custom sinks, and in every parent folder and organization. Exclude callback request
+   entries from every sink that stores or exports them. For example, select `_Default` →
+   **Edit sink** → **Add exclusion**, name `copyeditor-callback`, filter
    `resource.type="cloud_run_revision" AND resource.labels.service_name="copyeditor" AND httpRequest.requestUrl=~"/auth/callback([?]|$)"`.
-   Apply the same exclusion to any organization-level sink.
+   Apply this exclusion to all applicable sinks; `_Default` alone is not sufficient. For any
+   upstream proxy/load balancer, omit query strings or disable callback request logging too.
+   Send a synthetic callback with no real code/token, for example
+   `curl "https://copyeditor-PROJECT_NUMBER.REGION.run.app/auth/callback?code=synthetic&state=synthetic"`,
+   then check every destination and confirm that none stores the request's query before logging in.
+   Do not proceed to a real login if configuration fails, permissions are missing, or any route
+   remains unverified. Exclusions do not remove previously stored logs.
+   See [Retention and operational logs](../README.md#retention-and-operational-logs).
 7. Open `<service URL>/health` in a browser; expect `{"status":"ok"}`. Register the client with
    `<service URL>/mcp` as described in the README's *Client connection* section and complete the
    browser login with an allowed account.
@@ -183,7 +192,7 @@ pbpaste | tr -d '\n' | gcloud secrets create oauth-client-secret --data-file=-
 openssl rand -base64 48 | tr -d '\n' | gcloud secrets create oauth-signing-key --data-file=-
 ```
 
-Deploy, exclude callback logs, and verify:
+Deploy, then inventory the log sinks before the first login:
 
 ```sh
 gcloud run deploy copyeditor --region=$R --image=$IMAGE --service-account=$SA --port=8080 \
@@ -191,9 +200,32 @@ gcloud run deploy copyeditor --region=$R --image=$IMAGE --service-account=$SA --
   --set-secrets=GOOGLE_OAUTH_CLIENT_SECRET=oauth-client-secret:latest,OAUTH_SIGNING_KEY=oauth-signing-key:latest \
   --set-env-vars='^;^COPYEDITOR_AUTH_MODE=google;GOOGLE_CLOUD_PROJECT='$P';BASE_URL='$BASE_URL';GOOGLE_OAUTH_CLIENT_ID=<client ID>;COPYEDITOR_ALLOWED_DOMAINS=["example.com"];COPYEDITOR_ALLOWED_EMAILS=[]'
 
+gcloud logging sinks list --project="$P"
+# Repeat for every parent folder and the organization, if present:
+gcloud logging sinks list --folder=FOLDER_ID
+gcloud logging sinks list --organization=ORGANIZATION_ID
+```
+
+Inspect all project/custom sinks and inherited folder/organization sinks. Before login, exclude
+callback request entries from every sink that stores or exports them. The `_Default` update below
+is only an example; apply the exclusion to every applicable sink at its own scope. For upstream
+proxies/load balancers, omit query strings or disable callback request logging too.
+
+```sh
 gcloud logging sinks update _Default \
   --add-exclusion='name=copyeditor-callback,filter=resource.type="cloud_run_revision" AND resource.labels.service_name="copyeditor" AND httpRequest.requestUrl=~"/auth/callback([?]|$)"'
 
+curl "$BASE_URL/auth/callback?code=synthetic&state=synthetic"
+```
+
+Check every destination to confirm that the synthetic request's query was not stored; use no real
+code/token. An HTTP response alone does not verify logging. Do not proceed to a real login if
+configuration fails, permissions are missing, or any route remains unverified.
+Exclusions do not remove previously stored logs. See
+[Retention and operational logs](../README.md#retention-and-operational-logs).
+Only after this check, register the client and complete browser login with an allowed account:
+
+```sh
 curl --fail $BASE_URL/health
 curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE_URL/mcp   # 401
 claude mcp add --transport http copyeditor $BASE_URL/mcp
@@ -296,11 +328,19 @@ Artifact Registry のリモート リポジトリを使います（[対応レジ
      OAuth の状態はメモリだけなので、再起動や交換でセッションが失われ、再ログインが必要です。
      常に 1 台である保証はなく、一時的に[最大数](https://docs.cloud.google.com/run/docs/configuring/max-instances)を超える場合があります。
    デプロイし、URL が手順 3 と一致することを確認します。
-6. 最初のログインより前に、コールバックのリクエストをログから除外します。**ロギング** →
-   **ログルーター** → `_Default` → **シンクを編集** → **除外を追加**: 名前 `copyeditor-callback`、
+6. 最初のログインより前に **ロギング** → **ログルーター** を開き、project の custom sink を含む
+   全 sink と、すべての親 folder / organization の sink を一覧して確認します。callback の
+   request log を保存・転送する全 sink に除外を設定します。例えば `_Default` → **シンクを編集**
+   → **除外を追加**: 名前 `copyeditor-callback`、
    フィルタ
    `resource.type="cloud_run_revision" AND resource.labels.service_name="copyeditor" AND httpRequest.requestUrl=~"/auth/callback([?]|$)"`。
-   組織レベルの集約シンクがあれば、そちらにも同じ除外を入れます。
+   対象となる全 sink に設定し、`_Default` だけで済ませないでください。上流 proxy / LB があれば、
+   その request log からも query を除くか、callback の request log を無効にします。
+   本物の code/token を含まない合成 callback、例えば
+   `curl "https://copyeditor-PROJECT_NUMBER.REGION.run.app/auth/callback?code=synthetic&state=synthetic"`
+   を送り、各保存先にその request の query が残っていないことを確認してからログインします。
+   設定失敗・権限不足・未確認の経路がある場合は、実ログインへ進まないでください。
+   除外設定は過去のログを削除しません。[保持範囲と運用ログ](../README.md#保持範囲と運用ログ)も参照してください。
 7. ブラウザで `<サービス URL>/health` を開き `{"status":"ok"}` を確認します。README の
    「クライアント接続」のとおり `<サービス URL>/mcp` をクライアントに登録し、許可された
    アカウントでブラウザ ログインを完了します。
@@ -384,7 +424,7 @@ pbpaste | tr -d '\n' | gcloud secrets create oauth-client-secret --data-file=-
 openssl rand -base64 48 | tr -d '\n' | gcloud secrets create oauth-signing-key --data-file=-
 ```
 
-デプロイ、コールバックのログ除外、確認:
+デプロイ後、初回ログインの前にログの sink を一覧して確認します。
 
 ```sh
 gcloud run deploy copyeditor --region=$R --image=$IMAGE --service-account=$SA --port=8080 \
@@ -392,9 +432,31 @@ gcloud run deploy copyeditor --region=$R --image=$IMAGE --service-account=$SA --
   --set-secrets=GOOGLE_OAUTH_CLIENT_SECRET=oauth-client-secret:latest,OAUTH_SIGNING_KEY=oauth-signing-key:latest \
   --set-env-vars='^;^COPYEDITOR_AUTH_MODE=google;GOOGLE_CLOUD_PROJECT='$P';BASE_URL='$BASE_URL';GOOGLE_OAUTH_CLIENT_ID=<client ID>;COPYEDITOR_ALLOWED_DOMAINS=["example.com"];COPYEDITOR_ALLOWED_EMAILS=[]'
 
+gcloud logging sinks list --project="$P"
+# 親 folder ごと、および organization があればそれぞれ実行:
+gcloud logging sinks list --folder=FOLDER_ID
+gcloud logging sinks list --organization=ORGANIZATION_ID
+```
+
+project の custom sink を含む全 sink と、継承する folder / organization の sink を確認します。
+ログイン前に、callback の request log を保存・転送する全 sink に除外を設定してください。
+以下の `_Default` 更新は一例です。対象となる各 sink の階層で除外を適用します。
+上流 proxy / LB の request log からも query を除くか、callback の request log を無効にします。
+
+```sh
 gcloud logging sinks update _Default \
   --add-exclusion='name=copyeditor-callback,filter=resource.type="cloud_run_revision" AND resource.labels.service_name="copyeditor" AND httpRequest.requestUrl=~"/auth/callback([?]|$)"'
 
+curl "$BASE_URL/auth/callback?code=synthetic&state=synthetic"
+```
+
+本物の code/token は使わず、合成 request の query が残っていないことを各保存先で確認します。
+HTTP の応答だけではログの検証になりません。設定失敗・権限不足・未確認の経路がある場合は、
+実ログインへ進まないでください。除外設定は過去のログを削除しません。
+[保持範囲と運用ログ](../README.md#保持範囲と運用ログ)も参照してください。
+この確認後にだけクライアントを登録し、許可されたアカウントでブラウザ ログインを完了します。
+
+```sh
 curl --fail $BASE_URL/health
 curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE_URL/mcp   # 401
 claude mcp add --transport http copyeditor $BASE_URL/mcp
