@@ -21,11 +21,20 @@ def load_examples(root, snapshot):
                 require(not path.is_symlink() and path.is_file() and path.suffix == ".yaml")
                 data = strict_yaml(path.read_text(encoding="utf-8"))
                 required = {"id", "language", "section", "bad", "good", "reason", "lint"}
-                require(isinstance(data, dict) and required <= data.keys() <= required | {"format", "background", "protected_terms", "must_change", "regression"})
-                data = dict(format="text", background={}, protected_terms=[], must_change=True) | data
+                require(isinstance(data, dict) and required <= data.keys() <= required | {"format", "background", "protected_terms", "must_change", "regression", "degree", "rewrite_expectations"})
+                data = dict(format="text", background={}, protected_terms=[], must_change=True, degree="polish") | data
                 require(matches(r"[a-z][a-z0-9-]{0,63}", data["id"]) and data["id"] == path.stem and data["language"] == directory.name and data["section"] in CATEGORIES)
                 require(all(nonblank(data[k], limit) for k, limit in (("bad", 12000), ("good", 16000), ("reason", 1000))))
                 require(data["format"] in ("text", "markdown", "html") and type(data["must_change"]) is bool and (not data["must_change"] or data["bad"] != data["good"]))
+                require(type(data["degree"]) is str and data["degree"] in ("polish", "rewrite"))
+                if data["degree"] == "rewrite":
+                    expected = data.get("rewrite_expectations")
+                    require(type(expected) is dict and set(expected) == {"problems", "invariants"})
+                    require(all(array(expected[key], 8, lambda value: nonblank(value, 320)) for key in expected))
+                    require(bool(expected["invariants"]) and bool(expected["problems"]) == data["must_change"])
+                    require(data["must_change"] or data["bad"] == data["good"])
+                else:
+                    require("rewrite_expectations" not in data)
                 background = data["background"]
                 require(isinstance(background, dict) and background.keys() <= {"audience", "purpose", "tone", "message"} and all(isinstance(v, str) and len(v) <= 1000 for v in background.values()))
                 require(array(data["protected_terms"], 1024, lambda s: nonblank(s, 128)) and len(set(rules.protected_terms) | set(data["protected_terms"])) <= 2048)
