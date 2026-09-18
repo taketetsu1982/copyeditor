@@ -1,0 +1,13 @@
+id: "rewrite-13"
+language: "ja"
+section: "context"
+degree: "rewrite"
+format: "text"
+bad: "申請内容を確認し、問題がなければ送信してください。"
+good: "申請内容を確認し、問題がなければ送信してください。"
+reason: "The original is a natural polite instruction with a clear condition; retain it exactly."
+lint: null
+must_change: false
+rewrite_expectations:
+  problems: []
+  invariants: ["Keep the condition that there must be no problem before sending.", "Keep polite register and every decoded character unchanged."]

@@ -1,0 +1,13 @@
+id: "rewrite-14"
+language: "ja"
+section: "structure"
+degree: "rewrite"
+format: "markdown"
+bad: "- 確認が済んだ項目にチェックを付けてください。"
+good: "- 確認が済んだ項目にチェックを付けてください。"
+reason: "The original is a clear polite list instruction; retain it exactly."
+lint: null
+must_change: false
+rewrite_expectations:
+  problems: []
+  invariants: ["Only mark items whose checking is complete.", "Keep polite register, the list marker, and every decoded character unchanged."]

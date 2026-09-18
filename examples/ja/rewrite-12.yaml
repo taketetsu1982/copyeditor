@@ -1,0 +1,12 @@
+id: "rewrite-12"
+language: "ja"
+section: "translation"
+degree: "rewrite"
+format: "text"
+bad: "更新についての詳細は、次のページを参照することによって見つけることができます。"
+good: "更新の詳細は、次のページで確認できます。"
+reason: "Remove a wordy translated construction while retaining where the details can be found."
+lint: null
+rewrite_expectations:
+  problems: ["Literal translation: replace the wordy can-be-found-by-referring construction."]
+  invariants: ["Details about the update are available on the next page.", "Do not add a destination, deadline, or promise of new information."]

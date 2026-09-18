@@ -1,0 +1,12 @@
+id: "rewrite-11"
+language: "ja"
+section: "translation"
+degree: "rewrite"
+format: "text"
+bad: "作業を始める前に、設定が正しいことを確かにしてください。"
+good: "作業を始める前に、設定が正しいことを確認してください。"
+reason: "Use the ordinary verb for checking instead of a literal make-sure construction."
+lint: null
+rewrite_expectations:
+  problems: ["Literal translation: replace the unnatural make-sure imperative."]
+  invariants: ["Check that the settings are correct before starting work.", "Keep the polite request and do not instruct the reader to change any setting."]

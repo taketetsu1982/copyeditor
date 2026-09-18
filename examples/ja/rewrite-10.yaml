@@ -1,0 +1,12 @@
+id: "rewrite-10"
+language: "ja"
+section: "translation"
+degree: "rewrite"
+format: "text"
+bad: "この説明は、初めて申請する人にとっても意味を成します。"
+good: "この説明は、初めて申請する人にも理解できます。"
+reason: "Express understandability directly instead of carrying over an English idiom."
+lint: null
+rewrite_expectations:
+  problems: ["Literal translation: replace the makes-sense construction with ordinary Japanese."]
+  invariants: ["The explanation is understandable even to people applying for the first time.", "Do not add claims about completing the procedure without help."]
