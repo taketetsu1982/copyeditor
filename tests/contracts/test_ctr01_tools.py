@@ -7,10 +7,11 @@ from jsonschema import Draft202012Validator
 from copyeditor.config import load_config
 from copyeditor.metrics import Metrics
 from copyeditor.providers.base import GenerationResult, ProviderFailure, Usage
-from copyeditor.responses import output_schema, validate_final
 from copyeditor.rules import load_rules
 from copyeditor.service import Service
-from .harness import ProviderQueue, assert_subset, load_cases
+from .harness import ProviderQueue, assert_subset, load_cases, generation_result, fixture_schema, validate_fixture
+from copyeditor.requests import parse_edit_request
+from copyeditor.rewrite_service import rewrite
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES = load_cases(ROOT / "contracts/tools.md", "contract-case")
@@ -33,30 +34,37 @@ def invoke(monkeypatch):
             "currency": "USD", "input_per_million": 2, "output_per_million": 4}})})
     snapshot = load_rules(ROOT / "rules", None)
     monkeypatch.setattr("copyeditor.service.monotonic", lambda: 100)
-    monkeypatch.setattr("copyeditor.service.Metrics", lambda start, model, pricing: Metrics(start, model, pricing, clock=lambda: 101))
+    monkeypatch.setattr("copyeditor.service.Metrics", lambda start, model, pricing, **kwargs: Metrics(start, model, pricing, clock=lambda: 101, **kwargs))
 
-    async def call(tool, arguments, responses, settings=None):
+    async def call(tool, arguments, responses, settings=None, *, prepared=False):
         queue = ProviderQueue(responses)
-        inputs, constructed = [], []
+        inputs, constructed, estimates = [], [], []
         class Provider:
             async def generate(self, value):
                 inputs.append(value)
-                response = queue.take()
-                if isinstance(response, (GenerationResult, ProviderFailure)):
-                    return response
-                return GenerationResult(json.dumps({k: v for k, v in response.items() if k != "finish"}),
-                                        response.get("finish", "stop"), Usage(None, None, None))
+                return generation_result(queue.take())
+            async def estimate_input(self, value):
+                estimates.append(value)
+                return 0
         def factory():
             constructed.append(True)
             return Provider()
         selected_config, selected_snapshot = settings or (config, snapshot)
-        payload = await getattr(Service(selected_config, selected_snapshot, factory), {"polish_text": "polish", "lint_text": "lint"}[tool])(arguments)
+        if prepared and arguments.get("degree") == "rewrite":
+            request = parse_edit_request(tool, arguments, selected_config, selected_snapshot)
+            meter = Metrics(100, selected_config["model"], selected_config["pricing"], lambda: 101, degree="rewrite")
+            payload = await rewrite(request, selected_config, selected_snapshot, factory, meter, items_route="items" in arguments)
+        else:
+            supplied = {k: v for k, v in arguments.items() if k != "degree"} if prepared and arguments.get("degree") == "polish" else arguments
+            payload = await getattr(Service(selected_config, selected_snapshot, factory), {"polish_text": "polish", "lint_text": "lint"}[tool])(supplied)
         queue.assert_exhausted()
         assert len(inputs) == len(responses), "Provider underflow must not be hidden by service errors"
         assert len(constructed) == bool(responses)
         assert payload["model_calls"] == len(inputs) and payload["latency_ms"] == 1000
-        Draft202012Validator(output_schema(tool)).validate(payload)
-        validate_final(payload)
+        assert estimates == (inputs if arguments.get("degree") == "rewrite" else [])
+        case = dict(tool=tool, input=arguments)
+        Draft202012Validator(fixture_schema(case)).validate(payload)
+        validate_fixture(payload, case)
         return payload, inputs
     return call
 
@@ -68,7 +76,7 @@ async def test_ac_02_2_ac_02_3_ac_02_4_ac_02_10_ac_02_11_ac_02_12_ctr01_contract
     assert_subset(payload, case["expect"])
     assert payload["usage"] == dict.fromkeys(Usage._fields, None if inputs else 0)
     assert payload["cost"] is None
-    if len(inputs) == 2:
+    if case["input"].get("degree") != "rewrite" and len(inputs) == 2:
         first, retry = inputs
         assert all(item in first.items for item in retry.items)
         assert retry[1:] == first[1:]
@@ -139,3 +147,23 @@ async def test_ac_02_11_ctr01_config_and_rules_terms_reach_service(invoke, tmp_p
         assert generated.background._asdict() == {key: args[key] for key in ("audience", "purpose", "tone", "message")}
         assert generated.language == args["language"] and generated.format == args["format"]
         assert generated.system_instruction == inputs[0].system_instruction
+
+
+@pytest.mark.asyncio
+async def test_ac_07_2_ctr01_prepared_queue_counts_diagnosis_without_retry(invoke):
+    from .harness import rewrite_case
+    case = rewrite_case()
+    payload, inputs = await invoke(case["tool"], case["input"], case["provider"], prepared=True)
+    assert_subset(payload, case["expect"])
+    assert [value.stage for value in inputs] == ["diagnose", "rewrite"]
+    assert not payload["regenerated"] and inputs[1].diagnoses[0].diagnosis.status == "no_issue"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [False, True])
+async def test_ac_07_4_ctr01_rewrite_queue_shortage_or_surplus_is_never_hidden(invoke, extra):
+    from .harness import rewrite_case
+    case = rewrite_case()
+    responses = case["provider"] + case["provider"][1:] if extra else case["provider"][:1]
+    with pytest.raises(AssertionError):
+        await invoke(case["tool"], case["input"], responses, prepared=True)
