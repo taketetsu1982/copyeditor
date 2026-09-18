@@ -1,0 +1,12 @@
+id: "rewrite-06"
+language: "ja"
+section: "structure"
+degree: "rewrite"
+format: "text"
+bad: "相談内容は担当者が確認します。声を受け止めること、それが対応の始まりです。"
+good: "担当者は相談内容を確認してから対応を始めます。"
+reason: "Express the stated start of handling as a direct sequence rather than an aphorism."
+lint: null
+rewrite_expectations:
+  problems: ["Aphoristic ending: replace the abstract closing about receiving a voice."]
+  invariants: ["The person responsible checks the consultation details before beginning to handle them.", "Do not add a response deadline or a promise of resolution."]

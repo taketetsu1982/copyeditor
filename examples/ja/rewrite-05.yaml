@@ -1,0 +1,12 @@
+id: "rewrite-05"
+language: "ja"
+section: "structure"
+degree: "rewrite"
+format: "markdown"
+bad: "- 更新前に下書きを保存します。備えを残すこと、それが安心の土台です。"
+good: "- 更新前に下書きを保存しておくと安心です。"
+reason: "Join the action and its stated reassurance without the aphoristic closing sentence."
+lint: null
+rewrite_expectations:
+  problems: ["Aphoristic ending: remove the metaphorical foundation-of-reassurance closing."]
+  invariants: ["Save the draft before updating; the claimed benefit is reassurance.", "Preserve the list item and do not claim recovery is guaranteed."]

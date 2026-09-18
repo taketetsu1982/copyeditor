@@ -1,0 +1,12 @@
+id: "rewrite-03"
+language: "ja"
+section: "vocabulary"
+degree: "rewrite"
+format: "html"
+bad: "<p>利用者の声をインプットとして、毎月の改善案を検討します。</p>"
+good: "<p>利用者の声を参考に、毎月の改善案を検討します。</p>"
+reason: "Use a concrete relationship between feedback and consideration while retaining the complete HTML."
+lint: null
+rewrite_expectations:
+  problems: ["Fashionable wording: replace the abstract loanword for using feedback."]
+  invariants: ["User feedback informs consideration of monthly improvement proposals.", "Considering proposals is not a promise to implement them; preserve the p element."]

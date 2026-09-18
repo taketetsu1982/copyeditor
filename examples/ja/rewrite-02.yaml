@@ -1,0 +1,12 @@
+id: "rewrite-02"
+language: "ja"
+section: "vocabulary"
+degree: "rewrite"
+format: "text"
+bad: "部署間でナレッジをシェアするため、週に1回、担当者同士で話し合います。"
+good: "部署間で知識を共有するため、週に1回、担当者同士で話し合います。"
+reason: "Use ordinary Japanese for knowledge sharing while retaining the schedule and participants."
+lint: null
+rewrite_expectations:
+  problems: ["Fashionable wording: replace unnecessary loanwords for sharing knowledge."]
+  invariants: ["The participants are the people responsible in different departments.", "They meet once per week to share knowledge, with no added guarantee."]
