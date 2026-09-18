@@ -5,6 +5,8 @@ Reference implementation: Claude Code or Codex CLI as the writing agent, Gemini 
 
 ## Setup and Vertex AI
 
+Step-by-step Google Cloud setup for the Console and CLI is in [deployment/google-cloud.md](deployment/google-cloud.md).
+
 Use Docker and a Google Cloud project with billing and the Vertex AI API enabled. Grant the runtime identity model invocation permission (for example, `roles/aiplatform.user`) and configure [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/provide-credentials-adc). For local development, use `gcloud auth application-default login`; for deployment, prefer an attached service account or workload identity. Confirm access to the configured model with a deployment smoke test; health alone does not call Vertex.
 
 Build locally with `docker build -t copyeditor:local .`. No published image or live Google acceptance result is asserted here. The container runs `python -m copyeditor` as UID/GID 65532 and requires runtime ADC readable by that user. Keep credential files outside the build context; never bake credentials into any image layer.
@@ -91,6 +93,8 @@ The owner records approval in one PR comment with a `copyeditor-provenance-v1` f
 参照実装: 執筆エージェントはClaude CodeまたはCodex CLI、校正モデルはVertex AI上のGeminiです。
 
 ### 準備とVertex AI
+
+Google Cloud のコンソール版・CLI 版の設定手順は [deployment/google-cloud.md](deployment/google-cloud.md) を参照してください。
 
 Dockerと、課金およびVertex AI APIを有効にしたGoogle Cloudプロジェクトを用意します。実行identityにモデル呼出し権限（例: `roles/aiplatform.user`）を付与し、[ADC](https://cloud.google.com/docs/authentication/provide-credentials-adc)を設定します。ローカル開発は `gcloud auth application-default login`、デプロイは接続済みservice accountやworkload identityを使います。モデルの利用権限はデプロイ時のsmoke testで確認します。healthはVertexを呼びません。
 
