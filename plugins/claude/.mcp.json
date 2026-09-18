@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "copyeditor": {
+      "type": "http",
+      "url": "https://copyeditor.invalid/mcp"
+    }
+  }
+}

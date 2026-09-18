@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+PHASE2_MODULES = {"tests/integration/test_plugin_claude.py"}
+
 
 def pytest_report_collectionfinish(items):
     connected = {mark.args[0] for item in items
@@ -117,6 +119,9 @@ class Phase1Contracts:
         if self.config.option.ignore or self.config.option.ignore_glob or self.config.option.deselect:
             self.errors.append("Collection exclusions are not allowed")
         self.errors.extend(pytest_report_collectionfinish(self.items))
+        collected_modules = {item.nodeid.split("::")[0] for item in self.items}
+        for module in sorted(PHASE2_MODULES - collected_modules):
+            self.errors.append(f"Missing Phase 2 module: {module}")
         try:
             self.groups = phase1_inventory(root)
             for entry, expected in self.groups.items():
