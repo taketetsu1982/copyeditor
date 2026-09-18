@@ -276,3 +276,22 @@ async def test_ac_07_9_ctr05_rewrite_fixture_denies_network_during_preflight(mon
     monkeypatch.setattr(adapter.FixtureProvider, "estimate_input", access)
     with pytest.raises(RuntimeError, match="Fixture network access denied"):
         await adapter.call_api("", {}, {"vars": rewrite_example()})
+
+
+@pytest.mark.asyncio
+async def test_ctr05_array_metadata_is_data_not_an_evaluation_matrix(tmp_path):
+    case = example() | dict(bad="Level Alpha has 10 items.", good="Level Alpha offers 10 items.",
+                            protected_terms=["Level", "Alpha"])
+    output = tmp_path / "arrays.json"
+    converter["convert"](output, [case])
+    tests = json.loads(output.read_text())["tests"]
+    assert len(tests) == 1 and tests[0]["vars"] == case
+    # Promptfoo otherwise expands string arrays into separate scalar-valued trials.
+    assert tests[0]["options"]["disableVarExpansion"] is True
+    response = await adapter.call_api("", {}, {"vars": tests[0]["vars"]})
+    result = json.loads(response["output"])
+    assert result["protected_terms"] == ["Alpha", "Level"] and result["protected_terms_checked"] == 2
+    assert get_assert(response["output"], {"vars": case})
+    for scalar in ("Level", None, ("Level", "Alpha")):
+        with pytest.raises(ValueError, match="^Invalid benchmark protected terms$"):
+            await adapter.call_api("", {}, {"vars": case | dict(protected_terms=scalar)})
