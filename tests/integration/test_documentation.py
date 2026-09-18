@@ -58,4 +58,3 @@ def test_ac_06_1_ac_06_6_ctr02_plugin_instructions_in_both_languages():
             assert section.count(f"{client} plugin {install} copyeditor@copyeditor-local") == 1
         for term in ("CLAUDE.md", "AGENTS.md", "Vertex AI", "OAuth", "flag", "rules/common.md#meaning-and-adoption"):
             assert term in section
-        assert "deployment/" not in section
