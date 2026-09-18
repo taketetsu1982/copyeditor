@@ -4,7 +4,8 @@ import pytest
 from jsonschema import Draft202012Validator
 from copyeditor.config import load_config
 from copyeditor.providers.base import Background, SourceItem
-from copyeditor.requests import ValidationError, input_schema, parse_request
+from copyeditor.requests import ValidationError, input_schema, parse_request, parse_edit_request, edit_input_schema
+from copyeditor.rewrite_response import BUDGET_MESSAGE
 from copyeditor.rules import load_rules
 from .harness import load_cases
 
@@ -30,13 +31,16 @@ def fail(settings, value, code="invalid_input", field=None, tool="polish_text"):
 
 @pytest.mark.parametrize("case", load_cases(ROOT / "contracts/tools.md", "contract-case"), ids=lambda c: c["name"])
 def test_ctr01_real_contract_inputs(settings, case):
-    if "text" in case["input"] and "items" in case["input"]:
-        fail(settings, case["input"], case["expect"]["error"]["code"])
+    try:
+        result = parse_edit_request(case["tool"], case["input"], *settings)
+    except ValidationError as error:
+        assert not case["provider"] and case["expect"]["status"] == "error"
+        assert error.code == case["expect"]["error"]["code"]
         return
-    result = parse(settings, case["input"], case["tool"])
     assert result.language == case["input"].get("language", "ja")
     assert [i.text for i in result.items] == ([case["input"]["text"]] if "text" in case["input"] else [i["text"] for i in case["input"]["items"]])
-    Draft202012Validator(input_schema(case["tool"], *settings)).validate(case["input"])
+    Draft202012Validator(edit_input_schema(case["tool"], *settings)).validate(case["input"])
+
 
 
 @pytest.mark.parametrize("value,field", [({}, None), ({"text": "x", "items": []}, None), ({"text": "x", "items": [], "format": "html"}, None), ({"text": None}, "text"),
@@ -126,6 +130,19 @@ def test_ctr01_all_fixed_errors_match_contract():
     rows = [line.split("|") for line in (ROOT / "contracts/tools.md").read_text().splitlines() if line.startswith("| `")]
     for row in rows:
         code, message = row[1].strip().strip("`"), row[2].strip().strip("`")
+        if code == "request_budget":
+            assert message == BUDGET_MESSAGE
+            continue
         error = ValidationError(code, None)
         assert str(error) == message and vars(error) == {"code": code, "field": None}
     with pytest.raises(ValueError, match="^$"): ValidationError("unknown")
+
+
+@pytest.mark.parametrize("degree", ["polish", "rewrite", "invalid"])
+def test_ac_07_1_ctr01_contract_input_consumer_checks_degree(settings, degree):
+    case = dict(tool="polish_text", input=dict(text="Hello.", degree=degree), provider=[],
+                expect=dict(status="error", error=dict(code="invalid_input")) if degree == "invalid" else dict(status="ok"))
+    test_ctr01_real_contract_inputs(settings, case)
+    if degree == "invalid":
+        with pytest.raises(AssertionError):
+            test_ctr01_real_contract_inputs(settings, {**case, "expect": dict(status="ok")})

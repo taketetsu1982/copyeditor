@@ -7,7 +7,10 @@ from jsonschema import Draft202012Validator
 from copyeditor.providers.base import GenerationResult, SourceItem, Usage
 from copyeditor.requests import MESSAGES, ValidationError
 from copyeditor.responses import output_schema, parse_generation, validate_final
-from .harness import assert_subset, load_cases
+from .harness import assert_subset, load_cases, source_items, is_rewrite, fixture_schema, validate_fixture, generation_result
+from .test_ctr01_tools import invoke
+from copyeditor.diagnosis import parse_diagnoses
+from copyeditor.rewrite_response import BUDGET_MESSAGE
 
 pytestmark = pytest.mark.consumer("CTR-01")
 CASES = load_cases(Path(__file__).resolve().parents[2] / "contracts/tools.md", "contract-case")
@@ -77,23 +80,19 @@ def test_ac_02_2_ac_02_4_ctr01_integrity_before_limits_and_source_order():
     rejected({"items": [item("b")]}, ids=("a", "b"))
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("case", [c for c in CASES if c["provider"]], ids=lambda c: c["name"])
-def test_ctr01_real_contract_provider_batches(case):
-    initial = tuple(i["id"] for i in case["input"].get("items", [{"id": "text"}]))
-    retry_ids = {"partial_rejection": ("a",), "retry_integrity_discards_batch": ("a",),
-                 "shared_html_retry": ("text",), "retry_merge_exceeds_16000": ("b",),
-                 "retry_blank_discards_batch": ("a",), "html_incomplete_candidate": ("text",)}
-    for index, batch in enumerate(case["provider"]):
-        ids = initial if index == 0 else retry_ids[case["name"]]
-        invalid = not batch["items"] or any(not i["text"] or not i["text"].strip() for i in batch["items"])
-        over = sum(len(i["text"]) for i in batch["items"]) > 16000
-        if invalid or over:
-            code = "invalid_response" if invalid else "output_limit"
-            assert case["expect"]["error"]["code"] == code
-            rejected(batch, code, ids=ids)
+async def test_ctr01_real_contract_provider_batches(case, invoke):
+    _, inputs = await invoke(case["tool"], case["input"], case["provider"], prepared=True)
+    for data, batch in zip(inputs, case["provider"]):
+        generated = generation_result(batch)
+        try:
+            parsed = (parse_diagnoses(generated, data.items) if data.stage == "diagnose" else
+                      parse_generation(generated, data.items, data.diagnoses if data.stage == "rewrite" else None))
+        except ValidationError as error:
+            assert case["expect"]["status"] == "error" and error.code == case["expect"]["error"]["code"]
         else:
-            parsed = parse(batch, ids)
-            assert [i.text for i in parsed] == [i["text"] for i in batch["items"]]
+            assert [item.id for item in parsed] == [item.id for item in data.items]
 
 
 def test_ctr01_unicode_space_and_scalar_boundaries():
@@ -119,32 +118,39 @@ def public_fixture(case):
     expect = case["expect"]
     lint = case["tool"] == "lint_text"
     calls = expect.get("model_calls", len(case["provider"]))
+    rewrite = is_rewrite(case)
     base = dict(status="ok", schema_version=1, language="en", rules_version="sha256:" + "a"*64, common_version="sha256:" + "b"*64,
                 model=None if lint else "test-model", usage=dict.fromkeys(("input_tokens", "output_tokens", "total_tokens"), None if calls else 0),
                 cost=None, latency_ms=0, model_calls=calls)
+    if rewrite:
+        base.update(schema_version=2, degree="rewrite")
     if expect["status"] == "error":
         code = expect["error"]["code"]
-        base.update(error=dict(code=code, message=MESSAGES[code], field=None), model_called=calls > 0,
-                    regeneration_attempted=calls > 1)
+        base.update(error=dict(code=code, message=BUDGET_MESSAGE if code == "request_budget" else MESSAGES[code], field=None), model_called=calls > 0,
+                    regeneration_attempted=False if rewrite else calls > 1)
     else:
         base.update(protected_terms_checked=0, preservation=None if lint else {"length_ratio": {"min": 0.5, "max": 2}})
         result = dict(text="Hello.", flag=None, regenerated=False, protected_terms=[], findings=[], findings_truncated=False)
         if lint:
             base.update(findings=[], findings_truncated=False)
         elif "items" in case["input"]:
-            entries = expect.get("items", case["provider"][0]["items"])
+            entries = [item._asdict() for item in source_items(case)] if rewrite else expect.get("items", case["provider"][0]["items"])
             base["items"] = [{**deepcopy(result), "id": entry["id"], "text": entry["text"]} for entry in entries]
             for value, entry in zip(base["items"], entries):
                 if entry.get("flag"):
                     value["flag"] = dict(kind="rejected", reason="Preservation checks failed.", checks=[])
         else:
             base.update(result)
+        if rewrite:
+            diagnoses = {value["id"]: {k: v for k, v in value.items() if k != "id"} for value in case["provider"][0]["diagnoses"]}
+            for value in base.get("items", [base]):
+                value["diagnosis"] = diagnoses[value.get("id", "text")]
     return complete_subset(base, expect)
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
 def test_ac_02_2_ctr01_complete_contract_output_shapes(case):
-    schema = output_schema(case["tool"])
+    schema = fixture_schema(case)
     Draft202012Validator.check_schema(schema)
     payload = public_fixture(case)
     assert_subset(payload, case["expect"])
@@ -295,7 +301,7 @@ def final_rejected(payload, code="invalid_response"):
 def test_ctr01_final_contract_fixtures(case):
     payload = public_fixture(case)
     before = deepcopy(payload)
-    validate_final(payload)
+    validate_fixture(payload, case)
     assert payload == before
 
 
@@ -401,3 +407,22 @@ def test_ctr01_final_regeneration_matches_call_count(route, calls, attempted):
     else: (payload["items"][0] if route == "items" else payload)["regenerated"] = attempted
     if attempted == (calls == 2) and (route == "error" or calls > 0): validate_final(payload)
     else: final_rejected(payload)
+
+
+@pytest.mark.parametrize("route", ["text", "items", "error"])
+def test_ac_07_4_ctr01_complete_rewrite_fixture_and_version_mismatch(route):
+    from .harness import rewrite_case
+    case = rewrite_case()
+    if route == "items":
+        case["input"] = dict(items=[dict(id="a", text="Hello.")], degree="rewrite")
+        case["provider"][0]["diagnoses"][0]["id"] = "a"
+        case["expect"] = dict(status="ok", items=[dict(id="a", diagnosis=case["expect"]["diagnosis"])])
+    elif route == "error":
+        case["expect"] = dict(status="error", error=dict(code="invalid_response"), regeneration_attempted=False)
+    payload = public_fixture(case)
+    Draft202012Validator(fixture_schema(case)).validate(payload)
+    validate_fixture(payload, case)
+    assert payload["schema_version"] == 2 and payload["degree"] == "rewrite"
+    assert not Draft202012Validator(output_schema("polish_text")).is_valid(payload)
+    with pytest.raises(ValidationError): validate_fixture({**payload, "schema_version": 1}, case)
+    if route == "error": assert not payload["regeneration_attempted"] and payload["model_calls"] == 2

@@ -76,3 +76,45 @@ class ProviderQueue:
 
     def assert_exhausted(self):
         assert not self.responses, "Unconsumed provider responses"
+
+
+def source_items(case):
+    from copyeditor.providers.base import SourceItem
+    arguments = case.get("input", {})
+    values = arguments.get("items", [dict(id="text", text=arguments.get("text", ""))])
+    return tuple(SourceItem(value["id"], value["text"], value.get("context", "")) for value in values)
+
+
+def is_rewrite(case):
+    return case["tool"] == "polish_text" and case.get("input", {}).get("degree") == "rewrite"
+
+
+def fixture_schema(case):
+    from copyeditor.responses import output_schema
+    from copyeditor.rewrite_response import rewrite_output_schema
+    return rewrite_output_schema() if is_rewrite(case) else output_schema(case["tool"])
+
+
+def validate_fixture(payload, case):
+    from copyeditor.responses import validate_final
+    from copyeditor.rewrite_response import validate_rewrite_final
+    if is_rewrite(case):
+        validate_rewrite_final(payload, source_items(case))
+    else:
+        validate_final(payload)
+
+
+def generation_result(response):
+    from copyeditor.providers.base import GenerationResult, ProviderFailure, Usage
+    if isinstance(response, (GenerationResult, ProviderFailure)):
+        return response
+    return GenerationResult(json.dumps({key: value for key, value in response.items() if key != "finish"}),
+                            response.get("finish", "stop"), Usage(None, None, None))
+
+
+def rewrite_case():
+    return dict(name="rewrite-fixture", tool="polish_text", input=dict(text="Hello.", language="en", degree="rewrite"),
+        provider=[dict(diagnoses=[dict(id="text", status="no_issue", expression=None, reason=None)]),
+                  dict(items=[dict(id="text", text="Hello.", flag=None)])],
+        expect=dict(status="ok", schema_version=2, text="Hello.", model_calls=2, regenerated=False,
+                    diagnosis=dict(status="no_issue", expression=None, reason=None)))
