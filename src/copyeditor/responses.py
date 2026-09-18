@@ -32,7 +32,7 @@ def reject_constant(_):
     raise ValueError()
 
 
-def parse_generation(result, expected_items):
+def parse_generation(result, expected_items, diagnoses=None):
     if result.finish != "stop":
         code = ("generation_truncated" if result.finish == "truncated" else
                 "provider_error" if result.finish == "blocked" else "invalid_response")
@@ -62,6 +62,9 @@ def parse_generation(result, expected_items):
             flag = MappingProxyType(flag)
         candidates[identity] = Candidate(identity, item["text"], flag)
     valid(len(expected) == len(set(expected)) and set(candidates) == set(expected))
+    if diagnoses is not None:
+        from .diagnosis import check_no_issue
+        check_no_issue(diagnoses, expected_items, tuple(candidates.values()))
     if any(len(item.text) > 16000 for item in candidates.values()) or sum(len(item.text) for item in candidates.values()) > 16000:
         raise ValidationError("output_limit", None)
     return tuple(candidates[identity] for identity in expected)
@@ -122,7 +125,7 @@ def output_schema(tool):
     return {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "oneOf": variants}
 
 
-def validate_final(payload):
+def validate_final(payload, *, schema=None, rewrite=False, check_limits=True):
     import math
     from jsonschema import Draft202012Validator, validators
 
@@ -141,7 +144,7 @@ def validate_final(payload):
         pass
     valid(intact and type(payload) is dict)
     tool = "lint_text" if payload.get("model") is None else "polish_text"
-    schema = output_schema(tool)
+    schema = output_schema(tool) if schema is None else schema
     # Body limits must not hide another item's invalid shape or blank text.
     for variant in schema["oneOf"]:
         properties = variant["properties"]
@@ -158,7 +161,7 @@ def validate_final(payload):
         valid(cost is None)
     if payload["status"] == "error":
         valid(payload["model_called"] == (calls > 0))
-        valid(payload["regeneration_attempted"] == (calls == 2))
+        valid(not payload["regeneration_attempted"] or calls >= 3) if rewrite else valid(payload["regeneration_attempted"] == (calls == 2))
         if payload["error"]["code"] in ("invalid_input", "unsupported_language", "input_limit"):
             valid(calls == 0 and not payload["regeneration_attempted"])
         items = []
@@ -167,7 +170,8 @@ def validate_final(payload):
         if items:
             valid(calls > 0)
             valid(len({item["id"] for item in items}) == len(items) if "items" in payload else True)
-            valid(any(item["regenerated"] for item in items) == (calls == 2))
+            retried = any(item["regenerated"] for item in items)
+            valid(not retried or calls >= 3) if rewrite else valid(retried == (calls == 2))
             valid(payload["protected_terms_checked"] == len({term for item in items for term in item["protected_terms"]}))
         for item in items:
             valid(item["protected_terms"] == sorted(item["protected_terms"]))
@@ -186,6 +190,8 @@ def validate_final(payload):
                 valid(len(finding["matched"]) == min(end - start, 160))
                 if "text" in item:
                     valid(end <= len(item["text"]) and finding["matched"] == item["text"][start:min(end, start + 160)])
+    if not check_limits:
+        return
     if sum(len(item["text"]) for item in items) > 16000:
         raise ValidationError("output_limit", None)
     encoded = None
