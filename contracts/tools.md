@@ -1,8 +1,8 @@
 ---
 contract-id: CTR-01
 kind: api
-derives-from: [AC-01-6, AC-01-8, AC-01-9, AC-01-14, AC-02-1, AC-02-2, AC-02-3, AC-02-4, AC-02-5, AC-02-6, AC-02-7, AC-02-8, AC-02-9, AC-02-10, AC-02-11, AC-02-12, AC-02-13, AC-03-1, AC-03-2, AC-03-4, AC-07-1, AC-07-2, AC-07-3, AC-07-4, AC-07-6, AC-07-7, AC-07-10, AC-07-11, AC-07-12, AC-07-13]
-revision: 4
+derives-from: [AC-01-6, AC-01-8, AC-01-9, AC-01-14, AC-02-1, AC-02-2, AC-02-3, AC-02-4, AC-02-5, AC-02-6, AC-02-7, AC-02-8, AC-02-9, AC-02-10, AC-02-11, AC-02-12, AC-02-13, AC-03-1, AC-03-2, AC-03-4, AC-07-1, AC-07-2, AC-07-3, AC-07-4, AC-07-6, AC-07-7, AC-07-10, AC-07-11, AC-07-12, AC-07-13, AC-08-1, AC-08-2, AC-08-3, AC-08-4, AC-08-5, AC-08-6, AC-08-7, AC-08-8, AC-08-9, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-15, AC-08-16, AC-08-17, AC-08-18]
+revision: 8
 ---
 
 # MCP tool contract
@@ -14,6 +14,15 @@ Streamable HTTP endpoint: `/mcp`. Tools are `polish_text` and `lint_text`. Both 
 Tools advertise complete JSON Schema input/output definitions derived from this contract. Input object schemas reject additional properties; `polish_text` uses `oneOf` to express text/items exclusivity. `language` is an enum of loaded language identifiers and advertises the resolved default. Bounds and combined-budget descriptions are included in discovery. `polish_text.degree` advertises the enum `["polish", "rewrite"]` and default `"polish"`. A client requires this explicit enum member before sending rewrite; absence, an unconstrained string, or an unrecognized schema is not evidence of rewrite support. Do not probe with body text or silently substitute polish. Both tools have `readOnlyHint: true`, `destructiveHint: false`; `polish_text` has `openWorldHint: true`, `lint_text` false. No annotation bypasses the client's approval policy.
 
 Tool results contain `structuredContent` equal to the payload defined here and one `content` text block containing the same JSON. `isError` is false for success (including flags/rejections), true for application errors. Output schema is the union of the success/error shapes. No partial streaming results are exposed. Clients check `isError` and payload `status`. This follows the [MCP tool-result structure](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+
+The `polish_text` output schema advertises only the versions the running server can return: v1/v2 when disabled, v3 when enabled. Its description contains exactly one of these machine-recognizable lines:
+
+```text
+copyeditor.judgment=off; destinations=Vertex AI
+copyeditor.judgment=on; destinations=Vertex AI, TypeSafe AI
+```
+
+These lines are disclosure, not permission. The enabled description additionally says: `Body, permitted context and background, and candidates may be sent to TypeSafe AI. Provider retention and processing region are governed by that provider. Judgment does not replace your meaning comparison or approval.` No key or operator-supplied text is interpolated. A new Skill reads both the description marker and schema on every request; missing, contradictory, or unknown information is treated as potentially enabled for permission purposes. An unsupported output version still prevents body submission; consent does not make an unreadable schema safe. Existing clients may reject v3; enabling judgment is an explicit deployment compatibility change, not negotiated fallback. The disabled new-server description may add this marker without changing any v1/v2 payload.
 
 ## Requests
 
@@ -60,6 +69,8 @@ No output acceptance error returns partial items or triggers another model call.
 
 ## Success payloads
 
+The following v1/v2 shapes apply when judgment is disabled; [version selection](#version-selection-and-compatibility) defines the v3 override.
+
 All fields in these shapes are required. No additional fields. Keys are unordered; arrays have defined order. `schema_version` is integer 1 for lint and polish. Rewrite uses the version 2 extension below. Omitting degree or supplying `polish` preserves the version 1 payload, including errors; no degree or diagnosis fields are added to it.
 
 ```text
@@ -98,6 +109,8 @@ Matched protected terms and their count follow [CTR-02](../rules/common.md#deter
 Finding offsets are zero-based code points, end-exclusive, with `0 <= start < end <= len(text)`. For spans longer than 160 code points, matched contains exactly the first 160 and matched_truncated is true; end still points to the complete match. Otherwise matched equals the full slice and matched_truncated is false. Messages are fixed rule descriptions; no provider explanation is used for lint. Ordering, rule IDs and caps are defined by [CTR-03](../rules/README.md#detectors).
 
 ## Usage and cost
+
+These rules apply unchanged to v1/v2; v3 uses [judgment accounting and limits](#judgment-accounting-and-limits).
 
 Counts are nonnegative integers or null. Zero means known zero, null means unavailable. Input tokens use provider prompt usage; output tokens include candidate **and thinking** tokens. Total tokens use provider total usage, not an invented sum. Aggregate each component across every attempted model call in the request, including diagnosis, all candidate batches, discarded candidates and failed attempts; if any attempted call lacks that component, its aggregate is null. If no call was made, all three are zero. The adapter must not map missing thinking usage to zero without a provider guarantee.
 
@@ -211,6 +224,180 @@ Fake-provider/clock verification must cover the following collisions, with nonze
 
 Also test equality at reservation (not an overrun), unknown usage without invented excess, the deadline reached during local validation, a frozen error followed by deadline expiry during cleanup, and final merged integrity/size checks with a reached deadline. These are consumer test requirements, not claims that the unimplemented v2 pipeline already passes them.
 
+## Version selection and compatibility
+
+Servers without the judgment extension retain existing discovery and initialization. Do not advertise v3 before its consumers are connected.
+
+For an entered `polish_text` call, the immutable server setting `judgment.enabled=true` selects v3 for both successes and application errors, including argument/framework validation errors. Otherwise retain exactly the existing v1/v2 selection, closed shapes, bounds, usage, call counts, retry rules, and behavior. `lint_text` always retains v1, never calls either provider, and does not read the judgment key. Authentication, raw transport limits, and JSON-RPC protocol failures remain outside the tool payload. Input fields, language resolution, text/items exclusivity, and existing input limits are unchanged. Clients cannot enable, disable, or reconfigure judgment through arguments.
+
+## Judgment payloads and validation
+
+This section overrides inherited v1/v2 shape rules only for v3. All fields below are required, unknown fields forbidden, integers exclude booleans, probabilities are finite numbers in [0,1], and null is distinct from omission. Reuse existing `Usage`, `Cost`, `Finding`, `Diagnosis`, input-ID and Unicode rules. References to flags below use `JudgedFlag`, not the legacy closed `Flag`.
+
+```text
+JudgedMetadata = {
+  schema_version: 3, degree: "polish"|"rewrite", language: string,
+  rules_version: string, common_version: string,
+  providers: [ProviderMeasurement, ProviderMeasurement],
+  cost: Cost|null, latency_ms: integer,
+  policy_version: string, policy_hash: string,
+  thresholds_version: string, thresholds_hash: string,
+  protected_terms_checked: integer,
+  preservation: {length_ratio: {min: number, max: number}}
+}
+ProviderMeasurement = {
+  role: "editing"|"judgment", provider: string, model: string,
+  model_calls: integer, estimation_calls: integer,
+  usage: Usage, cost: Cost|null, latency_ms: integer
+}
+JudgedText = JudgedMetadata + {status: "ok"} + JudgedResult
+JudgedItems = JudgedMetadata + {status: "ok", items: [{id: string} + JudgedResult]}
+JudgedResult = {
+  text: string, flag: JudgedFlag|null, regenerated: boolean,
+  protected_terms: string[], findings: Finding[], findings_truncated: boolean,
+  diagnosis: Diagnosis|null,
+  editing: "not_run"|"diagnosed_no_issue"|"generated",
+  detection: Detection, verification: Verification
+}
+Detection = {
+  status: "eligible"|"insufficient"|"indeterminate"|"not_run",
+  reason: "evaluated"|"no_editable_prose",
+  gate: {probability: number, result: "present"|"absent"}|null,
+  checks: [{id: string, probability: number}],
+  action: {selected: Action, probabilities: {Action: number}, confidence: number,
+           effective: Action, source: "choice"|"axis_fallback"}|null
+}
+Action = "preserve_as_is"|"simplify_vocabulary"|"simplify_phrasing"|"make_more_concrete"|"make_more_specific"|"simplify_structure"|"trim_explanation"
+Verification = {
+  status: "pass"|"fail"|"indeterminate"|"not_run",
+  reason: "evaluated"|"not_generated"|"unfixable"|"preservation_rejected",
+  checks: [{id: string, probability: number, result: "pass"|"fail"|"indeterminate"}]
+}
+JudgedFlag = {
+  kind: "unfixable"|"rejected"|"verification_rejected",
+  reason: string, checks: string[]
+}
+JudgedError = {
+  status: "error", schema_version: 3, degree: "polish"|"rewrite"|null,
+  error: {code: CodeV3, message: string, field: string|null},
+  language: string|null, rules_version: string, common_version: string,
+  providers: [ProviderMeasurement, ProviderMeasurement], cost: Cost|null,
+  latency_ms: integer, model_called: boolean, regeneration_attempted: boolean,
+  policy_version: string, policy_hash: string,
+  thresholds_version: string, thresholds_hash: string
+}
+```
+
+`CodeV3` is exactly the existing v2 code set, including `request_budget`. Fixed messages and field rules remain those of the corresponding existing code. Error degree is polish for an absent degree in an object or exact polish; rewrite for exact rewrite; null for a non-object or any invalid degree. Invalid language is null unless a supported language was resolved by the existing input rules. No error contains items, text, diagnoses, detection, verification, or partial content. Provider failures still use a tool error, not a flagged success.
+
+Provider rows are always present, in editing then judgment order, even with zero calls. For the initial adapters provider/model are `vertex`/the configured editing model and `typesafe`/`jev-1.13.0`. Identifiers follow CTR-04; no raw upstream identifier is copied unchecked. Hashes are lowercase 64-character SHA-256, versions are the configured registry IDs in CTR-04. No top-level legacy `model`, `usage`, or `model_calls` exists in v3: readers must use the provider rows. `latency_ms` is nonnegative monotonic elapsed time. Terms, findings, ratios, final-text bounds, full-request identity/order, and flag-original restoration retain their existing meaning. Text has no synthetic public ID. Diagnosis is null for polish and for rewrite when detection did not admit the item; it is the complete existing Diagnosis otherwise.
+
+### Registered threshold classification
+
+This is the public source of truth for probability/result and aggregate-state consistency. Server, Skill and independent clients use it without private documents. New policy/threshold versions require a contract revision with their complete vocabulary, thresholds and rules. Hash equality is not a replacement. Reject unknown or incompatible versions; compare finite JSON numbers without rounding before classification.
+
+The active pair is policy `reference-gate-action-v1` and thresholds `gate-floor-v1`. The latter contains only `floor=0.53`. This is the initial gate floor, not evidence of completed calibration. A replacement floor needs a new immutable threshold ID, a public contract revision and a new comparison evaluation. Policy questions, references, action vocabulary/instruction mapping, packing rules and fixed verification classification belong to the policy version.
+
+| Layer | Ordered IDs | Classification |
+|---|---|---|
+| Gate | gate | p >= 0.53: present; p < 0.53: absent |
+| Axes | stiff, abstract, formulaic, roundabout, repetitive | Raw probabilities only; no per-axis thresholds or low/high classes |
+| Verification | meaning, scope, natural, achieved | Fixed p <= 0.20: fail; p >= 0.80: pass; otherwise indeterminate |
+
+The only calibrated decision parameter is the gate floor. Verification's fixed conservative boundaries are not tuned alongside that floor; changing them changes policy version and requires reevaluation. Noul values are probabilities of yes, not severity. The gate explicitly covers stiff, abstract, generic, formulaic, roundabout and mechanically repetitive expression. formulaic covers both generic and formulaic wording; roundabout includes redundant explanation. Axis values neither admit nor veto editing.
+
+| Action | Bounded editing intent |
+|---|---|
+| preserve_as_is | Keep the original wording. |
+| simplify_vocabulary | Use familiar equivalent words while retaining necessary technical terms and precision. |
+| simplify_phrasing | Simplify roundabout phrasing without losing meaning, hedging or politeness. |
+| make_more_concrete | Express existing actions and relationships concretely without adding facts or examples. |
+| make_more_specific | Replace generic or formulaic wording using only specifics in the permitted input. |
+| simplify_structure | Simplify mechanically repeated sentence structures while preserving meaningful repetition. |
+| trim_explanation | Remove redundant explanation without removing distinct facts, conditions or qualifications. |
+
+For every evaluated detection validate the complete gate, five ordered axes and Choice, including when the gate is absent. Then apply this complete aggregation table:
+
+| Gate result | Choice selected | Detection.status | action.effective | action.source |
+|---|---|---|---|---|
+| absent | any valid option | insufficient | selected | choice |
+| present | non-preserve option | eligible | selected | choice |
+| present | preserve_as_is | eligible | mapped maximum axis | axis_fallback |
+
+The fallback mapping is stiff→simplify_vocabulary, abstract→make_more_concrete, formulaic→make_more_specific, roundabout→simplify_phrasing, repetitive→simplify_structure. Choose the greatest raw axis probability; ties use the axis order in the table. All-zero or all-equal axes still use this deterministic order. No axis minimum is required. Only an eligible preserve_as_is selection triggers fallback. Confidence, including zero, cannot change eligibility, effective action, tie handling or fallback. The editor and candidate verification use effective, while selected/probabilities/confidence retain the original Choice observation; fallback does not relabel that distribution or its maximum.
+
+`action.probabilities` is a closed object containing all seven Action keys exactly once; JSON key order is immaterial. All probabilities and confidence must be finite numbers in [0,1], never booleans. The sum must differ from 1 by no more than 0.000001, without renormalization. selected must be an exact maximum-probability key; for tied maxima preserve any returned maximal choice. Missing/extra/duplicate keys, unknown choices and non-maximal choices are invalid_response. confidence is the provider's separate statistic, not selected probability or an invented entropy formula. effective/source must exactly match the table and axis mapping; effective is not required to maximize the Choice distribution when source=axis_fallback.
+
+A finite gate probability always has a floor classification, including p=0.5 (absent for gate-floor-v1); do not manufacture an uncertainty band or a second threshold. Detection.status retains indeterminate as a distinct successful non-change concept, but the current pinned Noul protocol and this registry do not emit it: missing/null/nonfinite answers are invalid_response, not normal indeterminacy. Consumers reject an indeterminate detection claimed under this active pair rather than inventing evidence. Verification has an explicit indeterminate interval. A future normal indeterminate detection representation would require a published protocol/registry revision; it may not be silently conflated with insufficient or not_run (AC-08-3).
+
+Evaluated verification is pass only when all four checks pass; any fail makes the aggregate fail, otherwise it is indeterminate. meaning compares facts, numbers, conditions, negation and strength of commitments; scope bounds the edit to effective action; natural asks whether the candidate is more natural than the original for this audience, not whether it is acceptable in isolation; achieved asks whether that effective action was accomplished. not_run denotes non-execution, never missing probabilities.
+
+Historical expression-v1 / conservative-v1 and state-action-v1 / state-action-conservative-v1 retain their original definitions and are not aliases or accepted registry pairs here. Do not reinterpret their records using these rules. The removed should_edit field and neutral axes are forbidden in the closed active shape.
+
+The policy bundles fixed synthetic references, three natural and three unnatural, as a stable detection baseline. Client content or other requests never become reference examples. Normal detection shares all blocks of this request in one state; normal verification shares all final original/candidate/action pairs. Limits may require deterministic batches as defined below. Choice confidence cannot compensate for a vocabulary gap; edit_risk remains evaluation-only. Questions, references and the server's Japanese action instructions change only with a new policy ID and evaluation.
+
+### Detection and editing outcomes
+
+For policy reference-gate-action-v1, checks contains exactly the five ordered axes, with probability only; gate and action are non-null and reason is evaluated. Status and effective action follow the public table above. A preserve_as_is Choice with a present gate is valid and eligible, not indeterminate.
+
+not_run has reason no_editable_prose, checks [], gate=null and action=null. It is allowed only when the existing HTML analysis finds no non-whitespace editable prose. Return the exact original without provider calls. No operational failure, missing answer or budget refusal may become not_run. Every other valid item receives complete detection, sharing its request's state unless deterministic packing requires batches.
+
+For detection insufficient, indeterminate, or not_run: text is byte-for-byte original as a Unicode string, editing=not_run, diagnosis=null, flag=null, regenerated=false, and verification={status:not_run, reason:not_generated, checks:[]}. These are successful unchanged outcomes, not refusals or evidence of an issue-free document. They do not by themselves cause related-item rejection. Existing user prohibition, preservation comparison, and related-item consistency conditions still apply.
+
+For rewrite detection eligible, validate the complete diagnostic subset before any candidate generation. A no_issue diagnosis produces original text with editing=diagnosed_no_issue, null flag, regenerated=false and verification not_run/not_generated/[]; no candidate is generated. An issue diagnosis is immutable across candidate attempts. For polish diagnosis is always null. `editing=generated` records an item sent for candidate generation, including an unchanged result, unfixable flag or rejection. Every generated rewrite item has an issue diagnosis. Missing/extra/duplicate diagnosis IDs are invalid_response; diagnosis-null exemptions apply only to the explicitly non-admitted items, not to the admitted diagnostic subset. Legacy v2 no_issue candidate generation and exact-equality checks are unchanged.
+
+### Candidate verification
+
+Verification checks appear exactly once in this order: `meaning`, `scope`, `natural`, `achieved`. They describe the final candidate that survived deterministic checks, before any verification-driven restoration of the original. `pass` requires all four pass; `fail` requires at least one fail; otherwise `indeterminate` requires at least one indeterminate. Evaluated verification has reason evaluated and all four checks. Do not show a discarded candidate body in the result or describe its scores as scores of the restored original.
+
+A generated, unflagged final candidate always receives verification, even if identical to the original. A pass allows it to be returned, subject to existing whole-request final validation and client comparison. For fail or indeterminate return the exact original with `kind=verification_rejected`, fixed reason `Candidate verification failed.` or `Candidate verification was inconclusive.` respectively. Flag checks list every non-pass verification ID, in the fixed order; each corresponding check says fail or indeterminate. There is no new generation/retry. The item is a refusal for client reporting and related-item handling; other server items can succeed. `regenerated` still indicates only a previous preservation/HTML retry.
+
+Existing unfixable/rejected flags retain their exact reason/check rules and take priority over verification: no verification call, status not_run, reason unfixable or preservation_rejected, checks []. They are original-text results, not verified changed candidates. HTML structure failure after the shared retry remains a whole-request error. Candidates discarded for first-attempt deterministic failures are never verified; only their replacement is. No previous verification result is reused for a different candidate. Any shape/ID/output-integrity failure still discards the whole request before flag normalization.
+
+### V3 model_called invariant
+
+For every JudgedError, `model_called == any(row.model_calls > 0 for row in providers)`: either a started editing generate or a started judgment evaluate makes it true, including a failed invocation. Estimation calls alone do not make it true. The legacy v1/v2 equation and meaning are unchanged. Validate this equality against the two required provider rows before returning or accepting the error.
+
+A false value is not proof that no body left the process: an editing count preflight can transmit input, and this flag does not measure delivery or receipt. Skill reports editing generation, judgment evaluation and estimation counts separately using the provider rows; it must not translate false into "not sent", or true into successful generation, and it grants no retry permission.
+
+| Error observation | editing model_calls | judgment model_calls | editing estimation_calls | model_called |
+|---|---|---|---|---|
+| Input validation failed before either adapter | 0 | 0 | 0 | false |
+| First detection failed | 0 | 1 | 0 | true |
+| Detection admitted one item; editing preflight started, generation not started | 0 | 1 | 1 | true |
+| First editing generation started after detection and preflight | 1 | 1 | 1 | true |
+| DTO accounting boundary: only estimation started | 0 | 0 | 1 | false |
+
+The last row defines the boolean independently of orchestration; it is not a claim that current detect-first service reaches that state. In every row judgment estimation_calls=0. Consumer tests must include each row and its contradictory boolean as a negative case, including real service failure points for the first four rows. Larger counts obey the same equation.
+
+### Judgment accounting and limits
+
+Per-provider model_calls count started generate/evaluate HTTP invocations, including failures; one Jev detection request with 7*N questions counts as one invocation, not N or 7*N. Editing estimation_calls count started count preflights separately, judgment estimation_calls=0. Calls not started contribute neither count nor usage. Per-component usage is null if any started model call lacks that component, otherwise its sum; no started model calls yields zeros. Estimation RPCs add duration/count but not invented generation usage. Jev output tokens are actual reported tokens, not forced to zero because their price is zero; total_tokens is null if the provider does not report it. Missing or malformed optional usage components become null, never guessed. Valid answers do not become provider_error solely because usage is unavailable.
+
+Provider cost uses its exact configured pricing entry and known input/output usage with the existing decimal formula/rounding. A zero-call row has cost null; it contributes known zero to total cost. Request cost is null when no model call started, any called row lacks cost, or called rows have different currencies. Otherwise sum unrounded computed amounts in the common currency and round once to six places. Provider latency includes its generation/evaluation and estimation waits, measured locally including failed awaits; zero calls of either kind yields 0. Request latency includes all stages and local validation; it is not an arithmetic sum of provider latencies.
+
+The judgment-enabled request has a single tool-entry deadline: at most 120 seconds for polish, at most 240 seconds for rewrite. Each provider await is at most its configured operation timeout and the remaining deadline; editing retains its 60-second cap. No SDK retry, redirect following, failure-based resizing, background continuation, fallback, or call after terminal failure/cancel is allowed. In-flight remote computation/billing cannot be retracted.
+
+For N original items (text: N=1), normal detection uses one call for all N blocks and normal verification one call for all M surviving candidates (zero if M=0). Only deterministic size packing can increase these to D<=N and V<=M calls, hard maximum D+V<=64 judgment calls. A no-editable-prose, non-admitted, diagnosed-no-issue, unfixable or preservation-rejected item only reduces this. Editing retains maximum 2 polish generations, or 1 diagnostic generation plus at most 2*ceil(N/4) rewrite candidate generations (maximum 17). Every edited item still has only one preservation/HTML retry. All-KEEP starts zero editing calls, including estimation.
+
+Editing reservation rules for enabled rewrite retain 262,144 input / 139,264 output estimated tokens; enabled polish uses 262,144 input / 16,384 output estimated tokens, at most two generation slots. Both use the existing Vertex count preflight and margin formula. Disabled polish does not acquire a new preflight. Judgment reserves U=`UTF8(canonical JSON({model,state,questions})).length+4096` input units per batch, at most 262,144 across the tool request by default (CTR-04 may lower it). These are engineering units, not measured tokens or a cross-provider sum. The upstream context limits are 64k tokens for state plus all questions and 32k for state plus the longest question. Before sending, `request-pack-v1` uses two local admission bounds: U<=64000 and S=`UTF8(canonical JSON(state)).length+max(UTF8(canonical JSON(question)).length)+4096`<=32000. Canonical JSON is UTF-8, sorted keys, no optional whitespace, unescaped Unicode and no nonfinite numbers. The byte estimate is conservative engineering policy, not a proven tokenizer count.
+
+Packing follows original block order, greedily closing a contiguous batch just before the next complete block would exceed either bound. Every detection batch repeats the same complete six references; verification packs indivisible original/candidate/action pairs in surviving original order. Never split within a block or HTML document, omit references, summarize context or resize after an API failure. A single block/pair that cannot fit produces request_budget before that phase sends any batch. Precompute the phase's full partition and reject prospective call/input-limit excess before its first call. Overall deadline and monetary checks also precede each send. An upstream token-limit rejection remains provider_error, with no adaptive retry.
+
+Record the immutable plan (packing version, phase, original ordinals per batch, U and S) in request-local memory. Synthetic evaluation artifacts capture that plan and started batch counts to expose changes in sibling comparison context. Production logs/audit do not record it or any judgment contents; this amendment introduces no new public trace field. Changing the packing policy changes policy_version and requires comparison reevaluation.
+
+Usage above reservation marks an overrun while preserving actual usage. Judgment HTTP response bodies are bounded at 65,536 bytes before JSON parsing, including streaming accumulation; oversized responses are invalid_response. Actual reported judgment output above 65,536 tokens is also invalid_response. Original public input limits remain unchanged; input acceptance does not guarantee sufficient processing reservation.
+
+Existing editing budget caps and the whole-request deadlines are never enlarged. The new provider's finite ledger is separate; heterogenous tokens are not combined. Where both configured price entries exist and currencies match, additionally cap combined admitted monetary reservations at the previous editing reservation ceiling for that degree: `(262144*editing_input_price + output_cap*editing_output_price)/1e6`. Reserve judgment input units and 65,536 output tokens at its configured rates before evaluation, editing at existing reservation rates before generation; no refunds. With unknown or different-currency prices no cross-currency ceiling is invented: the two finite ledgers remain mandatory and total cost may be null. These are admission limits, not guarantees about invoices or unavailable usage. Exhaustion never silently changes thresholds, skips verification, or switches to the disabled path.
+
+### Judgment error precedence
+
+For v3 apply, at every await completion and before starting another await: (1) reached overall deadline => provider_timeout; (2) provider/transport/auth failure => its fixed provider_timeout or provider_error; (3) editing finish mapping => existing truncated/blocked/other mapping; (4) invalid answer or generation shape/ID/Unicode/no_issue consistency => invalid_response; (5) valid-shape diagnosis/candidate/final-payload size excess => output_limit; (6) HTML structure failure after retry => html_structure; (7) measured/prospective reservation or call-cap refusal => request_budget. A response byte-cap violation in the judgment adapter is step 4, not a client-splittable generation truncation. An API 429, 401 or 403 is provider_error, with no retry. Normal middle-range values are neither API errors nor invalid_response. A terminal code is frozen; cleanup cannot replace it or start calls.
+
+Record started-call slots and obtainable usage before choosing among competing outcomes; perform no new remote call merely to discover a higher-priority condition. Local integrity checks of an already received payload take precedence over its measured overrun. Semantic verification fail/indeterminate is processed only after these error checks and returns an item refusal, never overrides a whole-request error. Input validation still occurs before either provider call.
+
+Errors return all started-call counts, locally measured durations and obtainable usage; all diagnoses/candidates/judgment scores are discarded. Client split permission remains degree-based: input_limit and generation_truncated can use the existing one-generation text/markdown split allowance; output_limit only for rewrite, including v3 rewrite. V3 polish output_limit does not acquire a new retry. request_budget, provider failure, invalid_response and all HTML failures have no automatic split. Cancellation stops further sends even when no response can be delivered.
+
 ## Initialization instructions
 
 The exact `instructions` text below fits within the first 512 Unicode code points:
@@ -219,11 +406,19 @@ The exact `instructions` text below fits within the first 512 Unicode code point
 copyeditor sends polish_text body, context and background to this server and Vertex AI. This server does not persist them or candidates. Compare meaning and preservation before applying local edits. Use either text or items [{id,text,context?}], never both; html uses text only. Set language explicitly when known; otherwise the server default applies. lint_text accepts text and language and calls no model. Keep originals on errors and flags. Provider retention follows its own policy.
 ```
 
+Retain that exact string when judgment is disabled. When enabled, use this complete string (under 512 Unicode code points):
+
+```text
+copyeditor sends polish_text body, permitted context/background and candidates to Vertex AI and TypeSafe AI. This server does not persist them or judgment results. Providers govern their own retention and processing regions. Compare meaning before applying edits. Use text or items [{id,text,context?}], never both; html uses text only. Set language when known. lint_text calls no model. Keep originals on errors and flags. Judgment is not permission or proof of meaning preservation.
+```
+
 ## Audit log
 
 One compact JSON event on stdout per entered tool call, including validation errors. Whitelist exactly: `timestamp` (UTC RFC3339), `user` (24 lowercase hex HMAC characters for authenticated Google sub, null for none), `tool` (the known name), `language` (supported language or null), `rules_version`, `model` (identifier/null), `usage`, `cost`, `latency_ms`, `status` (`ok`, `flagged`, `error`), `error_code` (Code/null), `model_calls`, `regenerated` (boolean), `rejected_count` and `unfixable_count` (nonnegative integers). On whole-request errors both counts are zero because no item result is committed. `flagged` covers either flag kind. This list does not permit input lengths, item IDs, term lists, findings, arbitrary messages or exception text.
 
 Do not log body, context, background, candidate, diagnosis (including its status, expression, reason or count), email, raw sub, credentials, bearer tokens, OAuth query strings, headers, tracebacks, or serialized requests/results. Authentication denial occurs outside tool execution and emits no tool audit event. Startup warnings/errors use CTR-04's fixed strings only. Disable framework, SDK, HTTP access and debug logging before initialization. Infrastructure log suppression is the deployer's responsibility and must be documented; server non-persistence is not a claim about a model provider's retention policy.
+
+Preserve exactly the same whitelist, without judgment values, states, counts-by-outcome, provider rows, policy hashes, or new free-text fields. For v3 the existing model/usage/cost/model_calls fields project the **editing row only**. latency_ms is whole request latency. These legacy audit fields do not claim total provider billing; v3 response provider rows are the complete observation surface. `rejected_count` includes deterministic and verification_rejected items, unfixable_count is unchanged, status flagged covers any flag, and whole-request errors have both counts zero. Detection insufficient/indeterminate/not_run alone is not flagged. This maintains the preexisting aggregate rejection field, without logging judgment details. Disabled audit bytes/semantics are unchanged. Explicitly extend the log prohibition to judgment request/response bodies, numeric probabilities, classifications, keys, HTTP headers, parser snippets and exception chains, in all sinks and startup paths.
 
 ## Executable contract examples
 
@@ -354,3 +549,32 @@ The first implementation task introduces fixture loading/expansion, comparison h
 ```json contract-case
 {"name":"rewrite_truncated_candidate_discards_diagnosis","tool":"polish_text","input":{"text":"Hello.","degree":"rewrite"},"provider":[{"diagnoses":[{"id":"text","status":"no_issue","expression":null,"reason":null}]},{"finish":"truncated","items":[]}],"expect":{"status":"error","schema_version":2,"error":{"code":"generation_truncated"},"model_calls":2}}
 ```
+
+## Consumer case additions
+
+Retain every legacy case with judgment disabled and require byte/shape/call-sequence equality to its baseline. Add v3 cases with fake judgment and editing queues, original-item IDs bound locally rather than supplied by Jev. Each case must exhaust exactly its expected calls and fail on unexpected calls, with no real network:
+
+| Case | Required observation |
+|---|---|
+| Default/explicit disabled; poisoned judgment key accessor and client constructor | v1/v2 baseline passes, neither accessor nor constructor used, no judgment traffic |
+| Gate below floor, with any axes/action/confidence | insufficient unchanged; no editing preflight/generation or fake no_issue |
+| Gate at/above floor with preserve_as_is and with each non-preserve option at zero/low/high confidence | eligible in all cases; only preserve_as_is uses maximum-axis fallback; selected distribution retained |
+| No editable HTML prose | not_run/no_editable_prose, exact original, no provider calls |
+| Eligible rewrite diagnostic no_issue / issue | no candidate for no_issue; one immutable issue diagnosis through generation/retry |
+| Every verification axis fail, every axis middle, all pass | exact original with classification / exact original inconclusive / candidate |
+| Deterministic retry then verification | only final surviving candidate checked, no third generation |
+| Generated unchanged, unfixable, preservation rejection | verify unchanged unflagged; no verification for the two flags |
+| Mixed items and HTML/text/markdown, ja/en/zh | input order/IDs retained, same control, HTML whole document |
+| Final-item API error or invalid answer after prior successes | whole-request content discard, retained usage, zero later calls |
+| V3 model_called accounting table | every row and flipped-boolean negative case; false never reported as proof of no transmission |
+| Public floor classification and Choice | 0.53 equality and neighbors; verification 0.20/0.80 equality; exact option set/sum/ties/non-max/unknown/NaN; fallback axis ties; confidence changes alone never change control; unknown pair rejected |
+| Whole-request state and deterministic packing | 7*N / 4*M questions; one call per phase when within limits; stable internal IDs, six fixed references on every detection batch, two local limit boundaries, singleton refusal, no failure-based repartition |
+| Boundaries on inputs, probabilities, hashes, payloads, caps, call counts, deadlines | at-bound accepted where applicable, above rejected, booleans/NaN rejected |
+| Deadline + invalid answer; invalid answer + overrun; valid answer + overrun | provider_timeout; invalid_response; request_budget respectively |
+| Unknown/missing usage, nonzero free output, mixed currencies, no calls | null distinct from zero, no invented totals or costs |
+| Invalid arguments with enabled setting; raw protocol errors | v3 application error before providers; protocol error unchanged |
+| Every stdout/stderr/framework/HTTP/SDK sink, success/error/cancel | no source/candidate/diagnosis/judgment/key sentinel |
+| Discovery on/off/unknown and unsupported version | no body probe; permission expanded or submission withheld |
+| Related item with detection insufficient vs verification indeterminate | first is unchanged success and not a skip trigger; second propagates related skip; fabricated indeterminate detection under active pair is rejected |
+
+These are requirements for the same PRs that introduce the consumers, not assertions that not-yet-connected v3 cases pass today. Exact JSON examples and schema fixtures are added alongside their real consumer; no weakened always-pass comparator or removed v1/v2 inventory is allowed.
