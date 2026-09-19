@@ -1,11 +1,14 @@
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from fractions import Fraction
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 
 from .providers.base import Background, Usage
+from .responses import valid
 
 
 def _freeze(value):
@@ -179,3 +182,71 @@ POLICIES = _freeze({POLICY_ID: POLICY})
 THRESHOLDS = _freeze({THRESHOLD_ID: THRESHOLD})
 COMPATIBLE_PAIRS = frozenset({(POLICY_ID, THRESHOLD_ID)})
 SNAPSHOT = JudgmentSnapshot(POLICY_ID, definition_hash(POLICY), THRESHOLD_ID, definition_hash(THRESHOLD))
+
+
+def _registry(policy_id, threshold_id):
+    valid(type(policy_id) is str and type(threshold_id) is str
+          and (policy_id, threshold_id) in COMPATIBLE_PAIRS)
+    return POLICIES[policy_id], THRESHOLDS[threshold_id]
+
+
+def _probability(value):
+    valid(type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value))
+    return value
+
+
+def _probabilities(values, expected):
+    pairs = tuple(values.items()) if isinstance(values, Mapping) else values
+    valid(type(pairs) in (tuple, list))
+    result = {}
+    for pair in pairs:
+        valid(type(pair) in (tuple, list) and len(pair) == 2)
+        key, value = pair
+        valid(type(key) is str and key in expected and key not in result)
+        result[key] = _probability(value)
+    valid(set(result) == set(expected))
+    return {key: result[key] for key in expected}
+
+
+def validate_choice(selected, probabilities, confidence):
+    distribution = _probabilities(probabilities, tuple(ACTION_CRITERIA))
+    _probability(confidence)
+    valid(type(selected) is str and selected in distribution)
+    # Exact decimal-value sums avoid binary edge errors and ambient decimal-context rounding.
+    total = sum(Fraction(str(value)) for value in distribution.values())
+    valid(abs(total - 1) <= Fraction("0.000001"))
+    valid(distribution[selected] == max(distribution.values()))
+    return JudgmentChoice(selected, distribution, confidence)
+
+
+def classify_detection(block, *, policy_id=POLICY_ID, threshold_id=THRESHOLD_ID):
+    policy, threshold = _registry(policy_id, threshold_id)
+    valid(isinstance(block, JudgmentBlockResult) and isinstance(block.choice, JudgmentChoice))
+    values = _probabilities(block.probabilities, ("gate", *policy["axis_order"]))
+    choice = validate_choice(block.choice.selected, block.choice.probabilities, block.choice.confidence)
+    present = values["gate"] >= threshold["floor"]
+    effective, source = choice.selected, "choice"
+    if present and choice.selected == "preserve_as_is":
+        axis = max(policy["axis_order"], key=values.__getitem__)
+        effective, source = policy["fallback"][axis], "axis_fallback"
+    return {
+        "status": "eligible" if present else "insufficient", "reason": "evaluated",
+        "gate": {"probability": values["gate"], "result": "present" if present else "absent"},
+        "checks": [{"id": axis, "probability": values[axis]} for axis in policy["axis_order"]],
+        "action": {"selected": choice.selected, "probabilities": dict(choice.probabilities),
+                   "confidence": choice.confidence, "effective": effective, "source": source},
+    }
+
+
+def classify_verification(block, *, policy_id=POLICY_ID, threshold_id=THRESHOLD_ID):
+    policy, _ = _registry(policy_id, threshold_id)
+    valid(isinstance(block, JudgmentBlockResult) and block.choice is None)
+    rule = policy["verification"]
+    values = _probabilities(block.probabilities, rule["order"])
+    checks = [{"id": key, "probability": value,
+               "result": "fail" if value <= rule["fail_max"] else
+                         "pass" if value >= rule["pass_min"] else "indeterminate"}
+              for key, value in values.items()]
+    results = {check["result"] for check in checks}
+    status = "pass" if results == {"pass"} else "fail" if "fail" in results else "indeterminate"
+    return {"status": status, "reason": "evaluated", "checks": checks}
