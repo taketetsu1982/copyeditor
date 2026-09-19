@@ -13,8 +13,8 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
 from copyeditor.config import load_config
 from copyeditor.providers.base import GenerationResult, Usage
-from copyeditor.requests import input_schema
-from copyeditor.responses import output_schema, validate_final
+from copyeditor.requests import edit_input_schema
+from copyeditor.responses import tool_output_schema, validate_final
 from copyeditor.rules import load_rules
 from copyeditor.server import INSTRUCTIONS, build_server
 from copyeditor.service import Service
@@ -66,8 +66,8 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_discovery(setup):
         tools = await client.list_tools()
         assert {tool.name for tool in tools} == {"polish_text", "lint_text"}
         for tool in tools:
-            assert tool.input_schema == input_schema(tool.name, config, snapshot)
-            assert tool.output_schema == output_schema(tool.name)
+            assert tool.input_schema == edit_input_schema(tool.name, config, snapshot)
+            assert tool.output_schema == tool_output_schema(tool.name)
             assert tool.annotations.read_only_hint and tool.annotations.destructive_hint is False
             assert tool.annotations.open_world_hint == (tool.name == "polish_text")
         with pytest.raises(Exception): await client.call_tool("unknown", {"text": MARKER})
@@ -286,8 +286,8 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_tcp_acceptance(tcp_se
         tools = listed.json()["result"]["tools"]
         assert {t["name"] for t in tools} == {"polish_text", "lint_text"}
         for tool in tools:
-            assert tool["inputSchema"] == input_schema(tool["name"], config, snapshot)
-            assert tool["outputSchema"] == output_schema(tool["name"])
+            assert tool["inputSchema"] == edit_input_schema(tool["name"], config, snapshot)
+            assert tool["outputSchema"] == tool_output_schema(tool["name"])
             assert tool["annotations"]["readOnlyHint"] and not tool["annotations"]["destructiveHint"]
             assert tool["annotations"]["openWorldHint"] == (tool["name"] == "polish_text")
         assert not created and not records
