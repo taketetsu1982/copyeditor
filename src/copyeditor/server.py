@@ -11,15 +11,15 @@ from fastmcp.tools import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
 
 from .auth import disable_library_logging
-from .requests import MESSAGES, input_schema
-from .responses import output_schema
+from .requests import MESSAGES, edit_input_schema
+from .responses import tool_output_schema
 
 INSTRUCTIONS = (
-    "copyeditor sends polish_text body, context and background to this server and Vertex AI. "
-    "This server does not persist them or candidates. Compare meaning and preservation before applying local edits. "
-    "Use either text or items [{id,text,context?}], never both; html uses text only. "
-    "Set language explicitly when known; otherwise the server default applies. lint_text accepts text and language "
-    "and calls no model. Keep originals on errors and flags. Provider retention follows its own policy."
+    'copyeditor sends polish_text body, context and background to this server and Vertex AI. This server does not '
+    'persist them or candidates. Compare meaning and preservation before applying local edits. Use either text or '
+    'items [{id,text,context?}], never both; html uses text only. Set language explicitly when known; otherwise the '
+    'server default applies. lint_text accepts text and language and calls no model. Keep originals on errors and '
+    'flags. Provider retention follows its own policy.'
 )
 
 
@@ -43,6 +43,8 @@ def build_server(config, snapshot, service, auth, audit_sink):
                            model=config["model"] if self.name == "polish_text" else None,
                            usage=dict(input_tokens=0, output_tokens=0, total_tokens=0), cost=None, latency_ms=0,
                            model_calls=0, model_called=False, regeneration_attempted=False)
+            if self.name == "polish_text" and arguments.get("degree") == "rewrite":
+                payload.update(schema_version=2, degree="rewrite")
             try:
                 try:
                     payload = await getattr(service, "polish" if self.name == "polish_text" else "lint")(arguments)
@@ -67,7 +69,7 @@ def build_server(config, snapshot, service, auth, audit_sink):
 
     server = PublicServer("copyeditor", instructions=INSTRUCTIONS, auth=auth, mask_error_details=True)
     for name in ("polish_text", "lint_text"):
-        server.add_tool(PublicTool(name=name, parameters=input_schema(name, config, snapshot), output_schema=output_schema(name),
+        server.add_tool(PublicTool(name=name, parameters=edit_input_schema(name, config, snapshot), output_schema=tool_output_schema(name),
                                   annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=name == "polish_text")))
     @server.custom_route("/health", methods=["GET"])
     async def health(request):

@@ -5,8 +5,10 @@ from .lint import lint_response
 from .metrics import Metrics
 from .prompt import system_instruction
 from .providers.base import GenerationInput, ProviderFailure
-from .requests import ValidationError, parse_request
+from .requests import ValidationError, parse_edit_request
 from .responses import nonblank, parse_generation, validate_final
+from .rewrite_response import validate_rewrite_final
+from .rewrite_service import rewrite
 
 
 class Service:
@@ -21,14 +23,17 @@ class Service:
 
     async def _run(self, tool, arguments):
         model = self.config["model"] if tool == "polish_text" else None
-        meter = Metrics(monotonic(), model, self.config["pricing"])
+        is_rewrite = tool == "polish_text" and type(arguments) is dict and arguments.get("degree") == "rewrite"
+        meter = Metrics(monotonic(), model, self.config["pricing"], degree="rewrite" if is_rewrite else "polish")
         language, result, failure = None, None, None
         try:
             supplied = arguments.get("language", self.config["default_language"]) if type(arguments) is dict else None
             if type(supplied) is str and supplied in self.snapshot.languages:
                 language = supplied
-            request = parse_request(tool, arguments, self.config, self.snapshot)
+            request = parse_edit_request(tool, arguments, self.config, self.snapshot)
             language = request.language
+            if is_rewrite:
+                return await rewrite(request, self.config, self.snapshot, self.provider_factory, meter, items_route="items" in arguments)
             rules = self.snapshot.languages[language]
             if tool == "lint_text":
                 result = dict(status="ok", protected_terms_checked=0, preservation=None,
@@ -46,10 +51,13 @@ class Service:
         metadata = dict(schema_version=1, language=language, rules_version=self.snapshot.rules_version,
                         common_version=self.snapshot.common_version, model=model,
                         **{key: value for key, value in measured.items() if key != "regeneration_attempted"})
+        if is_rewrite:
+            metadata.update(schema_version=2, degree="rewrite")
+        validate = validate_rewrite_final if is_rewrite else validate_final
         if failure is None:
             result.update(metadata)
             try:
-                validate_final(result)
+                validate(result)
             except ValidationError as error:
                 failure = (error.code, None)
             except Exception:
@@ -60,7 +68,7 @@ class Service:
                           model_called=measured["model_calls"] > 0, regeneration_attempted=measured["regeneration_attempted"])
         result["latency_ms"] = meter.snapshot()["latency_ms"]
         try:
-            validate_final(result)
+            validate(result)
         except Exception as error:
             code = error.code if isinstance(error, ValidationError) else "internal_error"
             result = dict(**{**metadata, "latency_ms": result["latency_ms"]}, status="error",

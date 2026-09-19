@@ -114,7 +114,7 @@ def output_schema(tool):
                        cost={"type": "null"}, model_calls={"type": "integer", "const": 0},
                        preservation={"type": "null"}, protected_terms_checked={"type": "integer", "const": 0})
         variants = [obj(**success, **findings)]
-    safe_field = nullable(pattern(r"(?:text|items(?:\[(?:0|[1-9][0-9]*)\](?:\.(?:id|text|context))?)?|format|audience|purpose|tone|message|language|context)"))
+    safe_field = nullable(pattern(r"(?:text|items(?:\[(?:0|[1-9][0-9]*)\](?:\.(?:id|text|context))?)?|format|audience|purpose|tone|message|language|context|degree)"))
     errors = []
     for code, message in MESSAGES.items():
         field = safe_field if code in ("invalid_input", "unsupported_language", "input_limit") else {"type": "null"}
@@ -202,3 +202,11 @@ def validate_final(payload, *, schema=None, rewrite=False, check_limits=True):
     valid(encoded is not None)
     if len(encoded) > 1048576:
         raise ValidationError("output_limit", None)
+
+
+def tool_output_schema(tool):
+    schema = output_schema(tool)
+    if tool == "polish_text":
+        from .rewrite_response import rewrite_output_schema
+        schema["oneOf"].extend(rewrite_output_schema()["oneOf"])
+    return schema
