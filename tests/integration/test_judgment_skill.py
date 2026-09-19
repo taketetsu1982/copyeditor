@@ -1,15 +1,14 @@
-"""Static Skill scenarios and distribution checks, not real client acceptance."""
+"""Static instruction consistency, not proof of real client compliance."""
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
-from tests.integration.test_rewrite_skill import scenarios
-from plugin_checks import check_plugin, skill_body
-
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+from plugin_checks import check_plugin, skill_body
 SOURCE = ROOT / "skills/copyeditor/SKILL.md"
-CONTRACT = ROOT / "contracts/tools.md"
 
 
 @pytest.fixture(params=[SOURCE, *(ROOT / "plugins" / client / "skills/copyeditor/SKILL.md" for client in ("claude", "codex"))])
@@ -17,73 +16,42 @@ def skill(request):
     return request.param.read_text()
 
 
-@pytest.mark.parametrize("condition,outcome", [
-    ("judgment_enabled_permission_missing", "ask_once_with_typesafe"),
-    ("judgment_unknown_permission_missing", "ask_once_with_typesafe"),
-    ("judgment_permission_denied", "unprocessed_no_alternate_route"),
-    ("judgment_permission_revoked", "unprocessed_no_alternate_route"),
-    ("judgment_client_denied", "unprocessed_no_alternate_route"),
-    ("judgment_unsupported_schema_with_consent", "unprocessed"),
-])
-def test_additional_destination_or_unknown_schema_prevents_submission(skill, condition, outcome):
-    assert scenarios(skill)[condition] == ("no", "no", outcome)
-
-
-@pytest.mark.parametrize("condition,outcome", [
-    ("judgment_insufficient", "adopted_unchanged"), ("judgment_not_run", "adopted_unchanged"),
-    ("judgment_no_issue", "adopted_unchanged"),
-    ("judgment_classification_mismatch", "unprocessed"), ("judgment_unknown_threshold_version", "unprocessed"),
-    ("verification_rejected", "rejected_with_checks"),
-    ("verification_pass_meaning_uncertain", "skipped_preservation"),
-    ("related_verification_rejected", "skipped_related_group"),
-])
-def test_received_results_keep_nonchange_rejection_and_error_distinct(skill, condition, outcome):
-    assert scenarios(skill)[condition] == ("yes", "no", outcome)
-
-
-def test_discovery_checks_both_markers_and_schema_without_body_probe(skill):
-    contract = CONTRACT.read_text()
-    markers = re.findall(r"^copyeditor\.judgment=.*$", contract, re.M)
-    assert len(markers) == 2 and all(marker in skill for marker in markers)
-    for clause in ("On every request", "output schema without a body probe", "Missing, contradictory, or unknown",
-                   "known v1/v2 schema alone does not prove", "Do not extend Vertex-only permission",
-                   "single combined confirmation", "Consent never makes an unsupported output schema safe"):
+def test_discovery_and_permission_cover_unknown_and_refused_destinations(skill):
+    for clause in ("Before each request", "judgment marker and output schema without a body probe",
+                   "Enabled, missing, contradictory, or unknown", "TypeSafe AI as well as MCP and Vertex AI",
+                   "body, permitted context/background, and candidates", "Do not extend Vertex-only permission",
+                   "single confirmation and client approval", "Refusal means no submission or alternate route",
+                   "Confirmed disabled keeps the v1/v2 procedure", "unsupported schemas remain unsent even with consent"):
         assert clause in skill
-    assert scenarios(skill)["judgment_disabled_valid_candidate"] == ("yes", "yes", "adopted_changed")
 
 
-def test_classification_uses_public_registry_without_copying_threshold_tables(skill):
+def test_public_contract_is_referenced_without_repeating_classification_rules(skill):
     refs = re.findall(r"<https://github.com/taketetsu1982/copyeditor/blob/main/contracts/tools.md#([^>]+)>", skill)
+    contract = (ROOT / "contracts/tools.md").read_text()
     headings = {re.sub(r"[^a-z0-9 -]", "", heading.lower()).replace(" ", "-")
-                for heading in re.findall(r"^#+ (.+)$", CONTRACT.read_text(), re.M)}
-    assert set(refs) == {"version-selection-and-compatibility", "registered-threshold-classification"}
+                for heading in re.findall(r"^#+ (.+)$", contract, re.M)}
+    assert set(refs) == {"judgment-payloads-and-validation", "registered-threshold-classification"}
     assert set(refs) <= headings
-    section = skill.split("## Discover judgment and validate v3", 1)[1].split("## Apply only permitted local edits", 1)[0]
-    assert not any(number in section for number in ("0.53", "0.20", "0.80"))
-    for clause in ("finite, unrounded", "five ordered axes", "raw Choice distribution/selected/confidence",
-                   "effective action/source", "Hash equality alone is insufficient", "never downgrade it to legacy",
-                   "Confidence is not an adoption or fallback threshold", "do not rewrite the raw Choice"):
-        assert clause in section
+    section = skill.split("## Optional judgment", 1)[1].split("## Apply only permitted local edits", 1)[0]
+    assert not any(value in section for value in ("0.53", "0.20", "0.80", "|", "Fixed reporting examples"))
+    assert "validation fails, leave the response unprocessed" in section
+    assert "never downgrade broken v3 to legacy" in section
 
 
-def test_reporting_and_related_groups_do_not_turn_nonexecution_into_rejection(skill):
-    for clause in ("adopted/unchanged, without writing or causing related-item skips",
-                   "diagnosis=null (not diagnosed)", "no_issue (editor found no issue)",
-                   "insufficient (insufficient grounds for change)", "not as a defect in the original",
-                   "preserving each member's specific reason", "Do not regenerate or switch providers",
-                   "Verification pass never replaces your own meaning", "an atomic application",
-                   "model_called=false does not prove no transmission", "both provider rows",
-                   "including failures", "Do not turn null into zero", "Never add different currencies"):
+def test_judgment_preserves_comparison_consent_and_distinct_outcomes(skill):
+    for clause in ("neither adoption permission nor proof of preservation", "your own meaning comparison",
+                   "the user's confirmation", "Server disclosure is not consent",
+                   "users calling MCP without this Skill", "successful unchanged originals, not rejections",
+                   "not diagnosed (diagnosis=null)", "editor found no issue (no_issue)", "insufficient grounds for change",
+                   "rejection of the discarded candidate", "related-group rule without losing specific reasons",
+                   "Do not regenerate after verification rejection", "judgment enabled/disabled/unknown",
+                   "TypeSafe AI permission scope", "both providers' calls", "including failures",
+                   "model_called=false does not prove no transmission"):
         assert clause in skill
-    examples = skill.split("Fixed reporting examples", 1)[1].split("## Apply only permitted local edits", 1)[0]
-    assert examples.count('"Adopted, unchanged:') == 3
-    assert "not diagnosed" in examples and "editor found no issue" in examples
-    assert "discarded candidate" in examples and "local meaning and source comparisons" in examples
 
 
 @pytest.mark.parametrize("client", ["claude", "codex"])
-def test_both_generated_skills_preserve_the_complete_judgment_procedure(client):
+def test_generated_skills_match_the_canonical_procedure(client):
     check_plugin(ROOT, client)
     generated = ROOT / "plugins" / client / "skills/copyeditor/SKILL.md"
     assert skill_body(generated.read_bytes()) == skill_body(SOURCE.read_bytes())
-    assert scenarios(generated.read_text()) == scenarios(SOURCE.read_text())
