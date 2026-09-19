@@ -1,9 +1,11 @@
 import hashlib
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 from fastmcp import Client
+from copyeditor.config import load_config, strict_yaml
 
 from .harness import load_cases
 from tests.integration.test_transport import setup
@@ -63,3 +65,73 @@ async def test_current_discovery_does_not_advertise_judgment(setup):
         "polish_text": {1, 2}, "lint_text": {1}}
     assert all("copyeditor.judgment=on" not in (tool.description or "") for tool in tools)
     assert created == records == []
+
+
+CONFIG_CONTRACT = CONTRACT.with_name("config.md")
+
+
+def test_legacy_config_contract_is_preserved():
+    contract = CONFIG_CONTRACT.read_text()
+    legacy = re.sub(r"\n### [^\n]+\n.*?(?=\n## |\Z)", "", contract, flags=re.S)
+    legacy = legacy.replace("revision: 6", "revision: 2")
+    legacy = re.sub(r", AC-08-\d+", "", legacy)
+    legacy = legacy.replace("This table and the judgment fields table define", "This table is")
+    legacy = legacy.replace("`credentials`, `judgment.credentials`;", "`credentials`;")
+    assert hashlib.sha256(legacy.encode()).hexdigest() == (
+        "0ada1e2a0daadfc9ca5e5fabd669d69e0e48116aa9646e7abf0ad7852bda1a9c")
+
+
+def test_judgment_config_example_and_leaf_contract_agree():
+    contract = CONFIG_CONTRACT.read_text()
+    metadata = contract.split("---", 2)[1]
+    assert "revision: 6" in metadata and "base-revision" not in metadata
+    example = strict_yaml(re.search(r"```yaml\n(.*?)\n```", contract, re.S)[1])["judgment"]
+    rows = re.findall(r"^\| judgment\.([a-z_]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$", contract, re.M)
+    assert len(rows) == len(example) == 10
+    assert {key for key, *_ in rows} == set(example)
+    assert not {"provider", "key", "token", "secret", "endpoint"} & set(example)
+    for key, accepted, variable, default in rows:
+        assert variable.strip() == "COPYEDITOR_JUDGMENT_" + key.upper()
+        assert strict_yaml("value: " + default.strip())["value"] == example[key]
+    assert example["enabled"] is False and example["model"] == "jev-1.13.0"
+    assert (example["policy_version"], example["thresholds_version"]) == (
+        "reference-gate-action-v1", "gate-floor-v1")
+    assert all(example[key] in CONTRACT.read_text() for key in ("policy_version", "thresholds_version"))
+    assert "tools.md#registered-threshold-classification" in contract
+    assert "ctr01-us08-draft" not in contract
+    assert "reject that reference before looking up its value" in contract
+    assert "A disabled process never looks up, validates, stores or requires TYPESAFE_API_KEY" in contract
+
+
+def test_judgment_credential_errors_use_declared_fixed_label():
+    contract = CONFIG_CONTRACT.read_text()
+    labels = set(re.findall(r"`([^`]+)`", re.search(r"fixed labels ([^;]+);", contract)[1]))
+    assert labels == {"config", "rules", "credentials", "judgment.credentials"}
+    amendment = contract.split("### Secrets and startup errors amendment\n")[1].split("## Image layout")[0]
+    errors = re.findall(r"(missing_required|invalid_config|credentials_unavailable) at ([a-z_]+(?:\.[a-z_]+)+)", amendment)
+    assert set(errors) == {(code, "judgment.credentials") for code in (
+        "missing_required", "invalid_config", "credentials_unavailable")}
+    assert all(label in labels for _, label in errors)
+
+
+class NoJudgmentSecret(Mapping):
+    def __getitem__(self, key):
+        assert key != "TYPESAFE_API_KEY", "Disabled configuration must not access judgment credentials"
+        if key == "GOOGLE_CLOUD_PROJECT":
+            return "project"
+        raise KeyError(key)
+
+    def __iter__(self):
+        raise AssertionError("Configuration must not enumerate the secret environment")
+
+    def __len__(self):
+        return 1
+
+
+def test_current_config_does_not_read_judgment_secret(tmp_path):
+    config = load_config(tmp_path / "absent", NoJudgmentSecret())
+    assert config["provider"] == "vertex"
+    assert not any(key.startswith("judgment.") for key in config.values)
+    for value in ("", "invalid key\n"):
+        env = {"GOOGLE_CLOUD_PROJECT": "project", "TYPESAFE_API_KEY": value}
+        assert load_config(tmp_path / "absent", env).values == config.values
