@@ -11,6 +11,56 @@ PHASE2_MODULES = {"tests/integration/test_plugin_claude.py", "tests/integration/
                   "tests/integration/test_plugin_distribution.py"}
 
 
+REWRITE_MODULES = {
+    'tests/contracts/test_rewrite_examples.py',
+    'tests/integration/test_rewrite_acceptance.py',
+    'tests/integration/test_rewrite_skill.py',
+    'tests/integration/test_rewrite_transport.py',
+    'tests/unit/test_diagnosis.py',
+    'tests/unit/test_rewrite_budget.py',
+    'tests/unit/test_rewrite_evaluation.py',
+    'tests/unit/test_rewrite_failures.py',
+    'tests/unit/test_rewrite_requests.py',
+    'tests/unit/test_rewrite_response.py',
+    'tests/unit/test_rewrite_service.py',
+    'tests/unit/test_rewrite_vertex.py',
+}
+PHASE2_MODULES |= REWRITE_MODULES
+REWRITE_TOOL_CASES = {
+    'text_success',
+    'exclusive_routes',
+    'partial_rejection',
+    'retry_integrity_discards_batch',
+    'shared_html_retry',
+    'lint_has_no_provider',
+    'candidate_length_12000',
+    'candidate_length_12001',
+    'candidate_length_16000',
+    'candidate_length_16001',
+    'blank_candidate',
+    'empty_candidate',
+    'blank_unfixable',
+    'candidate_aggregate_16000',
+    'candidate_aggregate_16001',
+    'retry_merge_exceeds_16000',
+    'retry_blank_discards_batch',
+    'html_incomplete_original',
+    'html_incomplete_candidate',
+    'rewrite_unchanged_text',
+    'rewrite_no_issue_changed',
+    'rewrite_missing_diagnosis',
+    'rewrite_issue_text',
+    'polish_explicit_preserves_v1',
+    'degree_invalid',
+    'rewrite_diagnosis_limit',
+    'rewrite_items_original_order',
+    'rewrite_duplicate_diagnosis',
+    'rewrite_extra_diagnosis',
+    'rewrite_no_issue_flag_cannot_hide_change',
+    'rewrite_truncated_candidate_discards_diagnosis',
+}
+
+
 def pytest_report_collectionfinish(items):
     connected = {mark.args[0] for item in items
                  for mark in item.iter_markers("consumer")}
@@ -24,9 +74,14 @@ def phase1_inventory(root):
     from tests.contracts.harness import load_cases
 
     tools = load_cases(root / "contracts/tools.md", "contract-case")
+    if len(tools) != 31 or {case["name"] for case in tools} != REWRITE_TOOL_CASES:
+        raise ValueError("Missing or replaced tool contract cases")
     html = load_cases(root / "rules/common.md", "html-case")
     rules = load_rules(root / "rules", None)
     examples = runpy.run_path(str(root / "scripts/examples_to_promptfoo.py"))["load_examples"](root / "examples", rules)
+    fixed = {f"rewrite-{i:02}" for i in range(1, 25)}
+    if not fixed <= {case["id"] for case in examples if case["language"] == "ja" and case["degree"] == "rewrite"}:
+        raise ValueError("Missing fixed rewrite examples")
     if not {"ja", "en", "zh"} <= set(rules.languages):
         raise ValueError("Missing language assets")
     groups = {}
@@ -155,6 +210,7 @@ class Phase1Contracts:
         terminal = self.config.pluginmanager.getplugin("terminalreporter")
         if terminal:
             terminal.write_sep("=", "CONTRACTS FAIL" if self.errors else "CONTRACTS PASS")
+            terminal.write_line("US-07 quality not evaluated: owner native/live/client evidence remains required.")
             for error in self.errors:
                 terminal.write_line(error)
             for entry, expected in self.groups.items():
