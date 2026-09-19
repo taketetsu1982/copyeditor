@@ -76,17 +76,20 @@ class Service:
                           model_called=measured["model_calls"] > 0, regeneration_attempted=measured["regeneration_attempted"])
         return result
 
-    async def _polish(self, request, rules, meter, items_route):
+    async def _polish(self, request, rules, meter, items_route, *, generate=None):
         terms = preservation.request_terms(request.items, rules.protected_terms)
         instruction = system_instruction(self.snapshot.common_bytes.decode("utf-8"), rules.prose, terms)
         ratio = {key: self.config["length_ratio." + key] for key in ("min", "max")}
-        provider = self.provider_factory()
+        provider = self.provider_factory() if generate is None else None
         accepted = {}
         pending = request.items
         for attempt in range(2):
-            call = meter.start_call()
-            generated = await provider.generate(GenerationInput(pending, request.language, request.format, request.background, instruction))
-            meter.record_usage(call, generated.usage)
+            if generate is None:
+                call = meter.start_call()
+                generated = await provider.generate(GenerationInput(pending, request.language, request.format, request.background, instruction))
+                meter.record_usage(call, generated.usage)
+            else:
+                generated = await generate(pending, attempt)
             if isinstance(generated, ProviderFailure):
                 raise ValidationError(generated.code, None)
             candidates = parse_generation(generated, pending)
