@@ -27,6 +27,10 @@ Start from [config.example.yaml](config.example.yaml). The only config path is `
 
 The example fixes `auth.mode: none`; change it before using Google authentication. Its other explicit defaults also override environment settings. OAuth secrets are environment-only: `GOOGLE_OAUTH_CLIENT_SECRET` and `OAUTH_SIGNING_KEY` (at least 32 UTF-8 bytes, generated with sufficient entropy). Neither has a config key; secret placeholders are rejected. Supply them through your deployment's secret manager, never Dockerfile `ARG`/`ENV` or committed files.
 
+**Optional judgment: available only after Task 134 connects the public entry points.** The current public configuration does not yet accept these settings. Judgment defaults to off; after integration, enable `judgment.enabled` (or `COPYEDITOR_JUDGMENT_ENABLED=true`) only after reviewing the additional destination. The model is pinned to `jev-1.13.0`, with `reference-gate-action-v1` and `gate-floor-v1`; moving model aliases and unknown registry IDs are rejected. See [judgment settings](contracts/config.md#judgment-fields).
+
+Supply `TYPESAFE_API_KEY` only through the runtime secret environment, never config, placeholders, Docker build arguments, image contents, or committed files. Disabled mode does not read or require this key. After integration, rollback means setting `judgment.enabled=false` (or `COPYEDITOR_JUDGMENT_ENABLED=false` when no explicit config overrides it) and restarting: subsequent requests return to v1/v2 without changing Vertex ADC or OAuth requirements. There is no per-request switch or change to an in-flight request.
+
 ## Local Docker: none
 
 Set `GOOGLE_CLOUD_PROJECT` to your project and `ADC_FILE` to the absolute path of your ADC file outside this repository. Ensure the mount is readable by UID 65532 without making credentials public. This base-image command uses environment defaults, with no mounted config:
@@ -100,7 +104,11 @@ Put a scoped permission statement in your project's `CLAUDE.md` or `AGENTS.md`, 
 
 The server does not persist text, candidates, or diagnoses; provider retention and infrastructure logs remain outside that guarantee, as described below. Both plugin Skills classify submission permission, exclude confidential or protected content, record source locations and related items, compare returned candidates, and apply only authorized local changes. They recheck the original before applying edits and keep related changes together. A client approval refusal ends the attempt; the Skill does not switch routes or relax permissions.
 
-**Diagnosed rewrite.** Ordinary proofreading uses `degree=polish` (the default) and v1 responses. Only an explicit request to rewrite uses `degree=rewrite` and `schema_version=2`. The server first diagnoses expressions, then rewrites using those fixed diagnoses; the caller supplies no diagnosis. For example, send this to `polish_text` after the normal permission checks:
+**When judgment is enabled after Task 134**, body, permitted context/background, and candidates may also go to TypeSafe AI. Both degrees return `schema_version=3`; `lint_text` is unchanged. The Skill checks discovery for each request, includes TypeSafe AI in permission and reporting, and treats unknown disclosure as potentially enabled. Vertex-only permission does not cover this additional destination. Startup stderr, initialization instructions and the tool description disclose it, but **direct MCP calls have no guaranteed per-request consent**; operators must inform those users before enabling it.
+
+Judgment is neither adoption permission nor proof that meaning was preserved. A verification pass does not replace the Skill's meaning comparison or the user's approval. Distinguish insufficient grounds for change and checks not run (unchanged originals) from `verification_rejected` (a discarded candidate, original retained); do not describe the candidate's failed checks as defects in the original. Classification and response rules are in [CTR-01](contracts/tools.md#registered-threshold-classification).
+
+**Diagnosed rewrite (judgment disabled).** Ordinary proofreading uses `degree=polish` (the default) and v1 responses. Only an explicit request to rewrite uses `degree=rewrite` and `schema_version=2`. The server first diagnoses expressions, then rewrites using those fixed diagnoses; the caller supplies no diagnosis. For example, send this to `polish_text` after the normal permission checks:
 
 ```json
 {"text":"The team will carry out a review of the draft.","language":"en","degree":"rewrite"}
@@ -145,7 +153,7 @@ Build there with `docker build -t copyeditor:custom .`, then substitute `copyedi
 
 ## Retention and operational logs
 
-The server does not persist submitted text or candidates. It emits only the [CTR-01 audit fields](contracts/tools.md#audit-log) to stdout; startup diagnostics go to stderr. This does not cover provider retention or infrastructure logs: review those policies separately. Text sent for polishing reaches Vertex AI.
+The server does not persist submitted text or candidates. It emits only the [CTR-01 audit fields](contracts/tools.md#audit-log) to stdout; startup diagnostics go to stderr. This does not cover provider retention or infrastructure logs: review those policies separately. Text sent for polishing reaches Vertex AI; enabled judgment adds TypeSafe AI, whose retention and processing region follow its own policy. Judgment values and reasons are not added to audit logs; full per-provider accounting is in the v3 response.
 
 Before login, configure every reverse proxy/load balancer to omit query strings from request logs (or disable callback request logging). On Cloud Run, use [Cloud Logging sink exclusions](https://cloud.google.com/run/docs/logging) for callback request entries: filter `resource.type="cloud_run_revision" AND httpRequest.requestUrl=~"/auth/callback([?]|$)"`, scoped to your service, on every sink that stores or exports those entries, including `_Default`. This excludes whole entries, not individual query fields. Check inherited/organization sinks and upstream proxy logs too; a local app setting does not control them. Verify using synthetic callback traffic with no real code/token that no destination stores its query. Exclusions do not remove previously stored logs.
 
@@ -187,6 +195,10 @@ Dockerと、課金およびVertex AI APIを有効にしたGoogle Cloudプロジ�
 | `pricing`, `server.host`, `server.port` | `COPYEDITOR_PRICING`, `COPYEDITOR_HOST`, `PORT` |
 
 設定例は `auth.mode: none` を固定しているため、Google認証では変更します。他の明示した既定値も環境変数より優先します。OAuthの秘密は環境変数 `GOOGLE_OAUTH_CLIENT_SECRET` と `OAUTH_SIGNING_KEY`（十分な乱数で生成した32 UTF-8 bytes以上）のみから渡します。対応するconfig keyはなく、秘密のplaceholderも拒否します。デプロイ環境のsecret managerを使い、Dockerfileの `ARG` / `ENV` やcommitするファイルには書きません。
+
+**任意の判定: 利用開始は公開入口を接続するTask 134以降です。** 現在の公開設定では、まだこれらの設定を受け付けません。判定は既定でoffです。接続後、追加送信先を確認したうえで `judgment.enabled`（または `COPYEDITOR_JUDGMENT_ENABLED=true`）を有効にします。対応モデルは `jev-1.13.0`、定義は `reference-gate-action-v1` と `gate-floor-v1` に固定し、追従型モデルaliasや未知のregistry IDは拒否します。詳細は[判定設定](contracts/config.md#judgment-fields)を参照してください。
+
+`TYPESAFE_API_KEY` は実行時のsecret環境変数だけから渡し、config、placeholder、Docker build引数、image、commitするファイルには含めません。無効時はこのkeyを参照せず、要求もしません。接続後に元へ戻すには、`judgment.enabled=false`（明示configが優先していなければ `COPYEDITOR_JUDGMENT_ENABLED=false`）にして再起動します。以後の依頼はv1/v2へ戻り、Vertex ADCやOAuthの要件は変わりません。依頼単位の切替や、処理中の依頼への途中適用はありません。
 
 ### ローカルDocker: none
 
@@ -261,7 +273,11 @@ projectの `CLAUDE.md` または `AGENTS.md` に、例えば「校正を依頼�
 
 サーバーは本文・候補・診断を永続保存しません。providerの保持やインフラログはその保証に含まれず、後述の確認が必要です。両pluginのSkillは、送信許可の判定、機密・保護対象の除外、原文位置と関連itemの記録、候補の比較、許可された局所変更の反映を行います。反映前に原文が変わっていないか確認し、関連する変更はまとめて扱います。clientが承認を拒否したら、その試行は終了します。別経路への切り替えや権限の緩和は行いません。
 
-**診断つき書き直し。** 通常の推敲は既定の `degree=polish` を使い、応答はv1です。明示的に書き直しを依頼した場合だけ `degree=rewrite` を使い、`schema_version=2` の応答を受け取ります。サーバーが先に表現を診断し、その診断を固定して書き直します。呼び出す側は診断を入力しません。通常の送信許可を確認した後、例えば次を `polish_text` に渡します。
+**Task 134以降に判定を有効にすると**、本文・許可されたcontext/背景・候補はTypeSafe AIにも送信される場合があります。両degreeとも `schema_version=3` を返し、`lint_text` は変わりません。Skillは依頼ごとにdiscoveryを確認し、TypeSafe AIを送信許可と報告に含め、不明時も有効の可能性があるものとして扱います。Vertexだけへの許可は追加先を含みません。起動時stderr、初期化の説明、tool定義で開示しますが、**直接MCPを呼ぶ利用者の依頼ごとの同意は保証しません**。運用者は有効化前に利用者へ知らせてください。
+
+判定は採用の許可でも、意味を保持できた証明でもありません。検証passでもSkillの意味比較や人の承認は省きません。変更根拠不足・検査未実施による原文維持と、`verification_rejected` による候補の見送り・原文保持を区別し、候補への不合格判定を原文の欠陥として説明しないでください。分類・応答の規則は[CTR-01](contracts/tools.md#registered-threshold-classification)を参照してください。
+
+**診断つき書き直し（判定off時）。** 通常の推敲は既定の `degree=polish` を使い、応答はv1です。明示的に書き直しを依頼した場合だけ `degree=rewrite` を使い、`schema_version=2` の応答を受け取ります。サーバーが先に表現を診断し、その診断を固定して書き直します。呼び出す側は診断を入力しません。通常の送信許可を確認した後、例えば次を `polish_text` に渡します。
 
 ```json
 {"text":"The team will carry out a review of the draft.","language":"en","degree":"rewrite"}
@@ -306,7 +322,7 @@ COPY rules/ja.md /etc/copyeditor/rules.d/ja.md
 
 ### 保持範囲と運用ログ
 
-サーバーは送信本文・候補を永続保存しません。stdoutには[CTR-01の監査項目](contracts/tools.md#audit-log)だけ、stderrには起動診断を出します。providerの保持方針やインフラログはこの範囲に含まれないため、別途確認してください。校正に送った本文はVertex AIへ渡ります。
+サーバーは送信本文・候補を永続保存しません。stdoutには[CTR-01の監査項目](contracts/tools.md#audit-log)だけ、stderrには起動診断を出します。providerの保持方針やインフラログはこの範囲に含まれないため、別途確認してください。校正に送った本文はVertex AIへ渡り、判定有効時はTypeSafe AIも追加されます。その保持方針と処理地域は同providerの方針に従います。判定値や理由は監査ログに追加せず、provider別の全計量はv3応答で確認します。
 
 login前に、すべてのreverse proxy / load balancerのrequest logからqueryを除くか、callbackのrequest logを無効にします。Cloud Runでは[Cloud Loggingのsink除外](https://cloud.google.com/run/docs/logging)を使い、`resource.type="cloud_run_revision" AND httpRequest.requestUrl=~"/auth/callback([?]|$)"` を対象serviceに絞って、`_Default` を含む保存・export先の全sinkに設定します。query fieldだけでなくentry全体を除外します。継承・organizationのsinkと上流proxyのログも確認してください。アプリの設定では制御できません。本物のcode/tokenを含まない合成callback通信で、どの宛先にもqueryが保存されないことを確認します。除外設定は過去のログを削除しません。
 

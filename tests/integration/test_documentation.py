@@ -80,3 +80,29 @@ def test_ac_07_1_ac_07_2_ac_07_7_ac_07_10_ac_07_12_rewrite_guidance_matches_both
                    "context\u3068\u80cc\u666f\u306e\u5408\u8a08\u30824,000", "\u672a\u691c\u8a3c", "\u672a\u5b8c\u4e86"):
         assert phrase in JA
     assert "minimal confirm" not in EN and "not implemented by this Skill yet" not in EN
+
+
+def test_optional_judgment_settings_and_disclosure_match_both_languages():
+    contract = (ROOT / "contracts/config.md").read_text()
+    for section in (EN, JA):
+        for term in ("Task 134", "judgment.enabled", "COPYEDITOR_JUDGMENT_ENABLED=true",
+                     "judgment.enabled=false", "COPYEDITOR_JUDGMENT_ENABLED=false", "TYPESAFE_API_KEY",
+                     "jev-1.13.0", "reference-gate-action-v1", "gate-floor-v1", "Vertex ADC", "OAuth",
+                     "TypeSafe AI", "schema_version=3", "lint_text", "verification_rejected",
+                     "contracts/config.md#judgment-fields", "contracts/tools.md#registered-threshold-classification"):
+            assert term in section
+        for identifier in ("jev-1.13.0", "reference-gate-action-v1", "gate-floor-v1", "TYPESAFE_API_KEY"):
+            assert identifier in contract
+        assert not re.search(r"TYPESAFE_API_KEY\s*[:=]", section)
+    for phrase in ("available only after Task 134", "does not yet accept these settings",
+                   "Disabled mode does not read or require this key", "and restarting",
+                   "no per-request switch", "runtime secret environment", "never config, placeholders",
+                   "direct MCP calls have no guaranteed per-request consent", "operators must inform",
+                   "Vertex-only permission does not cover", "neither adoption permission nor proof",
+                   "retention and processing region follow its own policy", "not added to audit logs"):
+        assert phrase in EN
+    for phrase in ("Task 134以降", "まだこれらの設定を受け付けません", "無効時はこのkeyを参照せず",
+                   "再起動", "依頼単位の切替", "実行時のsecret環境変数だけ", "config、placeholder",
+                   "依頼ごとの同意は保証しません", "運用者は有効化前", "Vertexだけへの許可は追加先を含みません",
+                   "意味を保持できた証明でもありません", "保持方針と処理地域", "監査ログに追加せず"):
+        assert phrase in JA
