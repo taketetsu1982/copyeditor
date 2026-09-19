@@ -98,7 +98,25 @@ For updates, keep your endpoint configuration outside version control, update th
 
 Put a scoped permission statement in your project's `CLAUDE.md` or `AGENTS.md`, for example: “When I request copyediting, you may send only the non-confidential paragraphs I explicitly select to my configured copyeditor server and its Vertex AI provider. Ask before sending anything else.” This permits a content scope; it does not bypass client approval. Do not add automatic tool approvals or permission-skip settings.
 
-The server does not persist text or candidates; provider retention and infrastructure logs remain outside that guarantee, as described below. Both packages currently provide a minimal confirm → `polish_text` → present workflow. Detailed permission classification, extraction, item comparison and selective application are not implemented by this Skill yet.
+The server does not persist text, candidates, or diagnoses; provider retention and infrastructure logs remain outside that guarantee, as described below. Both plugin Skills classify submission permission, exclude confidential or protected content, record source locations and related items, compare returned candidates, and apply only authorized local changes. They recheck the original before applying edits and keep related changes together. A client approval refusal ends the attempt; the Skill does not switch routes or relax permissions.
+
+**Diagnosed rewrite.** Ordinary proofreading uses `degree=polish` (the default) and v1 responses. Only an explicit request to rewrite uses `degree=rewrite` and `schema_version=2`. The server first diagnoses expressions, then rewrites using those fixed diagnoses; the caller supplies no diagnosis. For example, send this to `polish_text` after the normal permission checks:
+
+```json
+{"text":"The team will carry out a review of the draft.","language":"en","degree":"rewrite"}
+```
+
+Before sending, discovery must explicitly advertise `rewrite` in the degree enum. If support is absent or unclear, leave the text unsent and unprocessed; do not probe with body text or silently substitute polish. A diagnosis with `status=issue` gives an expression and reason to review. `status=no_issue` requires the exact original; it is different from a flag or a lint finding. Diagnosis, model success, and zero lint findings do not authorize adoption or prove meaning preservation.
+
+**Limits and failures.** Rewrite keeps the existing input budgets: at most 32 items, 12,000 decoded Unicode code points of body text in total, 1,000 per-item context, 4,000 total context, and 4,000 total background; context plus background also total at most 4,000; body/context/background combined are at most 16,000. Background fields each allow 1,000. The raw HTTP body limit remains 262,144 bytes. Typical Skill batches target 16 items / 6,000 body code points while satisfying every hard limit. See [CTR-01 limits](contracts/tools.md#requests).
+
+HTML always uses one complete `text` request with `format=html`, never items or a partial document. If the whole document cannot be authorized and submitted within the limits, leave it unprocessed. The server diagnoses once, generates candidates in batches of four, and allows at most one shared preservation/HTML regeneration per item. A request-level error discards every candidate and diagnosis, including earlier successful batches; clients keep all originals.
+
+Only confirmed `input_limit`, `generation_truncated`, or rewrite `output_limit` permits one generation of smaller text/Markdown child batches at meaningful boundaries. A known body-limit HTTP 413 is input-limit-equivalent. No grandchild retries, duplicate submissions, or HTML split retries are allowed. `request_budget`, provider/authentication/connection errors, timeouts, invalid input/responses, and unsupported language stop automatic retry; do not switch provider or reinterpret a generic error as truncation.
+
+**Accounting and acceptance.** Rewrite allows at most 17 generation calls, with a 240-second request deadline and fixed cumulative input/output reservations; these are engineering limits, not latency guarantees. CountTokens preflight sends data to Vertex AI even if generation never starts, so `model_called=false` does not mean “nothing was sent.” `model_calls` counts generations only. Usage and cost include diagnosis and regeneration; unknown usage stays unknown. Token estimates and cancellation do not prove billed cost or cancel charges for remotely accepted work. See [rewrite accounting](contracts/tools.md#rewrite-limits-and-accounting).
+
+Japanese has a fixed 24-example synthetic evaluation set, intended for five independent repetitions. Offline fixture success is not native or live quality acceptance. Owner review of examples/invariants, live Vertex evaluation with independent judgments, and real-client permission/refusal/application checks remain pending. English and Chinese rewrite quality is unverified; the English request above demonstrates syntax only.
 
 Under [CTR-02](rules/common.md#meaning-and-adoption), a **skip** leaves the original unchanged when safe adoption cannot be established. A **flag** marks a candidate for review, not permission to apply it; a **rejection** reports a failed check. Never adopt a flagged or rejected candidate. A successful check alone does not prove that meaning is preserved.
 
@@ -241,7 +259,25 @@ codex plugin add copyeditor@copyeditor-local
 
 projectの `CLAUDE.md` または `AGENTS.md` に、例えば「校正を依頼したときは、私が明示的に選んだ機密ではない段落だけを、設定済みのcopyeditorサーバーとそのVertex AI providerへ送信してよい。それ以外は送信前に確認する」と記します。これは本文の対象範囲の許可で、clientの承認を省くものではありません。toolの自動承認やpermission skipは追加しません。
 
-サーバーは本文・候補を永続保存しません。providerの保持やインフラログはその保証に含まれず、後述の確認が必要です。両packageのSkillは現在、対象確認→ `polish_text` →候補提示の最小手順です。詳細な送信許可判定・抽出・item比較・局所反映はまだ実装していません。
+サーバーは本文・候補・診断を永続保存しません。providerの保持やインフラログはその保証に含まれず、後述の確認が必要です。両pluginのSkillは、送信許可の判定、機密・保護対象の除外、原文位置と関連itemの記録、候補の比較、許可された局所変更の反映を行います。反映前に原文が変わっていないか確認し、関連する変更はまとめて扱います。clientが承認を拒否したら、その試行は終了します。別経路への切り替えや権限の緩和は行いません。
+
+**診断つき書き直し。** 通常の推敲は既定の `degree=polish` を使い、応答はv1です。明示的に書き直しを依頼した場合だけ `degree=rewrite` を使い、`schema_version=2` の応答を受け取ります。サーバーが先に表現を診断し、その診断を固定して書き直します。呼び出す側は診断を入力しません。通常の送信許可を確認した後、例えば次を `polish_text` に渡します。
+
+```json
+{"text":"The team will carry out a review of the draft.","language":"en","degree":"rewrite"}
+```
+
+送信前に、discoveryのdegree enumが `rewrite` を明示していることを確認します。非対応・不明なら未送信・未処理とし、本文を試しに送ったり、黙ってpolishへ替えたりしません。`status=issue` の診断には確認対象の表現と理由が入ります。`status=no_issue` では原文の完全一致が必須です。これはflagやlintの指摘とは別のものです。診断があること、モデル呼出しの成功、lint指摘ゼロのいずれも、採用許可や意味保持の証明にはなりません。
+
+**上限と失敗時の扱い。** 書き直しでも入力上限は変わりません。最大32 items、本文合計12,000 Unicodeコードポイント、itemごとのcontextは1,000、context合計4,000、背景合計4,000、contextと背景の合計も4,000、本文・context・背景の合計16,000です。背景の各fieldは1,000までです。raw HTTP bodyの上限は262,144 bytesです。Skillの通常目安は16 items / 本文6,000コードポイントですが、すべての厳密な上限を満たす必要があります。[CTR-01の入力上限](contracts/tools.md#requests)を参照してください。
+
+HTMLは常に全文を一つの `text` として `format=html` で送り、itemsや部分文書にはしません。全文の許可を得られない、または上限内で送れない場合は未処理にします。サーバーは一度診断し、4 itemsずつ候補を生成します。保持・HTML検査による再生成は共通で各item一度までです。request全体のエラーでは、先に成功したbatchも含めて候補と診断をすべて破棄し、clientは全原文を残します。
+
+確認できた `input_limit`、`generation_truncated`、rewriteの `output_limit` に限り、text/Markdownを意味の境界で小さな子batchへ分け、一世代だけ再送できます。body上限によるHTTP 413と判明している場合もinput_limit相当です。孫への再分割、重複送信、HTMLの分割再送は行いません。`request_budget`、provider・認証・接続エラー、timeout、不正入力・応答、未対応言語では自動再送を止めます。providerを替えたり、一般的なエラーを打ち切りと推測したりしません。
+
+**計量と受入。** 書き直しの生成呼出しは最大17回、requestの期限は240秒で、累積の入力・出力予約にも固定上限があります。これらは工学的な上限で、待ち時間の保証ではありません。CountTokensの事前見積もりでもVertex AIへデータを送るため、生成開始前の `model_called=false` は「何も送信していない」という意味ではありません。`model_calls` は生成だけを数えます。usageとcostには診断・再生成を含め、usage不明は不明のまま扱います。token見積もりやcancelは、請求額の証明やリモートで受理済みの処理の課金取消しを保証しません。[書き直しの計量](contracts/tools.md#rewrite-limits-and-accounting)を参照してください。
+
+日本語には固定24例を5回ずつ反復する合成評価セットがあります。offline fixtureの成功はnative確認やlive品質受入の代わりにはなりません。例文・不変事項の所有者確認、人の独立判定を伴う実Vertex評価、実clientでの許可・拒否・反映の確認は未完了です。英語・中国語の書き直し品質は未検証で、上の英語リクエストは構文例にすぎません。
 
 [CTR-02](rules/common.md#meaning-and-adoption)では、安全に採用できると確認できない場合の**見送り**は原文を残すことです。**flag**は確認が必要な候補を示し、反映の許可ではありません。**拒否**は検査不合格を示します。flag付き・拒否された候補は採用しません。検査成功だけでは意味の保持を証明できません。
 
