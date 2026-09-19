@@ -58,3 +58,25 @@ def test_ac_06_1_ac_06_6_ctr02_plugin_instructions_in_both_languages():
             assert section.count(f"{client} plugin {install} copyeditor@copyeditor-local") == 1
         for term in ("CLAUDE.md", "AGENTS.md", "Vertex AI", "OAuth", "flag", "rules/common.md#meaning-and-adoption"):
             assert term in section
+
+
+def test_ac_07_1_ac_07_2_ac_07_7_ac_07_10_ac_07_12_rewrite_guidance_matches_both_languages():
+    import json
+    for section in (EN, JA):
+        for term in ("degree=polish", "degree=rewrite", "schema_version=2", "status=issue", "status=no_issue",
+                     "12,000", "1,000", "4,000", "16,000", "262,144", "6,000", "240",
+                     "input_limit", "generation_truncated", "output_limit", "request_budget",
+                     "CountTokens", "model_called=false", "model_calls", "contracts/tools.md#rewrite-limits-and-accounting"):
+            assert term in section
+        request = json.loads(re.search(r"```json\n(.*?)\n```", section, re.S).group(1))
+        assert request == dict(text="The team will carry out a review of the draft.", language="en", degree="rewrite")
+        assert "diagnosis" not in request
+    for phrase in ("leave the text unsent", "never items or a partial document", "discards every candidate and diagnosis",
+                   "No grandchild retries", "context plus background also total at most 4,000",
+                   "unknown usage stays unknown", "independent judgments", "remain pending",
+                   "English and Chinese rewrite quality is unverified"):
+        assert phrase in EN
+    for phrase in ("\u672a\u9001\u4fe1\u30fb\u672a\u51e6\u7406", "\u5019\u88dc\u3068\u8a3a\u65ad\u3092\u3059\u3079\u3066\u7834\u68c4",
+                   "context\u3068\u80cc\u666f\u306e\u5408\u8a08\u30824,000", "\u672a\u691c\u8a3c", "\u672a\u5b8c\u4e86"):
+        assert phrase in JA
+    assert "minimal confirm" not in EN and "not implemented by this Skill yet" not in EN
