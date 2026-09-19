@@ -76,6 +76,7 @@ def test_legacy_config_contract_is_preserved():
     legacy = legacy.replace("revision: 6", "revision: 2")
     legacy = re.sub(r", AC-08-\d+", "", legacy)
     legacy = legacy.replace("This table and the judgment fields table define", "This table is")
+    legacy = legacy.replace("`credentials`, `judgment.credentials`;", "`credentials`;")
     assert hashlib.sha256(legacy.encode()).hexdigest() == (
         "0ada1e2a0daadfc9ca5e5fabd669d69e0e48116aa9646e7abf0ad7852bda1a9c")
 
@@ -100,6 +101,17 @@ def test_judgment_config_example_and_leaf_contract_agree():
     assert "ctr01-us08-draft" not in contract
     assert "reject that reference before looking up its value" in contract
     assert "A disabled process never looks up, validates, stores or requires TYPESAFE_API_KEY" in contract
+
+
+def test_judgment_credential_errors_use_declared_fixed_label():
+    contract = CONFIG_CONTRACT.read_text()
+    labels = set(re.findall(r"`([^`]+)`", re.search(r"fixed labels ([^;]+);", contract)[1]))
+    assert labels == {"config", "rules", "credentials", "judgment.credentials"}
+    amendment = contract.split("### Secrets and startup errors amendment\n")[1].split("## Image layout")[0]
+    errors = re.findall(r"(missing_required|invalid_config|credentials_unavailable) at ([a-z_]+(?:\.[a-z_]+)+)", amendment)
+    assert set(errors) == {(code, "judgment.credentials") for code in (
+        "missing_required", "invalid_config", "credentials_unavailable")}
+    assert all(label in labels for _, label in errors)
 
 
 class NoJudgmentSecret(Mapping):
