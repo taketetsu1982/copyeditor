@@ -25,7 +25,9 @@ def production(tmp_path_factory):
         return await evaluate(self, wire, **kwargs)
     async def defer(frozen, observed, path):
         assert len(evaluation.audit(frozen, observed)) == 720
-    with patch.object(evaluation, 'probe', defer), patch.object(TypeSafe, 'evaluate', inspect):
+    # Probe tests exercise their own persisted output; setup only needs the ledger.
+    with patch.object(evaluation, 'probe', defer), patch.object(TypeSafe, 'evaluate', inspect), \
+            patch.object(evaluation.legacy, 'save', lambda *args: None):
         artifact = asyncio.run(evaluation.run(plan, path, runner))
     return plan, artifact, states
 

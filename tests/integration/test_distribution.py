@@ -44,7 +44,20 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
     assert not any(flag in suites[0] for flag in ("--collect-only", "--require-phase1-acceptance", "--ignore", "-k"))
     assert not any(driver in command for command in runs for driver in ("test_images.sh", "test:fixtures"))
     assert all(j["steps"][0]["with"]["ref"] == "${{ github.sha }}" for j in CI["jobs"].values())
-    assert not any("continue-on-error" in s or "if" in s for j in CI["jobs"].values() for s in j["steps"])
+    steps = CI["jobs"]["tests"]["steps"]
+    uploads = [s for s in steps if s.get("uses") == "actions/upload-artifact@v4"]
+    assert len(uploads) == 1 and uploads[0] == steps[-1]
+    assert uploads[0]["if"] == "${{ always() }}"
+    assert uploads[0]["with"] == dict(
+        name="test-results-${{ github.run_id }}-${{ github.run_attempt }}",
+        path="phase1.xml", **{"if-no-files-found": "warn", "retention-days": 14})
+    assert "--junitxml=phase1.xml" in suites[0]
+    assert not any("continue-on-error" in s for s in steps)
+    assert not any("if" in s for s in steps if s not in uploads)
+    assert CI["concurrency"] == {
+        "group": "copyeditor-tests-${{ github.event.pull_request.number || github.run_id }}",
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+    }
     readme = (ROOT / "README.md").read_text()
     assert "copyeditor:local" in readme and "copyeditor:custom" in readme
     assert "contracts/config.md" in readme

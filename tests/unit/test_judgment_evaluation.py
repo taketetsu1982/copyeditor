@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from unittest.mock import patch
 import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 import judgment_evaluation as evaluation
@@ -13,7 +14,10 @@ import judgment_evaluation as evaluation
 def completed(tmp_path_factory):
     path = tmp_path_factory.mktemp('judgment') / 'artifact.json'
     plan = evaluation.freeze(1)
-    artifact = asyncio.run(evaluation.run(plan, path))
+    # Ledger assertions need every trial, but checkpoint I/O is covered separately.
+    with patch.object(evaluation.legacy, 'save', lambda *args: None):
+        artifact = asyncio.run(evaluation.run(plan, path))
+    evaluation.legacy.save(path, artifact)
     assert json.loads(path.read_text()) == artifact
     return plan, artifact, path
 
@@ -97,12 +101,26 @@ async def test_ac_08_13_14_missing_responses_and_atomic_failures_remain_in_ledge
 
 @pytest.mark.asyncio
 async def test_ac_08_13_14_interruption_saves_observed_plan_and_rejects_unrun_trials(tmp_path):
+    calls = 0
     async def cancel(cases, degree, enabled, layout, mode, plans):
+        nonlocal calls
+        calls += 1
+        checkpoint = json.loads(path.read_text())
+        if calls == 1:
+            assert all(t['error_code'] == 'not_run' for t in checkpoint['trials'])
+            return dict(status='error', error=dict(code='provider_error'))
+        assert checkpoint['trials'][0]['error_code'] == 'provider_error'
+        assert checkpoint['trials'][1]['error_code'] == 'not_run'
         plans.append(dict(phase='detect', batches=[])); raise asyncio.CancelledError()
     plan, path = evaluation.freeze(1), tmp_path / 'interrupted.json'
     with pytest.raises(asyncio.CancelledError): await evaluation.run(plan, path, cancel)
     artifact = json.loads(path.read_text())
-    assert artifact['trials'][0]['batch_plans'] == [dict(phase='detect', batches=[])]
+    assert calls == 2
+    assert artifact['trials'][0]['error_code'] == 'provider_error'
+    assert artifact['trials'][1]['batch_plans'] == [dict(phase='detect', batches=[])]
+    assert artifact['trials'][1]['error_code'] == 'evaluation_error'
+    assert artifact['trials'][2]['error_code'] == 'not_run'
+    assert not path.with_suffix('.json.tmp').exists()
     with pytest.raises(ValueError): evaluation.audit(plan, artifact)
 
 
