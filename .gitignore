@@ -50,3 +50,6 @@ node_modules/
 tmp/
 work/
 runtime/
+
+# Plugin archives built for manual upload (Desktop / plugin marketplaces)
+plugins/*.zip
