@@ -44,9 +44,10 @@ def population(name):
     return [cases[f'{prefix}-{i:02}'] for i in range(1, count + 1)]
 
 
-def freeze(revision, mode='fixture', name='calibration', created_at=None):
+def freeze(revision, mode='fixture', name='calibration', created_at=None, pairs=None):
     name = next((k for k, v in SETS.items() if v == name), name)
     if type(revision) is not int or revision < 1 or mode not in ('fixture', 'live') or name not in ('calibration', 'acceptance', 'existing', 'regression'): raise ValueError('Invalid comparison plan')
+    if pairs is not None and name != 'calibration': raise ValueError('Calibration pairs required')
     created_at = created_at or datetime.now(timezone.utc).isoformat()
     cases = population(name)
     config, snapshot, _ = adapter.comparison_environment(cases[0], mode, False)
@@ -77,11 +78,12 @@ def freeze(revision, mode='fixture', name='calibration', created_at=None):
         conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, comparison=COMPARISON, quality_accepted=False, human_review='required'),
         planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=600, requests=360) if name == 'calibration' else None,
         references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'], risk_probe=RISK if name == 'calibration' else None,
+        verification=verification_plan(pairs, cases, policy) if pairs is not None and name == 'calibration' else None,
         config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
 
 
 def check_plan(plan):
-    if encoded(plan) != encoded(freeze(plan['evaluation_revision'], plan['mode'], plan['sets'][0]['name'], plan['created_at'])): raise ValueError('Comparison inputs changed')
+    if encoded(plan) != encoded(freeze(plan['evaluation_revision'], plan['mode'], plan['sets'][0]['name'], plan['created_at'], (plan.get('verification') or {}).get('pairs'))): raise ValueError('Comparison inputs changed')
 
 
 def audit(plan, artifact):
@@ -137,6 +139,7 @@ async def run(plan, output, runner=adapter.compare_request):
     await probe(plan, artifact, output)
     if plan['sets'][0]['name'] == SETS['calibration']:
         artifact.update(calibrate(plan, artifact)); legacy.save(output, artifact)
+        await run_verification(plan, artifact, output)
     return artifact
 
 
@@ -443,19 +446,155 @@ def calibrate(plan, artifact):
     return dict(calibration_summary=summary, calibration_decision=decision)
 
 
+def verification_plan(pairs, cases, policy):
+    axes, sources = policy['verification']['order'], {c['id']: c for c in cases}
+    held_out = {c[k] for c in population('acceptance') for k in ('bad', 'good')}
+    if type(pairs) is not list or len(pairs) != 30 or len({p['id'] for p in pairs}) != 30: raise ValueError('Thirty unique owner pairs required')
+    normalized = []
+    for pair in pairs:
+        if set(pair) - {'id', 'source_id', 'candidate', 'action', 'labels', 'reviewer', 'source_hash', 'candidate_hash'}: raise ValueError('Unknown pair field')
+        if not isinstance(pair['id'], str) or not pair['id'] or pair['source_id'] not in sources or pair['action'] not in policy['action_instructions']: raise ValueError('Invalid pair identity or action')
+        candidate, source = pair['candidate'], sources[pair['source_id']]['bad']
+        if not isinstance(candidate, str) or not candidate.strip() or len(candidate) > 16000 or candidate in held_out or source in held_out: raise ValueError('Invalid or held-out pair body')
+        if set(pair['labels']) != set(axes) or any(v is not None and type(v) is not bool for v in pair['labels'].values()): raise ValueError('Invalid owner labels')
+        normalized.append(dict(pair, source_hash=legacy.digest(source.encode()), candidate_hash=legacy.digest(candidate.encode())))
+    groups = [[p for p in normalized if p['source_id'] == identity] for identity in sources]
+    if any(len(g) != 2 or g[0]['candidate'] == g[1]['candidate'] for g in groups): raise ValueError('Two distinct candidates per calibration source required')
+    ready = all(isinstance(p.get('reviewer'), str) and p['reviewer'].strip() and all(type(v) is bool for v in p['labels'].values()) for p in normalized)
+    ready = ready and all(sum(all(p['labels'].values()) for p in g) == 1 for g in groups) and all({p['labels'][a] for p in normalized} == {False, True} for a in axes)
+    layouts = dict(text=[[p['id']] for p in normalized], items=[[g[v]['id'] for g in groups[i:i + 5]] for v in (0, 1) for i in (0, 5, 10)])
+    requests = [dict(degree=d, layout=l, repeat=r, group=i, ids=ids) for d in ('polish', 'rewrite') for l, groups in layouts.items() for r in range(1, 6) for i, ids in enumerate(groups)]
+    return dict(pairs=normalized, ready=ready, axes=list(axes), requests=requests, max_calls=600, input_budget=38400000, timeout_seconds=10, step='0.01', tie_reference=['0.30', '0.70'])
+
+
+async def run_verification(plan, artifact, output, caller=risk_call):
+    audit(plan, artifact)
+    spec = plan['verification']
+    if 'verification_trials' in artifact: raise ValueError('Verification already attempted')
+    rows = artifact['verification_trials'] = [dict(degree=r['degree'], layout=r['layout'], repeat=r['repeat'], pair_id=i, probabilities=None, error='not_run', measurement=None) for r in (spec or {}).get('requests', []) for i in r['ids']]
+    measurements = artifact['verification_measurements'] = {}
+    reason = 'owner_pairs_required' if spec is None else 'owner_labels_required' if not spec['ready'] else None
+    cases = {c['id']: c for c in population('calibration')}
+    try:
+        if reason is None: adapter.comparison_environment(next(iter(cases.values())), plan['mode'], True)
+    except Exception: reason = 'credentials_unavailable'
+    artifact['verification_not_run_reason'] = reason
+    legacy.save(output, artifact)
+    pairs = {p['id']: p for p in (spec or {}).get('pairs', [])}
+    units = 0
+    for request in (spec or {}).get('requests', []) if reason is None else []:
+        selected = [t for t in rows if all(t[k] == request[k] for k in ('degree', 'layout', 'repeat')) and t['pair_id'] in request['ids']]
+        source = cases[pairs[request['ids'][0]]['source_id']]
+        background = Background(*(source['background'].get(k, '') for k in Background._fields))
+        data = JudgmentInput('verify', 'ja', source['format'], background, background.tone,
+            tuple(JudgmentBlock(i, cases[pairs[key]['source_id']]['bad'], '', pairs[key]['candidate'], pairs[key]['action']) for i, key in enumerate(request['ids'], 1)))
+        try: prepared = prepare_judgments(data, policy_id=plan['config']['judgment.policy_version'], remaining_calls=min(64, spec['max_calls'] - len(measurements)), remaining_input_units=min(262144, spec['input_budget'] - units))
+        except Exception: prepared = None
+        if prepared is None:
+            for t in selected: t['error'] = 'request_budget'
+            legacy.save(output, artifact); continue
+        for wire, batch in zip(prepared.requests, prepared.plan.batches):
+            identity = str(len(measurements)); meter = Metrics(monotonic(), 'jev-1.13.0', plan['config']['judgment.pricing'])
+            slot = meter.start_call(is_regeneration=False); units += batch.input_units
+            error, values, cancelled = None, {}, False
+            try:
+                async with asyncio.timeout(spec['timeout_seconds']): result = await caller(plan, wire)
+                meter.record_usage(slot, result.usage)
+                if isinstance(result, JudgmentFailure) or result.model != 'jev-1.13.0' or tuple(b.ordinal for b in result.blocks) != batch.ordinals: raise ValueError()
+                values = {b.ordinal: dict(b.probabilities) for b in result.blocks}
+                if any(set(p) != set(spec['axes']) or any(probability(v) is None for v in p.values()) for p in values.values()): raise ValueError()
+            except (Exception, asyncio.CancelledError) as failure:
+                cancelled = isinstance(failure, asyncio.CancelledError); error = 'verification_timeout' if isinstance(failure, TimeoutError) else 'verification_error'
+            measurements[identity] = dict(meter.snapshot(), request=request, ordinals=list(batch.ordinals), payload_hash=legacy.digest(wire), input_units=batch.input_units)
+            for ordinal in batch.ordinals:
+                trial = next(t for t in selected if t['pair_id'] == request['ids'][ordinal - 1])
+                trial.update(probabilities=None if error else values[ordinal], error=error, measurement=identity)
+            legacy.save(output, artifact)
+            if cancelled: raise asyncio.CancelledError
+    artifact['verification_summary'] = verification_summary(plan, artifact)
+    costs = [m['cost'] for m in measurements.values()]
+    cost = artifact.get('run_cost')
+    artifact['run_cost'] = dict(amount=str(Decimal(cost['amount']) + sum(Decimal(c['amount']) for c in costs)), currency=cost['currency']) if cost and all(c and c['currency'] == cost['currency'] for c in costs) else None
+    legacy.save(output, artifact)
+
+
+def verification_rank(correct, low, high):
+    return -correct, abs(low - Decimal('.30')) + abs(high - Decimal('.70')), -high, low
+
+
+def verification_summary(plan, artifact):
+    audit(plan, artifact)
+    spec, rows = plan['verification'], artifact.get('verification_trials', [])
+    incomplete = dict(complete=False, fail_max=None, pass_min=None, planned=600, observed=len(rows), reason=artifact.get('verification_not_run_reason') or 'incomplete_verification', quality_accepted=False)
+    if spec is None or not spec['ready']: return incomplete
+    measurements = artifact.get('verification_measurements', {})
+    if len(measurements) > spec['max_calls'] or sum(m.get('input_units', 0) for m in measurements.values()) > spec['input_budget']: return incomplete
+    keys = ('degree', 'layout', 'repeat', 'pair_id')
+    expected = [dict(degree=r['degree'], layout=r['layout'], repeat=r['repeat'], pair_id=i) for r in spec['requests'] for i in r['ids']]
+    if Counter(encoded({k: r[k] for k in keys}) for r in rows) != Counter(map(encoded, expected)): return incomplete
+    pairs = {p['id']: p for p in spec['pairs']}
+    cells = {axis: Counter() for axis in spec['axes']}
+    for row in rows:
+        measured = artifact.get('verification_measurements', {}).get(row['measurement'], {})
+        request = measured.get('request', {})
+        if request not in spec['requests'] or not 4096 <= measured.get('input_units', 0) <= 64000: return incomplete
+        linked = measured.get('model_calls') == 1 and all(request.get(k) == row[k] for k in keys[:3]) and any(type(i) is int and 1 <= i <= len(request.get('ids', [])) and request['ids'][i - 1] == row['pair_id'] for i in measured.get('ordinals', []))
+        if row['error'] or not linked or not isinstance(row['probabilities'], dict) or set(row['probabilities']) != set(spec['axes']) or any(probability(p) is None for p in row['probabilities'].values()): return incomplete
+        for axis, p in row['probabilities'].items(): cells[axis][pairs[row['pair_id']]['labels'][axis], probability(p)] += 1
+    def matrix(cell, low, high):
+        return {label: {state: sum(n for (truth, p), n in cell.items() if truth is satisfied and ('fail' if p <= low else 'pass' if p >= high else 'indeterminate') == state)
+                       for state in ('pass', 'fail', 'indeterminate')} for label, satisfied in (('satisfied', True), ('unsatisfied', False))}
+    candidates = []
+    for l in range(100):
+        for h in range(l + 1, 101):
+            low, high = Decimal(l) / 100, Decimal(h) / 100
+            tables = {axis: matrix(cell, low, high) for axis, cell in cells.items()}
+            if any(t['unsatisfied']['pass'] or t['satisfied']['fail'] or not t['satisfied']['pass'] or not t['unsatisfied']['fail'] for t in tables.values()): continue
+            correct = sum(t['satisfied']['pass'] + t['unsatisfied']['fail'] for t in tables.values())
+            candidates.append(verification_rank(correct, low, high))
+    if not candidates: return dict(incomplete, observed=600, reason='revise_questions_references_and_owner_labels_then_remeasure')
+    _, _, negative_high, low = min(candidates); high = -negative_high
+    tables = {axis: matrix(cell, low, high) for axis, cell in cells.items()}
+    tables['all'] = {label: {state: sum(t[label][state] for t in tables.values()) for state in ('pass', 'fail', 'indeterminate')} for label in ('satisfied', 'unsatisfied')}
+    accepted = [all(probability(p) >= high for p in r['probabilities'].values()) for r in rows]
+    adoptable = [all(pairs[r['pair_id']]['labels'].values()) for r in rows]
+    variation = {}
+    for r in rows:
+        key = '/'.join(str(r[k]) for k in ('degree', 'layout', 'pair_id'))
+        if key in variation: continue
+        repeats = sorted((t for t in rows if all(t[k] == r[k] for k in ('degree', 'layout', 'pair_id'))), key=lambda t: t['repeat'])
+        variation[key] = {a: dict(interval(min(probability(t['probabilities'][a]) for t in repeats), max(probability(t['probabilities'][a]) for t in repeats)), probabilities=[t['probabilities'][a] for t in repeats]) for a in spec['axes']}
+    current = THRESHOLDS[plan['config']['judgment.thresholds_version']]
+    floor = (artifact.get('calibration_decision') or {}).get('derived_floor')
+    changed = low != Decimal(str(current['verification']['fail_max'])) or high != Decimal(str(current['verification']['pass_min'])) or floor is not None and Decimal(floor) != Decimal(str(current['floor']))
+    return dict(complete=True, fail_max=str(low), pass_min=str(high), planned=600, observed=600, candidates=5050, feasible=len(candidates), confusion=tables, per_pair_variation=variation,
+        items=dict(planned=600, adoptable=sum(adoptable), non_adoptable=600 - sum(adoptable), accepted=sum(accepted), false_acceptance=sum(a and not b for a, b in zip(accepted, adoptable)), missed_adoptable=sum(b and not a for a, b in zip(accepted, adoptable))),
+        thresholds_version=plan['config']['judgment.thresholds_version'], reason='new_threshold_id_contract_hash_and_recalibration_before_unused_held_out' if changed else 'owner_review_gate_calibration_and_unused_held_out_required', quality_accepted=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('plan', 'run', 'check', 'report', 'calibrate'))
+    parser.add_argument('operation', choices=('plan', 'run', 'check', 'report', 'calibrate', 'verify', 'verify-report'))
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--artifact', type=Path, default=Path('judgment-evaluation.json'))
     parser.add_argument('--revision', type=int, default=1)
     parser.add_argument('--mode', choices=('fixture', 'live'), default='fixture')
     parser.add_argument('--set', dest='name', choices=('calibration', 'acceptance', 'existing', 'regression'), default='calibration')
+    parser.add_argument('--pairs', type=Path)
     args = parser.parse_args()
-    if args.operation == 'plan': return legacy.save(args.plan, freeze(args.revision, args.mode, args.name))
+    if args.operation == 'plan': return legacy.save(args.plan, freeze(args.revision, args.mode, args.name, pairs=json.loads(args.pairs.read_text()) if args.pairs else None))
     plan = json.loads(args.plan.read_text())
     if args.mode != plan['mode']: parser.error('Mode must match frozen plan; live requires --mode live')
     if args.operation == 'run': asyncio.run(run(plan, args.artifact))
+    elif args.operation in ('verify', 'verify-report'):
+        artifact = json.loads(args.artifact.read_text())
+        try:
+            if args.operation == 'verify': asyncio.run(run_verification(plan, artifact, args.artifact))
+            artifact['verification_summary'] = verification_summary(plan, artifact)
+        except (ValueError, TypeError, KeyError, IndexError): artifact['verification_summary'] = dict(complete=False, fail_max=None, pass_min=None, reason='invalid_artifact', quality_accepted=False)
+        legacy.save(args.artifact, artifact)
+        args.artifact.with_suffix('.md').write_text('# Verification calibration\n\n' + json.dumps(artifact['verification_summary'], ensure_ascii=False, indent=2) + '\n')
+        if not artifact['verification_summary']['complete']: raise SystemExit(1)
     elif args.operation == 'calibrate':
         artifact = json.loads(args.artifact.read_text())
         try: result = calibrate(plan, artifact)
