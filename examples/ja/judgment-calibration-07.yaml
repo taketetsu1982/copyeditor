@@ -3,8 +3,8 @@ language: "ja"
 section: "vocabulary"
 degree: "polish"
 format: "text"
-bad: "厚手のフェルトを敷いた箱が、腕時計や鍵との接触時に生じる音の軽減を通じて、静かな身支度の実現を支えます。"
+bad: "厚手のフェルトを敷いた箱が、腕時計や鍵を置くときの音を抑えます。静かな身支度に寄り添い、身支度の解像度を上げます。"
 good: "厚手のフェルトを敷いた箱です。腕時計や鍵を置くときの音を抑え、静かに身支度ができます。"
-reason: "Abstraction: express the felt lining and reduced placement noise without a chain of nominal effects."
+reason: "Abstraction: empathy and increased resolution are fashionable metaphors with no additional feature behind them; keep the felt lining and quieter preparation."
 lint: null
 must_change: true

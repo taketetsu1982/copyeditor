@@ -21,7 +21,9 @@ def completed(tmp_path_factory):
 def test_ac_08_13_14_all_trials_requests_and_packing_are_retained(completed):
     plan, artifact, path = completed
     requests = evaluation.audit(plan, artifact)
-    assert len(artifact['trials']) == 600 and len(requests) == 360
+    assert len(artifact['trials']) == 1200 and len(requests) == 720
+    assert plan['calibration_run_budget'] == dict(blocks=1200, requests=720)
+    assert plan['risk_probe']['max_calls'] == 600 and plan['risk_probe']['input_budget'] == 38400000
     assert all(t['full_response']['status'] == 'ok' and not t['error_code'] for t in artifact['trials'])
     assert all(len(t['batch_plans']) == (2 if t['judgment_enabled'] else 0) for t in artifact['trials'])
     assert all(t['decision'] == dict.fromkeys('abcd') and t['reviewer'] is None for t in artifact['trials'])
@@ -33,7 +35,7 @@ def test_ac_08_13_14_all_trials_requests_and_packing_are_retained(completed):
     frozen_path = path.with_name('plan.json'); evaluation.legacy.save(frozen_path, plan)
     command = [sys.executable, 'scripts/judgment_evaluation.py']
     result = subprocess.run(command + ['check', '--plan', str(frozen_path), '--artifact', str(path)], capture_output=True, text=True)
-    assert result.returncode == 0 and '360 request observations; quality unreviewed' in result.stdout
+    assert result.returncode == 0 and '720 request observations; quality unreviewed' in result.stdout
     help_text = subprocess.check_output(command + ['--help'], text=True)
     assert all(option in help_text for option in ('plan,run,check', '--mode', '--set', '--revision', '--artifact'))
 
@@ -87,7 +89,7 @@ async def test_ac_08_13_14_missing_responses_and_atomic_failures_remain_in_ledge
         return dict(status='error', error=dict(code='provider_error'), model_calls=1)
     plan = evaluation.freeze(1)
     artifact = await evaluation.run(plan, tmp_path / 'failures.json', fail)
-    assert len(evaluation.audit(plan, artifact)) == 360
+    assert len(evaluation.audit(plan, artifact)) == 720
     assert all(t['error_code'] == ('evaluation_error' if t['layout'] == 'text' else 'provider_error') for t in artifact['trials'])
     assert all(t['full_response'] is None for t in artifact['trials'] if t['layout'] == 'text')
     assert 'PRIVATE' not in evaluation.encoded(artifact)
@@ -213,7 +215,7 @@ def test_ac_08_13_report_entry_point_retains_reason_and_rejects_unreviewed(compl
     result = subprocess.run([sys.executable, 'scripts/judgment_evaluation.py', 'report', '--plan', str(frozen), '--artifact', str(path)], capture_output=True, text=True)
     assert result.returncode == 1 and 'unreviewed_or_invalid' in result.stdout
     summary = json.loads(path.read_text())['summary']
-    assert not summary['criteria_met'] and sum(g['counts']['planned'] for g in summary['groups'].values()) == 600
+    assert not summary['criteria_met'] and sum(g['counts']['planned'] for g in summary['groups'].values()) == 1200
     assert 'reviewer' in path.with_suffix('.md').read_text()
     artifact['summary'] = dict(criteria_met=True); artifact['trials'].pop()
     evaluation.legacy.save(path, artifact)
@@ -230,9 +232,9 @@ def test_ac_08_14_report_costs_count_each_request_once_and_exclude_risk(complete
         for provider in response.get('providers', []): provider['cost'] = dict(amount='0.005000', currency='USD')
     summary = evaluation.summarize(plan, artifact)
     for key, group in summary['groups'].items():
-        assert group['counts']['planned'] == 75
-        assert group['requests'] == (15 if key.endswith('/items') else 75)
-        assert group['cost'] == dict(amount='0.150000' if key.endswith('/items') else '0.750000', currency='USD')
+        assert group['counts']['planned'] == 150
+        assert group['requests'] == (30 if key.endswith('/items') else 150)
+        assert group['cost'] == dict(amount='0.300000' if key.endswith('/items') else '1.500000', currency='USD')
     assert summary['status'] == 'unreviewed_or_invalid' and not summary['quality_accepted']
 
 

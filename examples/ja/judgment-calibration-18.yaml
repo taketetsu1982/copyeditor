@@ -1,0 +1,10 @@
+id: "judgment-calibration-18"
+language: "ja"
+section: "vocabulary"
+degree: "polish"
+format: "text"
+bad: "仕切りを動かして、引き出しの収納文脈を変えられます。"
+good: "仕切りを動かして、引き出しの物の分け方を変えられます。"
+reason: "Coined vocabulary: storage context substitutes for the concrete arrangement of items; change only that compound."
+lint: null
+must_change: true

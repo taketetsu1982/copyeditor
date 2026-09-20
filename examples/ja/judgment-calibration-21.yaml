@@ -1,0 +1,10 @@
+id: "judgment-calibration-21"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "内側の仕切りを外せる保冷バッグです。ぜひ参考にしてみてください。"
+good: "内側の仕切りを外せる保冷バッグです。"
+reason: "Formulaic invitation: a stock recommendation adds no feature or use condition."
+lint: null
+must_change: true

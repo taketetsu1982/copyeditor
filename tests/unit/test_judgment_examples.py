@@ -12,21 +12,36 @@ from tests.contracts.test_ctr05_examples import CASES, ROOT, adapter, get_assert
 # These independent synthetic briefs are not derived from policy references or legacy examples.
 # Keep evaluation labels outside CTR-05 assets so they cannot become tool input.
 CALIBRATION_MANIFEST = {
-    'judgment-calibration-01': ('stiffness', 'adjustable-bookshelf', ('棚板', '高さ', '大きさの異なる本'), 'product'),
-    'judgment-calibration-02': ('abstraction', 'desk-edge-tray', ('机の端', '小さなトレー', 'ペンや眼鏡'), 'product'),
-    'judgment-calibration-03': ('formulaic', 'cleaning-tool-fit', ('道具', '掃除'), 'product'),
-    'judgment-calibration-04': ('roundabout', 'rain-gauge-battery', ('雨量計', '電池', '測定を始める前'), 'procedure'),
-    'judgment-calibration-05': ('natural', 'wort-cooling', ('酵母', '麦汁', '20'), 'procedure'),
-    'judgment-calibration-06': ('stiffness', 'gym-lost-property', ('体育館', '30'), 'notice'),
-    'judgment-calibration-07': ('abstraction', 'felt-lined-accessory-box', ('厚手のフェルト', '腕時計や鍵', '音'), 'product'),
-    'judgment-calibration-08': ('formulaic', 'lacquer-bowl-repair', ('割れた茶わん', '漆'), 'product'),
-    'judgment-calibration-09': ('repetition', 'stackable-table-mug', ('重ねてしまえる形', '落ち着いた色', '食洗機'), 'product'),
-    'judgment-calibration-10': ('natural', 'hot-plate-warning', ('鉄板', '乾いた鍋つかみ'), 'notice'),
-    'judgment-calibration-11': ('roundabout', 'detachable-strap-bag', ('荷物の少ない日', '小ぶりのバッグ', '肩ひもを外', '手提げ'), 'product'),
-    'judgment-calibration-12': ('repetition', 'bean-soaking-sequence', ('一晩', '水を捨て', '新しい水'), 'procedure'),
-    'judgment-calibration-13': ('natural', 'lightweight-walk-lens', ('単焦点', '180', 'ズーム機能はありません'), 'product'),
-    'judgment-calibration-14': ('natural', 'unfinished-thoughts-notebook', ('書きかけ', '同じページ'), 'product'),
-    'judgment-calibration-15': ('natural', 'soy-milk-cake-disclosure', ('卵', '豆乳', '保証できません'), 'product'),
+    'judgment-calibration-01': ('stiffness', 'adjustable-bookshelf', ('棚板', '高さ', '大きさの異なる本'), 'product', ('stiffness', 'empty reassurance with nominal capability', ('きちんと',))),
+    'judgment-calibration-02': ('abstraction', 'desk-edge-tray', ('机の端', '小さなトレー', 'ペンや眼鏡'), 'product', ('abstraction', 'fashionable optimization', ('最適化',))),
+    'judgment-calibration-03': ('formulaic', 'cleaning-tool-fit', ('道具', '掃除'), 'product', ('formulaic', 'stock empathy and blog invitation', ('寄り添った', 'ぜひ参考にしてみてください'))),
+    'judgment-calibration-04': ('roundabout', 'rain-gauge-battery', ('雨量計', '電池', '測定を始める前'), 'procedure', ('roundabout', 'conclusion announcement', ('結論から言うと',))),
+    'judgment-calibration-05': ('natural', 'wort-cooling', ('酵母', '麦汁', '20'), 'procedure', ('repetition', 'necessary ingredient and risk references', ('酵母',))),
+    'judgment-calibration-06': ('stiffness', 'gym-lost-property', ('体育館', '30'), 'notice', ('stiffness', 'emphatic lesson in a formal notice', ('しっかりと', '大切です'))),
+    'judgment-calibration-07': ('abstraction', 'felt-lined-accessory-box', ('厚手のフェルト', '腕時計や鍵', '音'), 'product', ('abstraction', 'empathy and resolution metaphors', ('寄り添い', '解像度を上げ'))),
+    'judgment-calibration-08': ('formulaic', 'lacquer-bowl-repair', ('割れた茶わん', '漆'), 'product', ('formulaic', 'blog sign-off and closing lesson', ('いかがでしたか', '意識しましょう'))),
+    'judgment-calibration-09': ('repetition', 'stackable-table-mug', ('重ねてしまえる形', '落ち着いた色', '食洗機'), 'product', ('repetition', 'successive additive connectors', ('また、', 'さらに、', 'そして、'))),
+    'judgment-calibration-10': ('natural', 'hot-plate-warning', ('鉄板', '乾いた鍋つかみ'), 'notice', ('repetition', 'necessary warning and prohibition references', ('鉄板',))),
+    'judgment-calibration-11': ('roundabout', 'detachable-strap-bag', ('荷物の少ない日', '小ぶりのバッグ', '肩ひもを外', '手提げ'), 'product', ('roundabout', 'hedged key-point announcement', ('と言えるでしょう',))),
+    'judgment-calibration-12': ('repetition', 'bean-soaking-sequence', ('一晩', '水を捨て', '新しい水'), 'procedure', ('repetition', 'procedural scaffolding and connectors', ('以下の手順が有効です', 'また、', 'そして、'))),
+    'judgment-calibration-13': ('natural', 'lightweight-walk-lens', ('単焦点', '180', 'ズーム機能はありません'), 'product', ('abstraction', 'grounded aspiration with necessary lens terminology', ('気負わず', '単焦点'))),
+    'judgment-calibration-14': ('natural', 'unfinished-thoughts-notebook', ('書きかけ', '同じページ'), 'product', ('abstraction', 'coherent unfinished-thought metaphor', ('書きかけ',))),
+    'judgment-calibration-15': ('natural', 'soy-milk-cake-disclosure', ('卵', '豆乳', '保証できません'), 'product', ('repetition', 'distinct recipe and contamination scopes', ('卵',))),
+    'judgment-calibration-16': ('stiffness', 'leather-care-booklet', ('革靴', '冊子'), 'product', ('stiffness', 'Coined vocabulary', ('実用記事',))),
+    'judgment-calibration-17': ('stiffness', 'dimmable-reading-lamp', ('読書灯', '明るさ'), 'product', ('stiffness', 'Coined vocabulary', ('読書視認',))),
+    'judgment-calibration-18': ('abstraction', 'movable-drawer-dividers', ('仕切り', '引き出し'), 'product', ('abstraction', 'Coined vocabulary', ('収納文脈',))),
+    'judgment-calibration-19': ('stiffness', 'slope-color-map', ('地図', '傾き', '色'), 'product', ('stiffness', 'Coined vocabulary', ('坂道理解',))),
+    'judgment-calibration-20': ('natural', 'gelatin-blooming', ('ゼラチン', '冷水'), 'procedure', ('repetition', 'Natural repetition control', ('ゼラチン',))),
+    'judgment-calibration-21': ('formulaic', 'removable-cooler-partition', ('保冷バッグ', '仕切り'), 'product', ('formulaic', 'Formulaic invitation', ('ぜひ参考にしてみてください',))),
+    'judgment-calibration-22': ('roundabout', 'dry-print-stacking', ('版画', 'インク', '乾いてから'), 'procedure', ('roundabout', 'Roundabout announcement', ('結論から言うと',))),
+    'judgment-calibration-23': ('repetition', 'monday-library-closure', ('月曜日', '祝日', '返却ポスト'), 'notice', ('repetition', 'Mechanical repetition', ('また、', 'さらに、'))),
+    'judgment-calibration-24': ('natural', 'scent-memory-card', ('香り', '香水', '日付と場所'), 'product', ('abstraction', 'Natural abstraction boundary', ('匂いの記憶',))),
+    'judgment-calibration-25': ('natural', 'evacuation-corridor-clearance', ('避難通路', '荷物', '扉'), 'notice', ('repetition', 'Natural repetition control', ('避難通路',))),
+    'judgment-calibration-26': ('formulaic', 'adjustable-cotton-pillow', ('枕', '綿', '高さ'), 'product', ('formulaic', 'Formulaic ending', ('いかがでしたか', '意識しましょう'))),
+    'judgment-calibration-27': ('roundabout', 'one-handed-seasoning-jar', ('片手', 'ふた', '調味料入れ'), 'product', ('roundabout', 'Roundabout hedge', ('と言えるでしょう',))),
+    'judgment-calibration-28': ('repetition', 'washed-brush-drying', ('刷毛', '毛先', '日陰'), 'procedure', ('repetition', 'Mechanical repetition', ('また、', 'そして、'))),
+    'judgment-calibration-29': ('natural', 'morning-evening-temperature-log', ('温度記録帳', '朝と夕方', '気温'), 'product', ('abstraction', 'Natural abstraction boundary', ('小さな変化',))),
+    'judgment-calibration-30': ('natural', 'window-break-sandglass', ('砂時計', '砂', '窓の外'), 'product', ('abstraction', 'Natural abstraction boundary', ('一人の時間',))),
 }
 
 # Keep calibration out of the legacy rewrite population; both degrees are measured later.
@@ -46,7 +61,24 @@ CALIBRATION_INVARIANTS = {
     'judgment-calibration-13': "Keep the 180g weight, prime lens, intended ease of casual photography, lack of zoom, and every decoded character unchanged.",
     'judgment-calibration-14': "Keep the notebook for unfinished thoughts, no pressure to reach a conclusion, adding to the same page, and every decoded character unchanged.",
     'judgment-calibration-15': "Keep the egg-free recipe, soy milk, moist texture, shared egg-handling worktop, lack of a contamination guarantee, and every decoded character unchanged.",
+    'judgment-calibration-16': 'Keep the booklet and articles useful for caring for leather shoes.',
+    'judgment-calibration-17': 'Keep adjustable brightness and assistance with reading text.',
+    'judgment-calibration-18': 'Keep movable dividers and changing how items are separated in a drawer.',
+    'judgment-calibration-19': 'Keep a map that shows road slopes with colors to help readers understand gradients.',
+    'judgment-calibration-20': 'Keep cold-water blooming before heating and every character unchanged.',
+    'judgment-calibration-21': 'Keep the cooler bag and removable inner partition; add no cooling-duration claim.',
+    'judgment-calibration-22': 'Keep drying print ink before stacking paper and the polite recommendation.',
+    'judgment-calibration-23': 'Keep Monday closure including holidays and return-box availability on closed days.',
+    'judgment-calibration-24': 'Keep the scent card, perfume, date and place, and every character unchanged.',
+    'judgment-calibration-25': 'Keep both clearance requirements and every character unchanged.',
+    'judgment-calibration-26': 'Keep cotton insertion/removal to adjust pillow height; add no sleep-quality guarantee.',
+    'judgment-calibration-27': 'Keep one-handed lid opening and use while cooking; add no sealing claim.',
+    'judgment-calibration-28': 'Keep washing with water, aligning bristles, and shade drying in that order.',
+    'judgment-calibration-29': 'Keep same-page temperature comparisons and every character unchanged.',
+    'judgment-calibration-30': 'Keep the optional desk break while sand falls and every character unchanged.',
 }
+# Coined-word cases isolate vocabulary: no other surface pattern may explain the edit.
+CALIBRATION_COINAGES = {'judgment-calibration-16': ('実用記事', '記事'), 'judgment-calibration-17': ('読書視認', '文字の読み取り'), 'judgment-calibration-18': ('収納文脈', '物の分け方'), 'judgment-calibration-19': ('坂道理解', '坂の勾配の把握')}
 CALIBRATION = [c for c in CASES if c['language'] == 'ja' and c['id'] in CALIBRATION_MANIFEST]
 
 # Intended hard cases, not measured extrema; do not infer a transferable threshold from fixture success.
@@ -58,32 +90,33 @@ BOUNDARY_CANDIDATES = {
 
 def test_ac_08_13_14_calibration_includes_product_register_at_both_boundaries():
     assert Counter((v[0] == 'natural', v[3]) for v in CALIBRATION_MANIFEST.values()) == {
-        (True, 'product'): 3, (False, 'product'): 7,
-        (True, 'procedure'): 1, (False, 'procedure'): 2,
-        (True, 'notice'): 1, (False, 'notice'): 1,
+        (True, 'product'): 6, (False, 'product'): 14,
+        (True, 'procedure'): 2, (False, 'procedure'): 4,
+        (True, 'notice'): 2, (False, 'notice'): 2,
     }
     for label, ids in BOUNDARY_CANDIDATES.items():
         for identity in ids:
-            axis, _, _, register = CALIBRATION_MANIFEST[identity]
+            axis, _, _, register, _ = CALIBRATION_MANIFEST[identity]
             assert register == 'product' and (axis == 'natural') == (label == 'natural')
 
 
 def test_ac_08_13_14_ctr05_calibration_composition_and_independent_sources():
-    ids = [f'judgment-calibration-{i:02}' for i in range(1, 16)]
+    ids = [f'judgment-calibration-{i:02}' for i in range(1, 31)]
     assert list(CALIBRATION_MANIFEST) == [c['id'] for c in CALIBRATION] == ids
     assert set(CALIBRATION_INVARIANTS) == set(ids)
+    assert len(CALIBRATION_COINAGES) >= 4 and set(CALIBRATION_COINAGES) <= set(ids)
     assert [c['id'] for c in CASES if c['language'] == 'ja' and c['id'].startswith('judgment-calibration-')] == ids
     assert Counter(v[0] for v in CALIBRATION_MANIFEST.values()) == dict(
-        stiffness=2, abstraction=2, formulaic=2, roundabout=2, repetition=2, natural=5)
+        stiffness=5, abstraction=3, formulaic=4, roundabout=4, repetition=4, natural=10)
     assert CALIBRATION[2]['reason'].startswith('Generic wording:')
     assert CALIBRATION[7]['reason'].startswith('Formulaic ending:')
-    assert len({v[1] for v in CALIBRATION_MANIFEST.values()}) == 15
-    assert len({c['bad'] for c in CALIBRATION}) == len({c['good'] for c in CALIBRATION}) == 15
+    assert len({v[1] for v in CALIBRATION_MANIFEST.values()}) == 30
+    assert len({c['bad'] for c in CALIBRATION}) == len({c['good'] for c in CALIBRATION}) == 30
     others = {r['text'] for r in REFERENCES} | {c[k] for c in CASES if c not in CALIBRATION for k in ('bad', 'good')}
     assert not {c[k] for c in CALIBRATION for k in ('bad', 'good')} & others
     assert all(r['text'] not in c[k] and c[k] not in r['text']
                for c in CALIBRATION for k in ('bad', 'good') for r in REFERENCES)
-    for start in (0, 5, 10):
+    for start in range(0, 30, 5):
         group = CALIBRATION[start:start + 5]
         assert any(not c['must_change'] for c in group)
         assert all(c['format'] == 'text' and c['background'] == {} and 'context' not in c for c in group)
@@ -93,7 +126,15 @@ def test_ac_08_13_14_ctr05_calibration_composition_and_independent_sources():
 
 @pytest.mark.parametrize('case', CALIBRATION, ids=lambda c: c['id'])
 def test_ac_08_13_14_ctr05_calibration_preserves_facts_terms_and_natural_text(case):
-    axis, _, anchors, _ = CALIBRATION_MANIFEST[case['id']]
+    axis, _, anchors, _, surface = CALIBRATION_MANIFEST[case['id']]
+    measured_axis, pattern, witnesses = surface
+    assert measured_axis in {'stiffness', 'abstraction', 'formulaic', 'roundabout', 'repetition'}
+    assert pattern and witnesses and not case['protected_terms']
+    assert all(w in case['bad'] for w in witnesses)
+    assert all((w in case['good']) == (axis == 'natural') for w in witnesses)
+    if case['id'] in CALIBRATION_COINAGES:
+        coined, ordinary = CALIBRATION_COINAGES[case['id']]
+        assert case['bad'].count(coined) == 1 and case['bad'].replace(coined, ordinary) == case['good']
     assert case['must_change'] == (axis != 'natural')
     assert (case['bad'] == case['good']) == (axis == 'natural')
     assert case['degree'] == 'polish' and 'rewrite_expectations' not in case

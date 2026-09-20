@@ -1,0 +1,10 @@
+id: "judgment-calibration-16"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この冊子には、革靴の手入れに役立つ実用記事を載せています。"
+good: "この冊子には、革靴の手入れに役立つ記事を載せています。"
+reason: "Coined vocabulary: only the unnecessary compound for a practical article changes; retain the booklet and useful leather-shoe care advice."
+lint: null
+must_change: true

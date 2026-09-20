@@ -3,8 +3,8 @@ language: "ja"
 section: "structure"
 degree: "polish"
 format: "text"
-bad: "豆を一晩水につけます。続いて行う作業は、水を捨てる作業です。続いて行う作業は、新しい水で豆を煮る作業です。"
+bad: "豆を煮るには、以下の手順が有効です。まず、一晩水につけます。また、その水を捨てます。そして、新しい水で豆を煮ます。"
 good: "豆を一晩水につけます。続いて水を捨て、新しい水で豆を煮ます。"
-reason: "Mechanical repetition: remove the repeated task-introduction frame while keeping the ordered actions."
+reason: "Mechanical repetition: procedural scaffolding and repeated connectors overstage a short ordered procedure; retain soaking, discarding, and fresh-water boiling."
 lint: null
 must_change: true

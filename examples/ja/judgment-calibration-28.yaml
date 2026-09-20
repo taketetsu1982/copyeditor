@@ -1,0 +1,10 @@
+id: "judgment-calibration-28"
+language: "ja"
+section: "structure"
+degree: "polish"
+format: "text"
+bad: "まず、刷毛を水で洗います。また、毛先をそろえます。そして、日陰で乾かします。"
+good: "刷毛を水で洗い、毛先をそろえて日陰で乾かします。"
+reason: "Mechanical repetition: chained connectors overstage a short ordered cleaning procedure."
+lint: null
+must_change: true

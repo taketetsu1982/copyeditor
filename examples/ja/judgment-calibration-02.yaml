@@ -3,8 +3,8 @@ language: "ja"
 section: "vocabulary"
 degree: "polish"
 format: "text"
-bad: "机の端に取り付ける小さなトレーが、作業場所の余白を生み出します。ペンや眼鏡の置き場所を設けることで、机の上の整理のしやすさにつなげます。"
+bad: "机の端に取り付ける小さなトレーです。ペンや眼鏡の置き場所を設け、机の上に空きを作ることで、整理の最適化につなげます。"
 good: "机の端に取り付ける小さなトレーです。ペンや眼鏡の置き場所ができ、机の上に空きを作って整理しやすくします。"
-reason: "Abstraction: keep the usable-space benefit but replace the indirect nominal account of making organization easier."
+reason: "Abstraction: optimization adds fashionable distance to the simple benefit of making a desk easier to organize; retain the freed space."
 lint: null
 must_change: true
