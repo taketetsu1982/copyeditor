@@ -85,6 +85,37 @@ JUDGMENT_MODULES = {
 }
 
 
+
+# Evaluation ownership is separate from the nineteen runtime consumers.
+EVALUATION_MODULES = {
+    'tests/unit/test_judgment_examples.py': (39, 'e2a3b370cee48cec682e076974ae9a84012fd262c1f93d7328b6bb87a30e463d'),
+    'tests/unit/test_judgment_evaluation.py': (66, '3ae7d8f422733fc8e6d22617367dc7b368462e8a6942bb2d2806e757a2ed7595'),
+    'tests/unit/test_judgment_calibration.py': (55, '74365463f590f5412834d433d2254ac11763437d91bcaeaa36bbf568b9d0ba3c'),
+    'tests/integration/test_judgment_acceptance.py': (57, 'a0efb5957c8f9cb1b16f192c09a4ca4c3abebf32caaf87dca19f98d1c30b4ef7'),
+}
+EVALUATION_SETS = {
+    'judgment-calibration': (15, 'c3079426b5df4272117cffb69de9ad4002759bb762f5d21ee3f47a06b977d65b'),
+    'judgment-acceptance': (20, 'b1d93ca0451dd35c491d44acf03c2ec9b4c94e2fd30ae90e9e25d500aed181ec'),
+    'rewrite': (24, '248f782d0ee57fc1b137350c4e2dff5a6cda53aad3689a4851d3ae5b99f94617'),
+}
+US08_OWNER_EVIDENCE = {
+    'live': 'owner-fixed labels, complete gate and verify calibration, blinded off/on comparisons and unused held-out evidence',
+    'native': 'Japanese naturalness, meaning, register and invariant review for the fixed inputs and candidates',
+    'client': 'Claude and Codex explicit/implicit invocation, send permission, denial non-delivery and result reporting',
+}
+
+
+def evaluation_inventory(root):
+    import hashlib
+    import json
+    for prefix, (count, digest) in EVALUATION_SETS.items():
+        paths = sorted((root / 'examples/ja').glob(prefix + '-*.yaml'))
+        rows = [(p.relative_to(root).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest()) for p in paths]
+        if [p.stem for p in paths] != [f'{prefix}-{i:02}' for i in range(1, count + 1)] or hashlib.sha256(json.dumps(rows).encode()).hexdigest() != digest:
+            raise ValueError('Missing or changed evaluation population: ' + prefix)
+    return {module + '::*': {digest: {'count': count}} for module, (count, digest) in EVALUATION_MODULES.items()}
+
+
 def judgment_fingerprint(root, module, items):
     import ast
     import hashlib
@@ -181,6 +212,7 @@ def phase1_inventory(root):
         cases("integration/test_auth", "test_ac_05_3_ctr04_" + suffix, [None])
     groups["tests/integration/test_judgment_inventory.py::test_ac_08_1_2_3_4_5_6_7_8_9_10_11_12_15_16_17_18_ctr01_ctr04_fixed_consumers"] = {None: {}}
     groups.update(judgment_inventory())
+    groups.update(evaluation_inventory(root))
     return groups
 
 
@@ -268,6 +300,8 @@ class Phase1Contracts:
             for error in self.errors:
                 terminal.write_line(error)
             terminal.write_line("US-08 live/native/client acceptance not evaluated; owner evidence remains required.")
+            for kind, requirement in US08_OWNER_EVIDENCE.items():
+                terminal.write_line(f"US-08 {kind}: NOT EVALUATED; required: {requirement}.")
             for entry, expected in self.groups.items():
                 if entry.endswith('::*'):
                     executed = sum(n.split('::')[0] == entry.removesuffix('::*') for n in complete)
