@@ -1,0 +1,10 @@
+id: "judgment-acceptance-20"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "markdown"
+bad: "## 庭でひと息\n誰かと話す日にも、一人で黙っていたい日にも、同じ場所で過ごせるベンチです。"
+good: "## 庭でひと息\n誰かと話す日にも、一人で黙っていたい日にも、同じ場所で過ごせるベンチです。"
+reason: "Retain the parallel days: companionship and chosen solitude are distinct uses, not a mechanical repetition to delete."
+lint: null
+must_change: false

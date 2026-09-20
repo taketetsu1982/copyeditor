@@ -1,0 +1,10 @@
+id: "judgment-acceptance-13"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "markdown"
+bad: "## 屋外で使うソーラーパネル\n晴天時には、接続した端末の使用時間の延長につながる場合があるというものです。"
+good: "## 屋外で使うソーラーパネル\n晴天時には、接続した端末を使える時間が延びる場合があります。"
+reason: "Promise trap: remove the vague explanatory ending while retaining a possible benefit rather than guaranteed charging or runtime."
+lint: null
+must_change: true

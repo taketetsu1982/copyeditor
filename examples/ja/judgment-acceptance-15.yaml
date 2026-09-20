@@ -1,0 +1,10 @@
+id: "judgment-acceptance-15"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "天然石のペーパーウェイトです。掲載写真は一例であり、石の模様が同一の状態でお届けできるというお約束はしていない形になります。"
+good: "天然石のペーパーウェイトです。掲載写真は一例で、同じ模様の石をお届けするお約束はできません。"
+reason: "Caveat trap: shorten the disclaimer but keep the photograph illustrative and the absence of a matching-pattern promise."
+lint: null
+must_change: true
