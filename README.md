@@ -3,6 +3,8 @@ Your agent writes, a polishing model rewrites, and you confirm the meaning. An M
 
 Reference implementation: Claude Code or Codex CLI as the writing agent, Gemini on Vertex AI as the polishing model.
 
+**Version 0.2.0.** The server and both plugins use the same version. Judgment remains off by default (`judgment.enabled=false`): polish keeps v1 and rewrite keeps v2. Enabling judgment requires a v3-compatible client or the bundled Skill; both degrees then return `schema_version=3`. Live gate and verification calibration, native Japanese review, and real-client acceptance remain pending. Offline CI success does not establish these results. This version change does not publish a release; tagging and publication are separate owner operations.
+
 ## Setup and Vertex AI
 
 Step-by-step Google Cloud setup for the Console and CLI is in [deployment/google-cloud.md](deployment/google-cloud.md).
@@ -171,6 +173,8 @@ The owner records approval in one PR comment with a `copyeditor-provenance-v1` f
 エージェントが書き、校正モデルが推敲し、人が意味を確認します。言語ごとにルールを差し替えられる、AI生成文の校正用MCPサーバーとエージェントSkillです。日本語を最初の対象にしています。
 
 参照実装: 執筆エージェントはClaude CodeまたはCodex CLI、校正モデルはVertex AI上のGeminiです。
+
+**Version 0.2.0。** サーバーと両pluginの版数を揃えています。判定は引き続き既定でoff（`judgment.enabled=false`）で、polishはv1、rewriteはv2を維持します。有効化にはv3対応clientまたは同梱Skillが必要で、両degreeとも `schema_version=3` を返します。実機でのgate・verify校正、日本語のnativeレビュー、実clientでの受入は未確認です。offline CIの成功はこれらの確認を意味しません。版数の変更だけでは公開されず、tagと公開は所有者が別途行います。
 
 ### 準備とVertex AI
 
