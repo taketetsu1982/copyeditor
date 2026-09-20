@@ -21,14 +21,14 @@ from copyeditor.providers.base import SourceItem
 from copyeditor.rules import load_rules
 from examples_to_promptfoo import load_examples
 
-RISK = dict(version='edit-risk-probe-v2', high_boundary=0.80, max_calls=300,
-            input_budget=19200000, timeout_seconds=10,
+RISK = dict(version='edit-risk-probe-v2', high_boundary=0.80, max_calls=600,
+            input_budget=38400000, timeout_seconds=10,
             question='Would attempting the selected editing action be more likely to lose important meaning, nuance or appropriate register than to improve this text?')
 
 COMPARISON = dict(acceptance=dict(problem=15, natural=5, per_example=4, per_repeat=12),
                   existing=dict(problem=18, natural=6, per_example=4, per_repeat=15), repeats=5, required_gain=1)
 
-SETS = dict(calibration="calibration-v2", acceptance="judgment-acceptance-v2", existing="existing-rewrite-v1", regression="packing-regression-v1")
+SETS = dict(calibration="calibration-v3", acceptance="judgment-acceptance-v2", existing="existing-rewrite-v1", regression="packing-regression-v1")
 
 
 def encoded(value):
@@ -38,7 +38,7 @@ def encoded(value):
 def population(name):
     name = next((k for k, v in SETS.items() if v == name), name)
     cases = {c['id']: c for c in load_examples(legacy.ROOT / 'examples', load_rules(legacy.ROOT / 'rules', None)) if c['language'] == 'ja'}
-    prefix, count = {'calibration': ('judgment-calibration', 15), 'acceptance': ('judgment-acceptance', 20), 'existing': ('rewrite', 24)}.get(name, ('', 0))
+    prefix, count = {'calibration': ('judgment-calibration', 30), 'acceptance': ('judgment-acceptance', 20), 'existing': ('rewrite', 24)}.get(name, ('', 0))
     if name == 'regression':
         return [dict(cases['judgment-calibration-01'], id=f'packing-{i}', bad=str(i) + 'あ' * 2390, good=str(i) + 'あ' * 2390, must_change=True) for i in range(1, 6)]
     return [cases[f'{prefix}-{i:02}'] for i in range(1, count + 1)]
@@ -55,7 +55,7 @@ def freeze(revision, mode='fixture', name='calibration', created_at=None, pairs=
     entries = [dict(id=c['id'], path=None if name == 'regression' else f"examples/ja/{c['id']}.yaml",
                     sha256=legacy.digest(encoded(c).encode() if name == 'regression' else (legacy.ROOT / f"examples/ja/{c['id']}.yaml").read_bytes()), input_hash=legacy.digest(encoded(c).encode()), kind='problem' if c['must_change'] else 'natural') for c in cases]
     layouts = {'text': [[c['id']] for c in cases]}
-    if name == 'calibration': layouts['items'] = [[c['id'] for c in cases[i:i + 5]] for i in (0, 5, 10)]
+    if name == 'calibration': layouts['items'] = [[c['id'] for c in cases[i:i + 5]] for i in range(0, 30, 5)]
     if name == 'regression': layouts = {'items': [[c['id'] for c in cases]], 'reversed': [[c['id'] for c in reversed(cases)]]}
     conditions, requests, trials = [], [], []
     for degree in ('polish', 'rewrite'):
@@ -76,7 +76,7 @@ def freeze(revision, mode='fixture', name='calibration', created_at=None, pairs=
     return json.loads(encoded(dict(evaluation_revision=revision, mode=mode, source_commit=legacy.subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=legacy.ROOT, text=True).strip(),
         created_at=created_at, sets=[dict(name=SETS[name], role='calibration' if name == 'calibration' else 'regression' if name == 'regression' else 'acceptance', cases=entries, repeats=5)],
         conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, comparison=COMPARISON, quality_accepted=False, human_review='required'),
-        planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=600, requests=360) if name == 'calibration' else None,
+        planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=1200, requests=720) if name == 'calibration' else None,
         references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'], risk_probe=RISK if name == 'calibration' else None,
         verification=verification_plan(pairs, cases, policy) if pairs is not None and name == 'calibration' else None,
         config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
@@ -214,7 +214,7 @@ async def probe(plan, artifact, output, caller=risk_call):
             wire = encoded(payload).encode()
             reserved = len(wire) + 4096
             largest = len(encoded(payload['state']).encode()) + max(len(encoded(q).encode()) for q in payload['questions'].values()) + 4096
-            if reserved > 64000 or largest > 32000 or calls >= min(300, plan['risk_probe']['max_calls']) or units + reserved > plan['risk_probe']['input_budget']:
+            if reserved > 64000 or largest > 32000 or calls >= min(600, plan['risk_probe']['max_calls']) or units + reserved > plan['risk_probe']['input_budget']:
                 for t in targets.values(): t['calibration']['risk_not_run_reason'] = 'request_budget'
                 continue
             calls += 1; units += reserved
@@ -449,7 +449,7 @@ def calibrate(plan, artifact):
 def verification_plan(pairs, cases, policy):
     axes, sources = policy['verification']['order'], {c['id']: c for c in cases}
     held_out = {c[k] for c in population('acceptance') for k in ('bad', 'good')}
-    if type(pairs) is not list or len(pairs) != 30 or len({p['id'] for p in pairs}) != 30: raise ValueError('Thirty unique owner pairs required')
+    if type(pairs) is not list or len(pairs) != 60 or len({p['id'] for p in pairs}) != 60: raise ValueError('Sixty unique owner pairs required')
     normalized = []
     for pair in pairs:
         if set(pair) - {'id', 'source_id', 'candidate', 'action', 'labels', 'reviewer', 'source_hash', 'candidate_hash'}: raise ValueError('Unknown pair field')
@@ -462,9 +462,9 @@ def verification_plan(pairs, cases, policy):
     if any(len(g) != 2 or g[0]['candidate'] == g[1]['candidate'] for g in groups): raise ValueError('Two distinct candidates per calibration source required')
     ready = all(isinstance(p.get('reviewer'), str) and p['reviewer'].strip() and all(type(v) is bool for v in p['labels'].values()) for p in normalized)
     ready = ready and all(sum(all(p['labels'].values()) for p in g) == 1 for g in groups) and all({p['labels'][a] for p in normalized} == {False, True} for a in axes)
-    layouts = dict(text=[[p['id']] for p in normalized], items=[[g[v]['id'] for g in groups[i:i + 5]] for v in (0, 1) for i in (0, 5, 10)])
+    layouts = dict(text=[[p['id']] for p in normalized], items=[[g[v]['id'] for g in groups[i:i + 5]] for v in (0, 1) for i in range(0, 30, 5)])
     requests = [dict(degree=d, layout=l, repeat=r, group=i, ids=ids) for d in ('polish', 'rewrite') for l, groups in layouts.items() for r in range(1, 6) for i, ids in enumerate(groups)]
-    return dict(pairs=normalized, ready=ready, axes=list(axes), requests=requests, max_calls=600, input_budget=38400000, timeout_seconds=10, step='0.01', tie_reference=['0.30', '0.70'])
+    return dict(pairs=normalized, ready=ready, axes=list(axes), requests=requests, max_calls=1200, input_budget=76800000, timeout_seconds=10, step='0.01', tie_reference=['0.30', '0.70'])
 
 
 async def run_verification(plan, artifact, output, caller=risk_call):
@@ -525,7 +525,7 @@ def verification_rank(correct, low, high):
 def verification_summary(plan, artifact):
     audit(plan, artifact)
     spec, rows = plan['verification'], artifact.get('verification_trials', [])
-    incomplete = dict(complete=False, fail_max=None, pass_min=None, planned=600, observed=len(rows), reason=artifact.get('verification_not_run_reason') or 'incomplete_verification', quality_accepted=False)
+    incomplete = dict(complete=False, fail_max=None, pass_min=None, planned=1200, observed=len(rows), reason=artifact.get('verification_not_run_reason') or 'incomplete_verification', quality_accepted=False)
     if spec is None or not spec['ready']: return incomplete
     measurements = artifact.get('verification_measurements', {})
     if len(measurements) > spec['max_calls'] or sum(m.get('input_units', 0) for m in measurements.values()) > spec['input_budget']: return incomplete
@@ -552,7 +552,7 @@ def verification_summary(plan, artifact):
             if any(t['unsatisfied']['pass'] or t['satisfied']['fail'] or not t['satisfied']['pass'] or not t['unsatisfied']['fail'] for t in tables.values()): continue
             correct = sum(t['satisfied']['pass'] + t['unsatisfied']['fail'] for t in tables.values())
             candidates.append(verification_rank(correct, low, high))
-    if not candidates: return dict(incomplete, observed=600, reason='revise_questions_references_and_owner_labels_then_remeasure')
+    if not candidates: return dict(incomplete, observed=1200, reason='revise_questions_references_and_owner_labels_then_remeasure')
     _, _, negative_high, low = min(candidates); high = -negative_high
     tables = {axis: matrix(cell, low, high) for axis, cell in cells.items()}
     tables['all'] = {label: {state: sum(t[label][state] for t in tables.values()) for state in ('pass', 'fail', 'indeterminate')} for label in ('satisfied', 'unsatisfied')}
@@ -567,8 +567,8 @@ def verification_summary(plan, artifact):
     current = THRESHOLDS[plan['config']['judgment.thresholds_version']]
     floor = (artifact.get('calibration_decision') or {}).get('derived_floor')
     changed = low != Decimal(str(current['verification']['fail_max'])) or high != Decimal(str(current['verification']['pass_min'])) or floor is not None and Decimal(floor) != Decimal(str(current['floor']))
-    return dict(complete=True, fail_max=str(low), pass_min=str(high), planned=600, observed=600, candidates=5050, feasible=len(candidates), confusion=tables, per_pair_variation=variation,
-        items=dict(planned=600, adoptable=sum(adoptable), non_adoptable=600 - sum(adoptable), accepted=sum(accepted), false_acceptance=sum(a and not b for a, b in zip(accepted, adoptable)), missed_adoptable=sum(b and not a for a, b in zip(accepted, adoptable))),
+    return dict(complete=True, fail_max=str(low), pass_min=str(high), planned=1200, observed=1200, candidates=5050, feasible=len(candidates), confusion=tables, per_pair_variation=variation,
+        items=dict(planned=1200, adoptable=sum(adoptable), non_adoptable=1200 - sum(adoptable), accepted=sum(accepted), false_acceptance=sum(a and not b for a, b in zip(accepted, adoptable)), missed_adoptable=sum(b and not a for a, b in zip(accepted, adoptable))),
         thresholds_version=plan['config']['judgment.thresholds_version'], reason='new_threshold_id_contract_hash_and_recalibration_before_unused_held_out' if changed else 'owner_review_gate_calibration_and_unused_held_out_required', quality_accepted=False)
 
 

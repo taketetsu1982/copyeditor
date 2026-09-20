@@ -24,7 +24,7 @@ def production(tmp_path_factory):
         if 'texts' in payload['state']: states.append(payload['state'])
         return await evaluate(self, wire, **kwargs)
     async def defer(frozen, observed, path):
-        assert len(evaluation.audit(frozen, observed)) == 360
+        assert len(evaluation.audit(frozen, observed)) == 720
     with patch.object(evaluation, 'probe', defer), patch.object(TypeSafe, 'evaluate', inspect):
         artifact = asyncio.run(evaluation.run(plan, path, runner))
     return plan, artifact, states
@@ -168,11 +168,11 @@ def test_calibration_midpoint_variation_and_false_veto_are_recomputed(ledger):
     summary, decision = result['calibration_summary'], result['calibration_decision']
     assert artifact == before and summary['complete']
     assert (summary['natural_max'], summary['unnatural_min'], summary['gap'], decision['derived_floor']) == ('0.6', '0.8', '0.2', '0.7')
-    assert summary['planned'] == summary['observed'] == 300 and summary['eligibility_flips'] == 0
-    assert len(summary['by_degree_layout_repeat']) == 20 and len(summary['per_case_variation']) == 60
+    assert summary['planned'] == summary['observed'] == 600 and summary['eligibility_flips'] == 0
+    assert len(summary['by_degree_layout_repeat']) == 20 and len(summary['per_case_variation']) == 120
     assert all(v['planned'] == v['observed'] == 5 and v['range'] == '0.0' for v in summary['per_case_variation'].values())
     risk = decision['edit_risk']
-    assert risk['high_verified'] == risk['high_pass'] == 300 and risk['not_generated'] == risk['not_eligible'] == 0
+    assert risk['high_verified'] == risk['high_pass'] == 600 and risk['not_generated'] == risk['not_eligible'] == 0
     assert risk['high_pass_rate'] == 1 and risk['recommendation'] == 'keep_disabled_false_veto'
     assert decision['reason'] == 'new_threshold_id_contract_hash_and_remeasurement_required' and decision['reviewer'] is None
     assert evaluation.THRESHOLDS[decision['thresholds_version']]['floor'] == .53
@@ -210,7 +210,7 @@ def test_calibration_missing_and_stale_evidence_cannot_become_a_floor_or_low_ris
         result = evaluation.calibrate(plan, artifact)
         if failure in ('gate', 'bool', 'copy'):
             assert not result['calibration_summary']['complete'] and result['calibration_decision']['derived_floor'] is None
-            assert result['calibration_summary']['planned'] == 300 and result['calibration_summary']['observed'] == 299
+            assert result['calibration_summary']['planned'] == 600 and result['calibration_summary']['observed'] == 599
         assert result['calibration_decision']['edit_risk']['missing'] == 1
         assert not result['calibration_decision']['edit_risk']['complete']
 
@@ -237,7 +237,7 @@ def test_repetition_flips_and_confidence_do_not_select_thresholds(ledger):
     result = evaluation.calibrate(plan, artifact)
     variation = result['calibration_summary']['per_case_variation']['polish/text/' + trial['example_id']]
     assert (variation['min'], variation['max'], variation['range'], variation['transitions']) == ('0.52', '0.6', '0.08', 1)
-    assert result['calibration_summary']['eligibility_flips'] == 1 and result['calibration_summary']['false_positives'] == 99
+    assert result['calibration_summary']['eligibility_flips'] == 1 and result['calibration_summary']['false_positives'] == 199
     trial['calibration']['confidence'] = block['detection']['action']['confidence'] = 0
     assert evaluation.calibrate(plan, artifact) == result
 
@@ -311,13 +311,14 @@ def test_owner_pair_measurements_are_separate_and_reproducible(verification):
     result = evaluation.verification_summary(plan, artifact)
     assert result == artifact['verification_summary'] and result['complete']
     assert (result['fail_max'], result['pass_min'], result['candidates']) == ('0.3', '0.7', 5050)
-    assert len(calls) == len(artifact['verification_measurements']) == 360 and len(artifact['verification_trials']) == 600
+    assert len(calls) == len(artifact['verification_measurements']) == 720 and len(artifact['verification_trials']) == 1200
     assert evaluation.audit(plan, artifact) == evaluation.audit(plan, original)
+    assert plan['verification']['max_calls'] == 1200 and plan['verification']['input_budget'] == 76800000
     assert artifact['calibration_decision'] == original['calibration_decision'] and artifact['run_cost'] is None
-    assert result['confusion']['all']['satisfied']['pass'] == 1200
-    assert result['confusion']['all']['unsatisfied'] == dict(zip(('pass', 'fail', 'indeterminate'), (0, 1200, 0)))
-    assert result['items'] == dict(planned=600, adoptable=300, non_adoptable=300, accepted=300, false_acceptance=0, missed_adoptable=0)
-    assert len(result['per_pair_variation']) == 120 and all(v['meaning']['range'] == '0.0' and len(v['meaning']['probabilities']) == 5 for v in result['per_pair_variation'].values())
+    assert result['confusion']['all']['satisfied']['pass'] == 2400
+    assert result['confusion']['all']['unsatisfied'] == dict(zip(('pass', 'fail', 'indeterminate'), (0, 2400, 0)))
+    assert result['items'] == dict(planned=1200, adoptable=600, non_adoptable=600, accepted=600, false_acceptance=0, missed_adoptable=0)
+    assert len(result['per_pair_variation']) == 240 and all(v['meaning']['range'] == '0.0' and len(v['meaning']['probabilities']) == 5 for v in result['per_pair_variation'].values())
     assert result['reason'].startswith('new_threshold_id') and not result['quality_accepted']
     with pytest.raises(ValueError, match='already attempted'):
         asyncio.run(evaluation.run_verification(plan, deepcopy(artifact), Path('/unused')))
@@ -386,8 +387,8 @@ def test_verification_preserves_unmeasured_and_failed_trials(verification, tmp_p
         assert len(calls) == 1
     else: asyncio.run(evaluation.run_verification(plan, artifact, tmp_path / 'out', caller))
     assert not evaluation.verification_summary(plan, artifact)['complete']
-    assert len(calls) == (360 if fault in ('exception', 'timeout') else 1 if fault == 'cancel' else 0)
-    assert len(artifact['verification_trials']) == 600
+    assert len(calls) == (720 if fault in ('exception', 'timeout') else 1 if fault == 'cancel' else 0)
+    assert len(artifact['verification_trials']) == 1200
 
 
 def test_verification_cli_recomputes_and_clears_stale_success(verification, tmp_path, monkeypatch):

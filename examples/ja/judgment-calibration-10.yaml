@@ -5,6 +5,6 @@ degree: "polish"
 format: "text"
 bad: "鉄板は熱くなっています。鉄板に触らないでください。取っ手を持つときは、乾いた鍋つかみを使ってください。"
 good: "鉄板は熱くなっています。鉄板に触らないでください。取っ手を持つときは、乾いた鍋つかみを使ってください。"
-reason: "Retain the repeated hot plate reference: the warning must name the hazard again in the prohibition."
+reason: "Natural repetition control: retain the repeated hot plate reference; the warning and prohibition must identify the same hazard."
 lint: null
 must_change: false

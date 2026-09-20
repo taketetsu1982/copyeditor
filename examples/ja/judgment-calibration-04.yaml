@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "雨量計の電池が切れている場合には、測定を始める前に交換していただく必要があるということになります。"
+bad: "結論から言うと、雨量計の電池が切れている場合は、測定を始める前に交換する必要があるということです。"
 good: "雨量計の電池が切れている場合は、測定を始める前に交換する必要があります。"
-reason: "Roundabout wording: remove the indirect conclusion around a necessary action."
+reason: "Roundabout wording: a conclusion announcement and explanatory tail surround a single requirement; keep the dead-battery condition and the order."
 lint: null
 must_change: true

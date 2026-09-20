@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外すことで、手提げとしてもお使いいただけるようになっています。"
+bad: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外せば、手提げとしても使えるという点がポイントと言えるでしょう。"
 good: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外せば、手提げとしても使えます。"
-reason: "Roundabout wording: retain the natural opening and remove only the indirect capability ending in otherwise restrained product copy."
+reason: "Roundabout wording: a mildly hedged announcement of the key point pads an otherwise direct product description; retain the strap-removal condition."
 lint: null
 must_change: true

@@ -1,0 +1,10 @@
+id: "judgment-calibration-25"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "避難通路には荷物を置かないでください。避難通路の扉の前も空けておいてください。"
+good: "避難通路には荷物を置かないでください。避難通路の扉の前も空けておいてください。"
+reason: "Natural repetition control: the corridor and its door need separate clearance instructions; do not merge away either scope."
+lint: null
+must_change: false

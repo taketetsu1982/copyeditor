@@ -1,0 +1,10 @@
+id: "judgment-calibration-20"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "ゼラチンを冷水に振り入れ、ふやかしてください。ゼラチンが水を吸ってから温めると、溶かしやすくなります。"
+good: "ゼラチンを冷水に振り入れ、ふやかしてください。ゼラチンが水を吸ってから温めると、溶かしやすくなります。"
+reason: "Natural repetition control: the gelatin references name the ingredient and the prerequisite for heating; retain the technical term."
+lint: null
+must_change: false

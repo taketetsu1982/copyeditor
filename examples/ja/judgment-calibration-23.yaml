@@ -1,0 +1,10 @@
+id: "judgment-calibration-23"
+language: "ja"
+section: "structure"
+degree: "polish"
+format: "text"
+bad: "休館日は月曜日です。また、祝日の月曜日も休館です。さらに、返却ポストは休館日も使えます。"
+good: "月曜日は祝日でも休館ですが、返却ポストは休館日も使えます。"
+reason: "Mechanical repetition: additive connectors separate closely related closure conditions; keep holiday closure and the return box exception."
+lint: null
+must_change: true
