@@ -9,11 +9,32 @@ from .requests import ValidationError, parse_edit_request
 from .responses import nonblank, parse_generation, validate_final
 from .rewrite_response import validate_rewrite_final
 from .rewrite_service import rewrite
+from .judged_metrics import JudgedMetrics
+from .judgment import _registry, definition_hash
+from .judged_response import validate_judged_final
+from . import judged_service
+
+
+def judged_error(config, snapshot, arguments, meter=None, error=None):
+    degree = arguments.get("degree", "polish") if type(arguments) is dict else None
+    degree = degree if type(degree) is str and degree in ("polish", "rewrite") else None
+    meter = meter or JudgedMetrics(monotonic(), config["model"], config["pricing"], degree=degree or "polish")
+    policy, threshold = _registry(config["judgment.policy_version"], config["judgment.thresholds_version"])
+    language = arguments.get("language", config["default_language"]) if type(arguments) is dict else None
+    error = error or ValidationError("internal_error")
+    result = dict(schema_version=3, degree=degree, language=language if type(language) is str and language in snapshot.languages else None,
+        rules_version=snapshot.rules_version, common_version=snapshot.common_version,
+        policy_version=config["judgment.policy_version"], thresholds_version=config["judgment.thresholds_version"],
+        policy_hash=definition_hash(policy), thresholds_hash=definition_hash(threshold), **meter.snapshot(),
+        status="error", error=dict(code=error.code, field=error.field, message=str(error)))
+    validate_judged_final(result)
+    return result
 
 
 class Service:
-    def __init__(self, config, snapshot, provider_factory):
+    def __init__(self, config, snapshot, provider_factory, judgment=None):
         self.config, self.snapshot, self.provider_factory = config, snapshot, provider_factory
+        self.judgment = judgment
 
     async def polish(self, arguments):
         return await self._run("polish_text", arguments)
@@ -22,6 +43,16 @@ class Service:
         return await self._run("lint_text", arguments)
 
     async def _run(self, tool, arguments):
+        if tool == "polish_text" and self.config["judgment.enabled"]:
+            degree = "rewrite" if type(arguments) is dict and arguments.get("degree") == "rewrite" else "polish"
+            meter = JudgedMetrics(monotonic(), self.config["model"], self.config["pricing"], degree=degree)
+            meter.meters["judgment"].price = self.config["judgment.pricing"].get(self.config["judgment.model"])
+            try:
+                request = parse_edit_request(tool, arguments, self.config, self.snapshot)
+                return await getattr(judged_service, degree)(self, request, self.judgment, meter, items_route="items" in arguments)
+            except Exception as error:
+                return judged_error(self.config, self.snapshot, arguments, meter,
+                                    error if isinstance(error, ValidationError) else None)
         model = self.config["model"] if tool == "polish_text" else None
         is_rewrite = tool == "polish_text" and type(arguments) is dict and arguments.get("degree") == "rewrite"
         meter = Metrics(monotonic(), model, self.config["pricing"], degree="rewrite" if is_rewrite else "polish")

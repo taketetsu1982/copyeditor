@@ -98,7 +98,7 @@ def test_enabled_handle_is_not_represented_or_json_serialized():
             json.dumps(handle)
 
 
-def test_closed_mapping_prices_and_public_loader_stay_separate(tmp_path):
+def test_closed_mapping_prices_and_public_loader_are_connected(tmp_path):
     for value in (None, [], {"key": "sentinel"}, {"endpoint": "https://invalid"}, {"enabled.extra": True}):
         with pytest.raises(ConfigError) as caught:
             resolve_judgment_config(value, {})
@@ -112,8 +112,11 @@ def test_closed_mapping_prices_and_public_loader_stay_separate(tmp_path):
         resolve_judgment_config({"pricing": prices}, {})
     with pytest.raises(ConfigError):
         strict_yaml("enabled: true\nenabled: false\n")
-    assert not any(key.startswith("judgment.") for key in SCHEMA)
+    assert {key.removeprefix("judgment.") for key in SCHEMA if key.startswith("judgment.")} == set(JUDGMENT_FIELDS)
     path = tmp_path / "config.yaml"
     path.write_text("judgment: {enabled: true}\n")
     with pytest.raises(ConfigError):
         load_config(path, {"GOOGLE_CLOUD_PROJECT": "project"})
+
+    path.write_text("judgment: {enabled: false}\n")
+    assert load_config(path, {"GOOGLE_CLOUD_PROJECT": "project"})["judgment.enabled"] is False
