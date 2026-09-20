@@ -1,6 +1,6 @@
 {
   "name": "copyeditor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Polish writing through an explicitly configured MCP server.",
   "author": {"name": "copyeditor maintainers"},
   "skills": "./skills/",
