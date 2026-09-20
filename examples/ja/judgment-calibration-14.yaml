@@ -1,0 +1,10 @@
+id: "judgment-calibration-14"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "乾いた布は棚の上に、ぬれた布はバケツの中に入れてください。乾いた布とぬれた布は分けて置きます。"
+good: "乾いた布は棚の上に、ぬれた布はバケツの中に入れてください。乾いた布とぬれた布は分けて置きます。"
+reason: "Retain the repeated dry and wet distinction: it links the destinations to the separation rule."
+lint: null
+must_change: false

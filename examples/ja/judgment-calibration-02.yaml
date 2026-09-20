@@ -1,0 +1,10 @@
+id: "judgment-calibration-02"
+language: "ja"
+section: "vocabulary"
+degree: "polish"
+format: "text"
+bad: "パンの焼き上がり時刻を店頭に掲示し、購入時期の判断に必要な情報の提供を行います。"
+good: "パンの焼き上がり時刻を店頭に掲示し、いつ買うかを判断できるようにします。"
+reason: "Abstraction: express the purchasing decision directly instead of describing information provision."
+lint: null
+must_change: true

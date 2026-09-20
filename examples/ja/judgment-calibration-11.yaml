@@ -1,0 +1,10 @@
+id: "judgment-calibration-11"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "家族風呂の予約がない方については、空きがある場合に限って利用していただくことができる形となっています。"
+good: "家族風呂の予約がない方は、空きがある場合に限って利用できます。"
+reason: "Roundabout wording: remove the indirect description of how conditional access works."
+lint: null
+must_change: true

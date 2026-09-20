@@ -1,0 +1,10 @@
+id: "judgment-calibration-15"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "卵を使わない菓子も、卵を扱う調理台で作っています。卵が混じらないとは保証できません。"
+good: "卵を使わない菓子も、卵を扱う調理台で作っています。卵が混じらないとは保証できません。"
+reason: "Retain the repeated egg references because recipe exclusion, shared equipment, and the guarantee have different scopes."
+lint: null
+must_change: false

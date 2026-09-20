@@ -1,0 +1,10 @@
+id: "judgment-calibration-07"
+language: "ja"
+section: "vocabulary"
+degree: "polish"
+format: "text"
+bad: "通路幅の確保によって、図書館内における車いすでの移動のしやすさの向上を図ります。"
+good: "通路の幅を確保し、図書館内で車いすを使う人が移動しやすくなるようにします。"
+reason: "Abstraction: turn nested nominal descriptions into an action and its intended effect."
+lint: null
+must_change: true
