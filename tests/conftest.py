@@ -61,6 +61,49 @@ REWRITE_TOOL_CASES = {
 }
 
 
+# V3 pins are reviewed separately from legacy fixtures; never regenerate on collection.
+JUDGMENT_MODULES = {
+    'tests/contracts/test_ctr04_config.py': (45, '56c193c945f509f1eaff1ecdbaeec869d27f06202f862af995a99da920e7fcda'),
+    'tests/contracts/test_judged_final.py': (33, 'b5e6d507bb5140cac66ef9d681bcb12273b4db7d00cd56be63baecd677e2e04d'),
+    'tests/contracts/test_judged_schema.py': (34, '4677240f92c1564cdff54e21e35f161649c333c6ae3a93bc81fb60e41d419715'),
+    'tests/contracts/test_judged_tools.py': (71, '56946fab4a39ed574ca8be549225def1660aa52a0686b6bc831ca2e10baaa957'),
+    'tests/contracts/test_judgment_contract.py': (8, '2da9e32094495e32353e9b9515042a4de9b77854bc055657e9157102f0437e59'),
+    'tests/integration/test_documentation.py': (6, '13add797aeb07c41981cd62a6c38805d063af1b33ed1ccd832a76407ec5db792'),
+    'tests/integration/test_images.py': (10, 'efa49bdfb6720dfa34d7f094925e2fbbd193942aafeb9d20e7f9ba2d8bfe4658'),
+    'tests/integration/test_judgment_skill.py': (11, 'a9f8ba6621fd58fd5857521dafe70643a58860f9442d129d4844739a4a8d1dfd'),
+    'tests/integration/test_judgment_startup.py': (8, 'e7754ce989c631305c9933081e9c9004f8804b40a611840ab7cc59bea7e397cc'),
+    'tests/integration/test_judgment_transport.py': (98, 'fc6b8dcb104155eb647fe0c4e098a39e6e90d714b4961cca2cbbba95ff9f44ca'),
+    'tests/integration/test_rewrite_transport.py': (11, '8223bb578112e0a6edb85b7536c14fce7ffd02de4ff8de7be6374cb4b16aaaea'),
+    'tests/unit/test_judged_budget.py': (15, '18577b258f7d2ad83369e36f63225ba08cd64dc31da8a0b948ea6166d98356f4'),
+    'tests/unit/test_judged_metrics.py': (16, '4fc7a97a13551a226f19e0b67abaadd65282a1f16207d0e63348676b7765c9b5'),
+    'tests/unit/test_judged_rewrite.py': (15, '15b9793c4e9383f4085664890406e0b8e15575271d9908f01739539975542ffa'),
+    'tests/unit/test_judged_service.py': (10, '00269cec113b8d245b03bd3cddd4266358a784a41bcc4ce56d1a14b701ccce4f'),
+    'tests/unit/test_judgment.py': (181, 'ae1d40a2c4535e64cec4aaec15b11aa7ffcea2e76f41ebdf7db3fb1cd4f997c5'),
+    'tests/unit/test_judgment_batch.py': (14, '65fc35be3bd413bda669b215e5acd43d2d6b366b71d800ed964546fdfedd49dc'),
+    'tests/unit/test_judgment_config.py': (45, '565038f799a2f5796b21771ffd5e9084d693dba917e832e628cd93222afed480'),
+    'tests/unit/test_typesafe.py': (32, '566bb687601ddb376ee69791e7ed55d66f318ec0a0f53ec1705a8851050efa88'),
+}
+
+
+def judgment_fingerprint(root, module, items):
+    import ast
+    import hashlib
+    import json
+    import re
+    source = ast.dump(ast.parse((root / module).read_text()), include_attributes=False)
+    rows = []
+    for item in items:
+        if item.nodeid.split('::')[0] == module:
+            params = repr(getattr(getattr(item, 'callspec', None), 'params', {}))
+            params = re.sub(r' at 0x[0-9a-f]+', '', params).replace(str(root), '<root>')
+            rows.append((item.nodeid, params))
+    return len(rows), hashlib.sha256(json.dumps((source, sorted(rows))).encode()).hexdigest()
+
+
+def judgment_inventory():
+    return {module + '::*': {digest: {'count': count}}
+            for module, (count, digest) in JUDGMENT_MODULES.items()}
+
 def pytest_report_collectionfinish(items):
     connected = {mark.args[0] for item in items
                  for mark in item.iter_markers("consumer")}
@@ -136,6 +179,8 @@ def phase1_inventory(root):
     for suffix in ("real_oauth_round_trip", "oauth_rejections_and_expiry", "refresh_identity_and_empty_memory",
                    "real_registration_capacity", "idp_errors_and_exception_privacy"):
         cases("integration/test_auth", "test_ac_05_3_ctr04_" + suffix, [None])
+    groups["tests/integration/test_judgment_inventory.py::test_ac_08_1_2_3_4_5_6_7_8_9_10_11_12_15_16_17_18_ctr01_ctr04_fixed_consumers"] = {None: {}}
+    groups.update(judgment_inventory())
     return groups
 
 
@@ -181,6 +226,15 @@ class Phase1Contracts:
         try:
             self.groups = phase1_inventory(root)
             for entry, expected in self.groups.items():
+                if entry.endswith('::*'):
+                    module = entry.removesuffix('::*')
+                    try:
+                        count, digest = judgment_fingerprint(root, module, self.items)
+                        matches = expected == {digest: {'count': count}}
+                    except (OSError, SyntaxError):
+                        matches = False
+                    if not matches: self.errors.append(f"Inventory mismatch: {entry}")
+                    continue
                 actual = [getattr(item, "callspec", None).id if hasattr(item, "callspec") else None
                           for item in self.items if item.nodeid.split("[")[0] == entry]
                 if Counter(actual) != Counter(expected.keys()):
@@ -213,7 +267,12 @@ class Phase1Contracts:
             terminal.write_line("US-07 quality not evaluated: owner native/live/client evidence remains required.")
             for error in self.errors:
                 terminal.write_line(error)
+            terminal.write_line("US-08 live/native/client acceptance not evaluated; owner evidence remains required.")
             for entry, expected in self.groups.items():
+                if entry.endswith('::*'):
+                    executed = sum(n.split('::')[0] == entry.removesuffix('::*') for n in complete)
+                    terminal.write_line(f"V3 {entry}: expected={next(iter(expected.values()))['count']} executed={executed}")
+                    continue
                 executed = sum(n.split("[")[0] == entry for n in complete)
                 terminal.write_line(f"{entry}: expected={len(expected)} executed={executed}")
 
