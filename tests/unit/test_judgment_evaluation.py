@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from functools import lru_cache
 import json
 from pathlib import Path
 import subprocess
@@ -14,8 +15,11 @@ import judgment_evaluation as evaluation
 def completed(tmp_path_factory):
     path = tmp_path_factory.mktemp('judgment') / 'artifact.json'
     plan = evaluation.freeze(1)
+    # Repeated probes use fixed inputs; keep cache lifetime inside this fixture.
+    population = lru_cache(maxsize=None)(evaluation.population)
     # Ledger assertions need every trial, but checkpoint I/O is covered separately.
-    with patch.object(evaluation.legacy, 'save', lambda *args: None):
+    with patch.object(evaluation.legacy, 'save', lambda *args: None), \
+            patch.object(evaluation, 'population', lambda name: deepcopy(population(name))):
         artifact = asyncio.run(evaluation.run(plan, path))
     evaluation.legacy.save(path, artifact)
     assert json.loads(path.read_text()) == artifact
