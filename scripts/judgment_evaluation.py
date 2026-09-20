@@ -15,12 +15,18 @@ from copyeditor.judgment_batch import prepare_judgments
 from copyeditor.providers.base import Background
 from copyeditor.providers.typesafe import TypeSafe
 from copyeditor.metrics import Metrics
+from copyeditor.judged_response import validate_judged_final
+from copyeditor.responses import validate_final
+from copyeditor.providers.base import SourceItem
 from copyeditor.rules import load_rules
 from examples_to_promptfoo import load_examples
 
 RISK = dict(version='edit-risk-probe-v2', high_boundary=0.80, max_calls=300,
             input_budget=19200000, timeout_seconds=10,
             question='Would attempting the selected editing action be more likely to lose important meaning, nuance or appropriate register than to improve this text?')
+
+COMPARISON = dict(acceptance=dict(problem=15, natural=5, per_example=4, per_repeat=12),
+                  existing=dict(problem=18, natural=6, per_example=4, per_repeat=15), repeats=5, required_gain=1)
 
 SETS = dict(calibration="calibration-v2", acceptance="judgment-acceptance-v2", existing="existing-rewrite-v1", regression="packing-regression-v1")
 
@@ -68,7 +74,7 @@ def freeze(revision, mode='fixture', name='calibration', created_at=None):
                         trials.extend(dict(row, example_id=identity) for identity in ids)
     return json.loads(encoded(dict(evaluation_revision=revision, mode=mode, source_commit=legacy.subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=legacy.ROOT, text=True).strip(),
         created_at=created_at, sets=[dict(name=SETS[name], role='calibration' if name == 'calibration' else 'regression' if name == 'regression' else 'acceptance', cases=entries, repeats=5)],
-        conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, quality_accepted=False, human_review='required'),
+        conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, comparison=COMPARISON, quality_accepted=False, human_review='required'),
         planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=600, requests=360) if name == 'calibration' else None,
         references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'], risk_probe=RISK if name == 'calibration' else None,
         config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
@@ -235,9 +241,111 @@ async def probe(plan, artifact, output, caller=risk_call):
     legacy.save(output, artifact)
 
 
+def summarize(plan, artifact):
+    try:
+        observations = audit(plan, artifact)
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError('Invalid comparison inventory or manifest') from error
+    cases = {c['id']: c for c in population(plan['sets'][0]['name'])}
+    _, snapshot, _ = adapter.comparison_environment(next(iter(cases.values())), plan['mode'], False)
+    requests = {r['request_id']: r for r in plan['request_layouts']}
+    conditions = {(c['degree'], c['judgment_enabled']): c for c in plan['conditions']}
+    invalid, groups, rows = set(), {}, []
+    for identity, observation in observations.items():
+        request, response = requests[identity], observation['full_response']
+        condition = conditions[request['degree'], request['judgment_enabled']]
+        originals = tuple(SourceItem('text' if request['layout'] == 'text' else f'b{i:04}', cases[key]['bad'], '') for i, key in enumerate(request['ids'], 1))
+        try:
+            if response is None or response.get('schema_version') != (3 if request['judgment_enabled'] else 2 if request['degree'] == 'rewrite' else 1): raise ValueError()
+            if any(response.get(k) != condition[k] for k in ('rules_version', 'common_version')): raise ValueError()
+            if response.get('degree', 'polish') != request['degree'] or response.get('language') != 'ja': raise ValueError()
+            if request['judgment_enabled']:
+                if any(response[k] != condition[k] for k in ('policy_version', 'thresholds_version', 'policy_hash', 'thresholds_hash')): raise ValueError()
+                if [r['model'] for r in response['providers']] != [condition['editing_model'], condition['judgment_model']]: raise ValueError()
+                validate_judged_final(response, originals, format=cases[request['ids'][0]]['format'])
+            else:
+                if response.get('model') != condition['editing_model']: raise ValueError()
+                if request['degree'] == 'rewrite': legacy.validate_rewrite_final(response, originals)
+                else: validate_final(response)
+            if response.get('error', {}).get('code') != observation['error_code'] or observation['error_code'] in ('invalid_response', 'html_structure'): raise ValueError()
+            if response.get('status') == 'ok' and [b.get('id', 'text') for b in response.get('items', [response])] != [o.id for o in originals]: raise ValueError()
+        except (ValueError, TypeError, KeyError):
+            invalid.add(identity)
+    for trial in artifact['trials']:
+        case, response = cases[trial['example_id']], trial['full_response'] or {}
+        request, condition = requests[trial['request_id']], conditions[trial['degree'], trial['judgment_enabled']]
+        block_id = 'text' if trial['layout'] == 'text' else f"b{request['ids'].index(trial['example_id']) + 1:04}"
+        block = next((b for b in response.get('items', [response]) if b.get('id', 'text') == block_id), {})
+        decision, reasons, problem = trial['decision'], trial['reasons'], case['must_change']
+        required = ('a', 'b', 'c') if problem else ('b', 'c', 'd')
+        unused = 'd' if problem else 'a'
+        if set(decision) != set('abcd') or set(reasons) != set('abcd') or decision[unused] is not None or reasons[unused] is not None: raise ValueError('Invalid judgment targets')
+        if any(v is not None and type(v) is not bool for v in decision.values()): raise ValueError('Invalid human judgment')
+        text = block.get('text')
+        if text is None and any(decision[k] is not None for k in ('b', 'c')): raise ValueError('Judgment without returned text')
+        required = tuple(k for k in required if text is not None or k not in ('b', 'c'))
+        pending = not isinstance(trial['reviewer'], str) or not trial['reviewer'].strip() or any(decision[k] is None or not isinstance(reasons[k], str) or not reasons[k].strip() for k in required)
+        healthy = response.get('status') == 'ok' and not trial['error_code'] and trial['request_id'] not in invalid
+        changed = text is not None and text != case['bad']
+        failures = []
+        if trial['request_id'] in invalid: failures.append('response_integrity')
+        if healthy:
+            protected = snapshot.languages['ja'].protected_terms + (tuple(case['protected_terms']) if plan['mode'] == 'fixture' else ())
+            ratio = {k: plan['config']['length_ratio.' + k] for k in ('min', 'max')}
+            if legacy.preservation.check(case['bad'], text, protected, ratio, 'text' if case['format'] == 'html' else case['format']).failed or (case['format'] == 'html' and not legacy.html.same_structure(case['bad'], text)): failures.append('preservation')
+        counts = dict(planned=1, problem=int(problem), natural=int(not problem), pending=int(pending),
+            meaning_violations=int(decision['b'] is False), unnecessary_changes=int(decision['c'] is False),
+            natural_changes=int(not problem and changed), natural_failures=int(not problem and (not healthy or changed or bool(block.get('flag')) or decision['d'] is False)),
+            errors=int(bool(trial['error_code']) or response.get('status') != 'ok'), flags=int(bool(block.get('flag'))), integrity=len(failures),
+            detection_misses=int(problem and block.get('detection', {}).get('status') == 'insufficient'),
+            detection_false_positives=int(not problem and block.get('detection', {}).get('status') == 'eligible'),
+            verification_failures=int(block.get('verification', {}).get('status') == 'fail'), verification_indeterminate=int(block.get('verification', {}).get('status') == 'indeterminate'))
+        improved = bool(problem and healthy and changed and not block.get('flag') and not failures and all(decision[k] is True for k in required) and not pending)
+        counts['improved'] = int(improved)
+        key = '/'.join((trial['degree'], 'on' if trial['judgment_enabled'] else 'off', trial['layout']))
+        group = groups.setdefault(key, dict(counts=Counter(), per_example={}, per_repeat={}, request_ids=set()))
+        group['counts'].update(counts); group['request_ids'].add(trial['request_id'])
+        if problem:
+            for field, identity in (('per_example', trial['example_id']), ('per_repeat', str(trial['repeat']))):
+                tally = group[field].setdefault(identity, dict(planned=0, improved=0))
+                tally['planned'] += 1; tally['improved'] += improved
+        failures += [k for k in ('pending', 'meaning_violations', 'unnecessary_changes', 'natural_failures', 'errors', 'flags') if counts[k]]
+        if problem and not improved: failures.append('not_improved')
+        rows.append(dict(request_id=trial['request_id'], example_id=trial['example_id'], decision=decision, reasons=reasons, reviewer=trial['reviewer'], failures=failures))
+    name = plan['sets'][0]['name']
+    thresholds = COMPARISON['acceptance' if name == SETS['acceptance'] else 'existing']
+    for key, group in groups.items():
+        count = group['counts']
+        absolute = not any(count[k] for k in ('meaning_violations', 'unnecessary_changes', 'natural_failures', 'integrity', 'pending'))
+        rates = all(t['improved'] >= thresholds['per_example'] for t in group['per_example'].values()) and all(t['improved'] >= thresholds['per_repeat'] for t in group['per_repeat'].values())
+        group['criteria_met'] = absolute and (rates if name == SETS['acceptance'] or name == SETS['existing'] and key.startswith('rewrite/') else True)
+        group['reasons'] = [k for k in ('meaning_violations', 'unnecessary_changes', 'natural_failures', 'integrity', 'pending') if count[k]]
+        if not group['criteria_met'] and not group['reasons']: group['reasons'].append('problem_rates')
+        group['problem_rate'] = count['improved'] / count['problem'] if count['problem'] else None
+        measured = [observations[i] for i in sorted(group.pop('request_ids'))]
+        group.update(requests=len(measured), latency_ms=sum(r['latency_ms'] for r in measured))
+        costs = [r['full_response'].get('cost') if r['full_response'] else None for r in measured]
+        group['cost'] = (dict(amount=format(sum(Decimal(c['amount']) for c in costs), 'f'), currency=costs[0]['currency'])
+            if costs and all(c is not None for c in costs) and len({c['currency'] for c in costs}) == 1 else None)
+    comparison, gains = {}, 0
+    for key in groups:
+        if '/on/' not in key: continue
+        on, off = groups[key]['counts'], groups[key.replace('/on/', '/off/')]['counts']
+        comparison[key] = dict(non_regression=all(on[k] <= off[k] for k in ('meaning_violations', 'unnecessary_changes', 'natural_changes')) and on['improved'] >= off['improved'],
+            delta={k: on[k] - off[k] for k in ('meaning_violations', 'unnecessary_changes', 'natural_changes', 'improved')})
+        gains += max(0, off['natural_changes'] - on['natural_changes']) + max(0, off['unnecessary_changes'] - on['unnecessary_changes']) + max(0, on['improved'] - off['improved'])
+    complete = not any(g['counts']['pending'] or g['counts']['integrity'] for g in groups.values())
+    legacy_met = groups.get('rewrite/off/text', {}).get('criteria_met') if name == SETS['existing'] else None
+    eligible = name in (SETS['acceptance'], SETS['existing'])
+    passed = complete and eligible and all(groups[k]['criteria_met'] and v['non_regression'] for k, v in comparison.items()) and legacy_met is not False
+    reason = 'unreviewed_or_invalid' if not complete else 'not_acceptance_population' if not eligible else 'criteria_failed' if not passed else 'no_added_value' if name == SETS['acceptance'] and gains < COMPARISON['required_gain'] else 'criteria_met'
+    return dict(set=name, groups=groups, comparison=comparison, judgments=rows, complete=complete, added_value=gains,
+                legacy_criteria_met=legacy_met, status=reason, criteria_met=reason == 'criteria_met', quality_accepted=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('plan', 'run', 'check'))
+    parser.add_argument('operation', choices=('plan', 'run', 'check', 'report'))
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--artifact', type=Path, default=Path('judgment-evaluation.json'))
     parser.add_argument('--revision', type=int, default=1)
@@ -248,6 +356,15 @@ def main():
     plan = json.loads(args.plan.read_text())
     if args.mode != plan['mode']: parser.error('Mode must match frozen plan; live requires --mode live')
     if args.operation == 'run': asyncio.run(run(plan, args.artifact))
+    elif args.operation == 'report':
+        artifact = json.loads(args.artifact.read_text())
+        try: result = summarize(plan, artifact)
+        except (ValueError, TypeError, KeyError):
+            result = dict(status='invalid_artifact', criteria_met=False, quality_accepted=False)
+        artifact['summary'] = result; legacy.save(args.artifact, artifact)
+        args.artifact.with_suffix('.md').write_text('# Judgment comparison\n\n' + json.dumps(result, ensure_ascii=False, indent=2) + '\n')
+        print(result['status'])
+        if not result['criteria_met']: raise SystemExit(1)
     else: print(len(audit(plan, json.loads(args.artifact.read_text()))), 'request observations; quality unreviewed')
 
 
