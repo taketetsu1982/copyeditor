@@ -88,14 +88,14 @@ JUDGMENT_MODULES = {
 
 # Evaluation ownership is separate from the nineteen runtime consumers.
 EVALUATION_MODULES = {
-    'tests/unit/test_judgment_examples.py': (54, '3203c5db072f35122a1069180e7a98776ee969660783458cf1ff1206bd213059'),
-    'tests/unit/test_judgment_evaluation.py': (66, 'c41518788b63afdbe359f64ce80b735ca64c2513bcc032b0c2db7f409b9af504'),
+    'tests/unit/test_judgment_examples.py': (74, '1d8157667b83bb749ca4608f2bc664f631643aee38849246efd2ba251c12a400'),
+    'tests/unit/test_judgment_evaluation.py': (66, '4a8d6b78c69b6833578b73707f22846fcdc9c601b71d966e83a7cb8697ff298f'),
     'tests/unit/test_judgment_calibration.py': (55, '011a3eb09b7fec887b72747d4ccae18f4956d3b4b1a9db769ba9f8d94f4f6265'),
-    'tests/integration/test_judgment_acceptance.py': (57, '48e310b8ecb5329973968bdd4a8afd20d3cd92d8c55a7912490930a578044745'),
+    'tests/integration/test_judgment_acceptance.py': (57, '079043469eadf2528ba72da1bcfedead0bd89390e263833547c998b15f027018'),
 }
 EVALUATION_SETS = {
     'judgment-calibration': (30, '5f4a4457e136f1a983fff068c8eedfea214c25c5bd4fe388f911cab3a19483d6'),
-    'judgment-acceptance': (20, 'b1d93ca0451dd35c491d44acf03c2ec9b4c94e2fd30ae90e9e25d500aed181ec'),
+    'judgment-acceptance': (40, '843bf2766b25976095174f4b1132daffd07183889e4cefe6e12bb8302114d50a'),
     'rewrite': (24, '248f782d0ee57fc1b137350c4e2dff5a6cda53aad3689a4851d3ae5b99f94617'),
 }
 US08_OWNER_EVIDENCE = {

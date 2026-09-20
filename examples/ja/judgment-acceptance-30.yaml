@@ -1,0 +1,10 @@
+id: "judgment-acceptance-30"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "markdown"
+bad: "## 離れた人と編み物\n画面越しに手元を見せ合う編み物の会です。いかがでしたか。一緒に編む時間を大切にしましょう。"
+good: "## 離れた人と編み物\n画面越しに手元を見せ合い、一緒に編み物を楽しむ会です。"
+reason: "Formulaic ending: a blog sign-off and closing lesson repeat the invitation to knit together."
+lint: null
+must_change: true

@@ -1,0 +1,10 @@
+id: "judgment-acceptance-21"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "家族で夕飯を選ぶ献立対話に使える料理カードです。"
+good: "家族で夕飯を選ぶ献立の相談に使える料理カードです。"
+reason: "Coined vocabulary: the menu-dialogue compound alone makes a plain description stiff; retain choosing dinner together."
+lint: null
+must_change: true

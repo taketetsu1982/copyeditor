@@ -3,8 +3,8 @@ language: "ja"
 section: "vocabulary"
 degree: "polish"
 format: "markdown"
-bad: "## 毎月のピアノ楽譜\n知らなかった作曲家の小品が毎月届く。短い曲との出会いの積み重ねが、選曲の幅の広がりを支える。"
+bad: "## 毎月のピアノ楽譜\n知らなかった作曲家の小品が毎月届く。短い曲との出会いを通じて、選曲の可能性を深掘りし、レパートリーの解像度を上げる。"
 good: "## 毎月のピアノ楽譜\n知らなかった作曲家の小品が毎月届く。短い曲に出会うたび、選べる曲の幅が広がる。"
-reason: "Abstraction: replace stacked nominal descriptions with a direct account of discovering repertoire; retain plain register."
+reason: "Abstraction: deep exploration and increased resolution obscure the simple expansion of repertoire; preserve the heading and plain register."
 lint: null
 must_change: true

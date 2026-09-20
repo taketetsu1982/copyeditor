@@ -25,10 +25,10 @@ RISK = dict(version='edit-risk-probe-v2', high_boundary=0.80, max_calls=600,
             input_budget=38400000, timeout_seconds=10,
             question='Would attempting the selected editing action be more likely to lose important meaning, nuance or appropriate register than to improve this text?')
 
-COMPARISON = dict(acceptance=dict(problem=15, natural=5, per_example=4, per_repeat=12),
+COMPARISON = dict(acceptance=dict(problem=30, natural=10, per_example=4, per_repeat=24),
                   existing=dict(problem=18, natural=6, per_example=4, per_repeat=15), repeats=5, required_gain=1)
 
-SETS = dict(calibration="calibration-v3", acceptance="judgment-acceptance-v2", existing="existing-rewrite-v1", regression="packing-regression-v1")
+SETS = dict(calibration="calibration-v3", acceptance="judgment-acceptance-v3", existing="existing-rewrite-v1", regression="packing-regression-v1")
 
 
 def encoded(value):
@@ -38,7 +38,7 @@ def encoded(value):
 def population(name):
     name = next((k for k, v in SETS.items() if v == name), name)
     cases = {c['id']: c for c in load_examples(legacy.ROOT / 'examples', load_rules(legacy.ROOT / 'rules', None)) if c['language'] == 'ja'}
-    prefix, count = {'calibration': ('judgment-calibration', 30), 'acceptance': ('judgment-acceptance', 20), 'existing': ('rewrite', 24)}.get(name, ('', 0))
+    prefix, count = {'calibration': ('judgment-calibration', 30), 'acceptance': ('judgment-acceptance', 40), 'existing': ('rewrite', 24)}.get(name, ('', 0))
     if name == 'regression':
         return [dict(cases['judgment-calibration-01'], id=f'packing-{i}', bad=str(i) + 'あ' * 2390, good=str(i) + 'あ' * 2390, must_change=True) for i in range(1, 6)]
     return [cases[f'{prefix}-{i:02}'] for i in range(1, count + 1)]

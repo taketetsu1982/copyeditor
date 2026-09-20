@@ -3,7 +3,7 @@ language: "ja"
 section: "structure"
 degree: "polish"
 format: "markdown"
-bad: "## 雨の日の移動に\n風のある日には、しなる骨が役立ちます。暗い道では、縁の反射材が役立ちます。電車に乗るときには、閉じた傘を留めるひもが役立ちます。"
+bad: "## 雨の日の移動に\n風のある日には、しなる骨が役立ちます。また、暗い道では、縁の反射材が役立ちます。さらに、電車では、閉じた傘を留めるひもが役立ちます。"
 good: "## 雨の日の移動に\n風にしなる骨と、暗い道で役立つ縁の反射材を備えた傘です。電車に乗るときは、ひもで閉じた傘を留められます。"
 reason: "Mechanical repetition: vary the repeated usefulness frame while retaining each feature and its use situation."
 lint: null

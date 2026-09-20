@@ -21,11 +21,11 @@ def test_ac_08_13_14_fixed_evaluation_modules_and_populations(collected_contract
         'tests/unit/test_judgment_examples.py', 'tests/unit/test_judgment_evaluation.py',
         'tests/unit/test_judgment_calibration.py', 'tests/integration/test_judgment_acceptance.py'}
     assert {k: v[0] for k, v in EVALUATION_SETS.items()} == {
-        'judgment-calibration': 30, 'judgment-acceptance': 20, 'rewrite': 24}
+        'judgment-calibration': 30, 'judgment-acceptance': 40, 'rewrite': 24}
     assert len(evaluation_inventory(ROOT)) == 4
     for module, expected in EVALUATION_MODULES.items():
         assert judgment_fingerprint(ROOT, module, collected_contracts.items) == expected
-    for name, size in [('calibration', 1200), ('acceptance', 400), ('existing', 480), ('regression', 200)]:
+    for name, size in [('calibration', 1200), ('acceptance', 800), ('existing', 480), ('regression', 200)]:
         plan = evaluation.freeze(1, name=name)
         assert len(plan['planned_trials']) == size
         assert {t['degree'] for t in plan['planned_trials']} == {'polish', 'rewrite'}
