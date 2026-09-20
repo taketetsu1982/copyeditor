@@ -6,7 +6,7 @@ from .lint import lint_response
 from .prompt import system_instruction
 from .providers.base import GenerationInput, ProviderFailure
 from .requests import ValidationError
-from .responses import parse_generation
+from .responses import preservation_payload, parse_generation
 from .rewrite_budget import RewriteBudget, RewriteFailure
 from .rewrite_response import BUDGET_MESSAGE, validate_rewrite_final
 
@@ -95,7 +95,7 @@ async def rewrite(request, config, snapshot, provider_factory, meter, *, items_r
             budget.checkpoint(validation_error="output_limit")
         for item in items:
             item.update(lint_response(item["text"], rules))
-        result = dict(status="ok", protected_terms_checked=len(terms), preservation={"length_ratio": ratio})
+        result = dict(status="ok", protected_terms_checked=len(terms), preservation=preservation_payload(ratio))
         if items_route:
             result["items"] = items
         else:
