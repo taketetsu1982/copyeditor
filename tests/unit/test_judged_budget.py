@@ -1,3 +1,5 @@
+"""AC-08-12: finite phase admission, calls, token/money reservations and deadlines.
+Observe refusal, cancellation and exact budget boundaries, not live latency."""
 import asyncio
 
 import pytest

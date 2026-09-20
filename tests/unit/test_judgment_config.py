@@ -1,3 +1,6 @@
+"""Configuration and credential observations (partial AC evidence).
+AC-08-1, AC-08-7: disabled secret isolation and explicit startup failures.
+AC-08-12, AC-08-14: bounded configuration and rejection of obsolete registry IDs."""
 import json
 
 import pytest

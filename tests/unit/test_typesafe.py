@@ -1,3 +1,7 @@
+"""TypeSafe adapter observations with mock HTTP transport.
+AC-08-7, AC-08-9: invalid/error responses fail without private details in logs.
+AC-08-8: exact prepared payload; AC-08-10: unknown usage stays unknown.
+AC-08-12: one attempt, bounded response/deadline and cancellation without retry."""
 import asyncio
 import json
 from types import SimpleNamespace

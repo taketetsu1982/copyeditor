@@ -1,4 +1,8 @@
-"""Public tool fixtures establish control behavior, not live model quality."""
+"""Public tool fixtures establish control behavior, not live model quality.
+AC-08-1, AC-08-2, AC-08-3: disabled compatibility and gated non-changes.
+AC-08-4, AC-08-5: per-axis verification and rejection without regeneration.
+AC-08-7, AC-08-9, AC-08-12: whole-request errors, private logs and cancellation.
+AC-08-16: text/items and protected HTML behavior."""
 import json
 
 import pytest

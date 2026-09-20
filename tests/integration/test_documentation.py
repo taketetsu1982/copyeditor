@@ -1,3 +1,7 @@
+"""Static bilingual guidance observations, not live/client acceptance.
+AC-08-1: disabled-mode requirements; AC-08-6: no adoption or meaning guarantee.
+AC-08-11, AC-08-18: additional destination and direct-MCP consent limits.
+AC-08-17: documented discovery, permission scope and reporting."""
 import re
 from pathlib import Path
 

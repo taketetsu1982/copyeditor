@@ -1,4 +1,7 @@
-"""Static instruction consistency, not proof of real client compliance."""
+"""Static instruction consistency, not proof of real client compliance.
+AC-08-1, AC-08-3: disabled procedure and distinct non-change reports.
+AC-08-5, AC-08-6: no verification regeneration or substitute for human comparison.
+AC-08-10, AC-08-17, AC-08-18: accounting, per-request permission and consent limits."""
 import re
 import sys
 from pathlib import Path

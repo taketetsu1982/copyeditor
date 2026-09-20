@@ -1,3 +1,7 @@
+"""Polish orchestration observations with fake providers.
+AC-08-2, AC-08-3: gated targets and successful unchanged/not-run originals.
+AC-08-4, AC-08-5: per-item verification and final-candidate-only retries.
+AC-08-7, AC-08-12, AC-08-16: no partial failure results, cancellation and HTML/items."""
 import asyncio
 import json
 from pathlib import Path

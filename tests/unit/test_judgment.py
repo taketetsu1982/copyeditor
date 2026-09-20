@@ -1,3 +1,7 @@
+"""Pure classification and versioned-definition observations.
+AC-08-2, AC-08-3: gate/action boundaries and absence of detection indeterminacy.
+AC-08-4, AC-08-5, AC-08-7: comparative verification, aggregation and invalid values.
+AC-08-14: immutable definitions and hashes covering semantic components."""
 import hashlib
 import json
 import math

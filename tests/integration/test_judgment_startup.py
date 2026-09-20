@@ -1,3 +1,7 @@
+"""Startup/public-call observations with fake providers.
+AC-08-1, AC-08-7: disabled secret isolation and fail-closed startup.
+AC-08-5, AC-08-9, AC-08-10: rejected counts, audit privacy and provider calls.
+AC-08-11, AC-08-18: startup/tool/initialization disclosure, not client consent."""
 import json
 import logging
 from pathlib import Path
