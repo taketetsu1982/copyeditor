@@ -1,0 +1,10 @@
+id: "judgment-calibration-13"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "重さ180gの単焦点レンズです。散歩の途中で目に留まったものを、気負わず撮れる軽さを目指しました。ズーム機能はありません。"
+good: "重さ180gの単焦点レンズです。散歩の途中で目に留まったものを、気負わず撮れる軽さを目指しました。ズーム機能はありません。"
+reason: "Retain the prime-lens term and the understated intended experience; an abstract benefit is not itself an editing problem."
+lint: null
+must_change: false

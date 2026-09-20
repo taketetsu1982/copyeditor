@@ -1,0 +1,10 @@
+id: "judgment-calibration-11"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外すことで、手提げとしてもお使いいただけるようになっています。"
+good: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外せば、手提げとしても使えます。"
+reason: "Roundabout wording: retain the natural opening and remove only the indirect capability ending in otherwise restrained product copy."
+lint: null
+must_change: true

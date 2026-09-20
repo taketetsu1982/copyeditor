@@ -1,0 +1,10 @@
+id: "judgment-calibration-01"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この本棚は、棚板の高さの調整に対応しています。大きさの異なる本の収納が可能です。"
+good: "棚板の高さを調整できる本棚です。大きさの異なる本を収納できます。"
+reason: "Stiffness: ordinary product facts acquire a mildly bureaucratic tone through nominal adjustment and storage capability."
+lint: null
+must_change: true

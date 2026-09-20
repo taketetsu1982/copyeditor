@@ -1,0 +1,10 @@
+id: "judgment-calibration-12"
+language: "ja"
+section: "structure"
+degree: "polish"
+format: "text"
+bad: "豆を一晩水につけます。続いて行う作業は、水を捨てる作業です。続いて行う作業は、新しい水で豆を煮る作業です。"
+good: "豆を一晩水につけます。続いて水を捨て、新しい水で豆を煮ます。"
+reason: "Mechanical repetition: remove the repeated task-introduction frame while keeping the ordered actions."
+lint: null
+must_change: true

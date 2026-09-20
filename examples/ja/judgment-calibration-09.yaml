@@ -1,0 +1,10 @@
+id: "judgment-calibration-09"
+language: "ja"
+section: "structure"
+degree: "polish"
+format: "text"
+bad: "このマグは、重ねてしまえる形です。このマグは、食卓にそのまま出せる落ち着いた色です。このマグは、食洗機でも洗えます。"
+good: "重ねてしまえる形のマグです。食卓にそのまま出せる落ち着いた色で、食洗機でも洗えます。"
+reason: "Mechanical repetition: repeated product naming adds no contrast between the three useful features."
+lint: null
+must_change: true

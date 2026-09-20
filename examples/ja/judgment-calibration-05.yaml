@@ -1,0 +1,10 @@
+id: "judgment-calibration-05"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "酵母を加える前に、麦汁を20度まで冷ましてください。温度が高いままだと、酵母が弱ってしまいます。"
+good: "酵母を加える前に、麦汁を20度まで冷ましてください。温度が高いままだと、酵母が弱ってしまいます。"
+reason: "Retain the brewing terms and the repeated yeast reference: one names the ingredient and the other explains the risk."
+lint: null
+must_change: false

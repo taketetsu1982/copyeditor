@@ -1,0 +1,10 @@
+id: "judgment-calibration-04"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "雨量計の電池が切れている場合には、測定を始める前に交換していただく必要があるということになります。"
+good: "雨量計の電池が切れている場合は、測定を始める前に交換する必要があります。"
+reason: "Roundabout wording: remove the indirect conclusion around a necessary action."
+lint: null
+must_change: true

@@ -1,0 +1,10 @@
+id: "judgment-calibration-03"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "使う人に寄り添った道具選びで、掃除の時間をもっと心地よいものにします。"
+good: "掃除が気持ちよくできるよう、使う人に合った道具を選びます。"
+reason: "Generic wording: replace the stock empathy metaphor with the stated fit between tools and users."
+lint: null
+must_change: true
