@@ -1,3 +1,7 @@
+"""Response-schema observations, not live quality acceptance.
+AC-08-1: legacy schema isolation; AC-08-3: not-run nulls.
+AC-08-4, AC-08-5, AC-08-7: verification fields, rejection flags and invalid shapes.
+AC-08-10, AC-08-14, AC-08-16: nullable accounting, version fields and route shapes."""
 from copy import deepcopy
 
 import pytest

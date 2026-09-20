@@ -1,3 +1,8 @@
+"""Final-response contract observations (partial AC evidence).
+AC-08-2, AC-08-3: gate outcomes and non-editing distinctions.
+AC-08-4, AC-08-5: verification checks, rejection and original restoration.
+AC-08-7, AC-08-10: invalid results and model-call accounting.
+AC-08-14, AC-08-16: registry hashes and text/items/HTML consistency."""
 from copy import deepcopy
 
 import pytest

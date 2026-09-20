@@ -1,3 +1,6 @@
+"""Transport regression observations (partial AC evidence).
+AC-08-1: disabled v1/v2 behavior; AC-08-7: enabled failures remain v3 errors.
+AC-08-9, AC-08-10: private audit fields and error-side model-call accounting."""
 import json
 import logging
 from pathlib import Path

@@ -1,3 +1,7 @@
+"""Prepared-request observations; no provider quality claim.
+AC-08-4: comparative verify questions; AC-08-8: allowed state and request isolation.
+AC-08-12: deterministic bounded packing; AC-08-14: versioned questions/references.
+AC-08-16: original ordinals and whole HTML in the state."""
 import json
 
 import pytest

@@ -1,3 +1,5 @@
+"""AC-08-10: separate provider calls, usage, cost and duration, including failures.
+AC-08-12: call ceilings and regeneration accounting remain independent."""
 import asyncio
 from types import SimpleNamespace
 

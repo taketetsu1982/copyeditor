@@ -1,4 +1,7 @@
-"""Fake-provider route acceptance; not live or native-language quality evidence."""
+"""Fake-provider route acceptance; not live or native-language quality evidence.
+AC-08-1: off-mode compatibility; AC-08-7, AC-08-9: errors and private logs.
+AC-08-12: sending stops after failure.
+AC-08-15, AC-08-16: ja/en/zh and text/items/markdown/HTML route matrix."""
 import asyncio
 import json
 import logging

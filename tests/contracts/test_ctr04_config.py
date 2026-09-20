@@ -1,3 +1,6 @@
+"""Configuration contract observations (partial AC evidence).
+AC-08-1: disabled defaults; AC-08-7: invalid judgment configuration rejection.
+AC-08-12: configured call/deadline/input bounds; AC-08-14: registered version IDs."""
 import json
 from pathlib import Path
 import pytest

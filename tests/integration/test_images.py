@@ -1,3 +1,6 @@
+"""Deployment image and secret-isolation support tests.
+No direct US-08 judgment-behavior AC is claimed: the Jev marker checks secret
+packaging/log isolation, not submitted bodies or judgment results."""
 import json
 import io
 import os

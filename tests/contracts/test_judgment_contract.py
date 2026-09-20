@@ -1,3 +1,7 @@
+"""Published contract and disabled-path observations (partial AC evidence).
+AC-08-1: legacy contracts/discovery and no disabled secret lookup.
+AC-08-2: public gate/action rules; AC-08-7: declared credential errors.
+AC-08-10: model-called table; AC-08-14: registered model/policy/threshold IDs."""
 import hashlib
 import re
 from collections.abc import Mapping

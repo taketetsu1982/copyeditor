@@ -1,3 +1,7 @@
+"""Rewrite orchestration observations with fake providers.
+AC-08-2, AC-08-3: only eligible issues are edited; exempt originals stay distinct.
+AC-08-4, AC-08-5: final-candidate verification and no rejection regeneration.
+AC-08-7, AC-08-12, AC-08-16: whole-request failure, bounded batches and HTML/items."""
 import json
 from pathlib import Path
 from types import SimpleNamespace
