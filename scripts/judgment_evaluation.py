@@ -3,14 +3,24 @@ import argparse
 import asyncio
 from collections import Counter
 from datetime import datetime, timezone
+from decimal import Decimal
 import json
 from pathlib import Path
 from time import monotonic
 import benchmark_provider as adapter
 import rewrite_evaluation as legacy
 from copyeditor.judgment import POLICIES, THRESHOLDS, REFERENCES, definition_hash, _json_value
+from copyeditor.judgment import JudgmentInput, JudgmentBlock, JudgmentFailure
+from copyeditor.judgment_batch import prepare_judgments
+from copyeditor.providers.base import Background
+from copyeditor.providers.typesafe import TypeSafe
+from copyeditor.metrics import Metrics
 from copyeditor.rules import load_rules
 from examples_to_promptfoo import load_examples
+
+RISK = dict(version='edit-risk-probe-v2', high_boundary=0.80, max_calls=300,
+            input_budget=19200000, timeout_seconds=10,
+            question='Would attempting the selected editing action be more likely to lose important meaning, nuance or appropriate register than to improve this text?')
 
 SETS = dict(calibration="calibration-v2", acceptance="judgment-acceptance-v2", existing="existing-rewrite-v1", regression="packing-regression-v1")
 
@@ -60,7 +70,7 @@ def freeze(revision, mode='fixture', name='calibration', created_at=None):
         created_at=created_at, sets=[dict(name=SETS[name], role='calibration' if name == 'calibration' else 'regression' if name == 'regression' else 'acceptance', cases=entries, repeats=5)],
         conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, quality_accepted=False, human_review='required'),
         planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=600, requests=360) if name == 'calibration' else None,
-        references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'], risk_probe=None,
+        references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'], risk_probe=RISK if name == 'calibration' else None,
         config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
 
 
@@ -118,7 +128,111 @@ async def run(plan, output, runner=adapter.compare_request):
         legacy.save(output, artifact)
         if cancelled: raise asyncio.CancelledError
     audit(plan, artifact)
+    await probe(plan, artifact, output)
     return artifact
+
+
+def risk_payloads(plan, request, trials):
+    cases = {c['id']: c for c in population(request['set'])}
+    first = cases[request['ids'][0]]
+    background = Background(*(first['background'].get(k, '') for k in Background._fields))
+    data = JudgmentInput('detect', 'ja', first['format'], background, background.tone,
+                         tuple(JudgmentBlock(i, cases[key]['bad'], '', None, None) for i, key in enumerate(request['ids'], 1)))
+    policy = POLICIES[plan['config']['judgment.policy_version']]
+    prepared = prepare_judgments(data, policy_id=plan['config']['judgment.policy_version'])
+    expected = dict(version=prepared.plan.version, phase='detect', batches=[b._asdict() for b in prepared.plan.batches])
+    if encoded(expected) not in [encoded(p) for p in trials[0]['batch_plans']]: raise ValueError('Detection batch mismatch')
+    by_id = {t['example_id']: t for t in trials}
+    for index, (wire, batch) in enumerate(zip(prepared.requests, prepared.plan.batches)):
+        payload, targets = json.loads(wire), {}
+        for ordinal in batch.ordinals:
+            trial = by_id[request['ids'][ordinal - 1]]
+            if trial['calibration']['risk_not_run_reason'] != 'pending': continue
+            action = trial['calibration']['effective_action']
+            block_id = f'b{ordinal:04}'
+            targets[block_id + '.edit_risk'] = (trial, dict(type='noul', instructions=policy['instruction_separator'].join([
+                policy['prefix'], policy['formats'][first['format']], policy['targets']['detect'].format(block_id=block_id),
+                RISK['question'], action, policy['action_instructions'][action]])))
+        if targets:
+            payload['questions'] = {key: value[1] for key, value in targets.items()}
+            yield index, payload, {int(key[1:5]): value[0] for key, value in targets.items()}
+
+
+async def risk_call(plan, wire):
+    import httpx
+    _, _, secret = adapter.comparison_environment(population('calibration')[0], plan['mode'], True)
+    def reply(request):
+        questions = json.loads(request.content)['questions']
+        return httpx.Response(200, json=dict(model='jev-1.13.0', answers={k: dict(type='noul', noul=.85) for k in questions},
+                                             usage=dict(input_tokens=0, output_tokens=0)))
+    client = TypeSafe(secret, transport=httpx.MockTransport(reply) if plan['mode'] == 'fixture' else None)
+    try:
+        return await client.evaluate(wire, remaining_seconds=RISK['timeout_seconds'])
+    finally:
+        await client.aclose()
+
+
+async def probe(plan, artifact, output, caller=risk_call):
+    audit(plan, artifact)  # Probes cannot precede any planned production request.
+    if plan['risk_probe'] is None: return
+    if 'risk_measurements' in artifact: raise ValueError('Probe already attempted')
+    artifact['risk_complete'], artifact['run_cost'] = False, None
+    measurements = artifact['risk_measurements'] = {}
+    calls, units = 0, 0
+    for trial in artifact['trials']:
+        calibration = trial['calibration']
+        if calibration is None: continue
+        request = next(r for r in plan['request_layouts'] if r['request_id'] == trial['request_id'])
+        response = trial['full_response'] or {}
+        block = next((b for b in response.get('items', []) if b['id'] == f"b{request['ids'].index(trial['example_id']) + 1:04}"), response)
+        detection = block.get('detection', {})
+        calibration['risk_not_run_reason'] = ('production_error' if trial['error_code'] else 'missing_detection' if not detection
+            else 'not_eligible' if detection.get('status') != 'eligible' else 'pending')
+    legacy.save(output, artifact)
+    for request in plan['request_layouts']:
+        trials = [t for t in artifact['trials'] if t['request_id'] == request['request_id'] and t['calibration'] is not None]
+        pending = [t for t in trials if t['calibration']['risk_not_run_reason'] == 'pending']
+        if not pending: continue
+        try:
+            payloads = list(risk_payloads(plan, request, trials))
+        except Exception:
+            for t in pending: t['calibration'].update(risk_error='probe_input_error', risk_not_run_reason='input_mismatch')
+            legacy.save(output, artifact)
+            continue
+        for index, payload, targets in payloads:
+            wire = encoded(payload).encode()
+            reserved = len(wire) + 4096
+            largest = len(encoded(payload['state']).encode()) + max(len(encoded(q).encode()) for q in payload['questions'].values()) + 4096
+            if reserved > 64000 or largest > 32000 or calls >= min(300, plan['risk_probe']['max_calls']) or units + reserved > plan['risk_probe']['input_budget']:
+                for t in targets.values(): t['calibration']['risk_not_run_reason'] = 'request_budget'
+                continue
+            calls += 1; units += reserved
+            identity = request['request_id'] + f'-risk-{index}'
+            meter = Metrics(monotonic(), 'jev-1.13.0', plan['config']['judgment.pricing'])
+            slot = meter.start_call(is_regeneration=False)
+            error, values, cancelled = None, {}, False
+            try:
+                async with asyncio.timeout(plan['risk_probe']['timeout_seconds']): result = await caller(plan, wire)
+                meter.record_usage(slot, result.usage)
+                if isinstance(result, JudgmentFailure) or result.model != 'jev-1.13.0': raise ValueError('Probe failed')
+                values = {b.ordinal: dict(b.probabilities)['edit_risk'] for b in result.blocks}
+                if set(values) != set(targets) or any(type(p) not in (float, int) or not 0 <= p <= 1 for p in values.values()): raise ValueError('Invalid probe')
+            except (Exception, asyncio.CancelledError) as failure:
+                cancelled = isinstance(failure, asyncio.CancelledError)
+                error = 'probe_cancelled' if cancelled else 'probe_timeout' if isinstance(failure, TimeoutError) else 'probe_error'
+            measurement = dict(meter.snapshot(), request_id=request['request_id'], batch_index=index, payload_hash=legacy.digest(wire), input_units=reserved)
+            measurements[identity] = measurement
+            for ordinal, trial in targets.items():
+                trial['calibration'].update(risk_probability=None if error else values[ordinal], risk_error=error,
+                    risk_not_run_reason='probe_failed' if error else None, risk_measurement=identity)
+            legacy.save(output, artifact)
+            if cancelled: raise asyncio.CancelledError
+    artifact['risk_complete'] = all(t['calibration'] is None or t['calibration']['risk_not_run_reason'] in (None, 'not_eligible') for t in artifact['trials'])
+    costs = [r['full_response'].get('cost') if r['full_response'] else None for r in audit(plan, artifact).values()]
+    costs += [m['cost'] for m in measurements.values()]
+    artifact['run_cost'] = (dict(amount=format(sum(Decimal(c['amount']) for c in costs), 'f'), currency=costs[0]['currency'])
+        if costs and all(c is not None for c in costs) and len({c['currency'] for c in costs}) == 1 else None)
+    legacy.save(output, artifact)
 
 
 def main():
