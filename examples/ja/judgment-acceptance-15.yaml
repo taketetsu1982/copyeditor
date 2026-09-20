@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "天然石のペーパーウェイトです。掲載写真は一例で、同じ模様の石をお届けするお約束はできません。とはいえ、写真と模様が違う場合もあることを意識しましょう。"
+bad: "天然石のペーパーウェイトです。掲載写真は一例であり、同じ模様の石をお届けするお約束はできないという点に留意する必要があります。"
 good: "天然石のペーパーウェイトです。掲載写真は一例で、同じ模様の石をお届けするお約束はできません。"
-reason: "Caveat trap: shorten the disclaimer but keep the photograph illustrative and the absence of a matching-pattern promise."
+reason: "Caveat trap / Roundabout wording: simplify the nominal caution without removing the lack of a promise about matching patterns."
 lint: null
 must_change: true

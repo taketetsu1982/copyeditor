@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "家族で夕飯を選ぶ献立対話に使える料理カードです。"
-good: "家族で夕飯を選ぶ献立の相談に使える料理カードです。"
-reason: "Coined vocabulary: the menu-dialogue compound alone makes a plain description stiff; retain choosing dinner together."
+bad: "この手品セットには、練習の正典になる実演動画が付いています。"
+good: "この手品セットには、練習のお手本になる実演動画が付いています。"
+reason: "Stiff existing vocabulary: replace the misplaced word for a canon with the everyday word for a model to follow; keep the magic set and demonstration video for practice."
 lint: null
 must_change: true
