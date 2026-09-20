@@ -33,6 +33,14 @@ CASES = [
     ("pricing", {"m": {"currency": "USD", "input_per_million": 0, "output_per_million": 1000000}}, [{"m": {}}, *[{"m": {"currency": "USD", "input_per_million": p, "output_per_million": 1}} for p in (-1, 1000001, 0.0000001, True)], {"m": {"currency": "usd", "input_per_million": 0, "output_per_million": 1}}]),
     ("server.host", "::1", ["example.com", 1, "999.1.1.1"]),
     ("server.port", 65535, [0, 65536, True, 1.5]),
+    ("judgment.enabled", False, [None, 1, "yes"]),
+    ("judgment.model", "jev-1.13.0", ["jev-latest", "jev-preview", None]),
+    ("judgment.policy_version", "reference-gate-action-v1", ["unknown", None]),
+    ("judgment.thresholds_version", "gate-floor-v1", ["unknown", None]),
+    *[("judgment." + key, maximum, [0, maximum + 1, True, 1.5]) for key, maximum in
+      (("timeout_ms", 60000), ("polish_deadline_ms", 120000), ("rewrite_deadline_ms", 240000),
+       ("max_calls", 64), ("input_budget", 262144))],
+    ("judgment.pricing", {}, [{"jev-1.13.0": {}}, None]),
 ]
 
 def write_config(tmp_path, name, value):

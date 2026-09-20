@@ -27,3 +27,17 @@ server:
 #   allowed_domains: ${COPYEDITOR_ALLOWED_DOMAINS}
 #   allowed_emails: ${COPYEDITOR_ALLOWED_EMAILS}
 # Supply GOOGLE_OAUTH_CLIENT_SECRET and OAUTH_SIGNING_KEY at runtime.
+
+# Optional judgment sends permitted input and candidates to TypeSafe AI.
+# Supply TYPESAFE_API_KEY through the runtime secret environment, never this file.
+judgment:
+  enabled: false
+  model: jev-1.13.0
+  policy_version: reference-gate-action-v1
+  thresholds_version: gate-floor-v1
+  timeout_ms: 10000
+  polish_deadline_ms: 120000
+  rewrite_deadline_ms: 240000
+  max_calls: 64
+  input_budget: 262144
+  pricing: {}

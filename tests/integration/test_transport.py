@@ -68,6 +68,7 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_discovery(setup):
         for tool in tools:
             assert tool.input_schema == edit_input_schema(tool.name, config, snapshot)
             assert tool.output_schema == tool_output_schema(tool.name)
+            if tool.name == "polish_text": assert tool.description == "copyeditor.judgment=off; destinations=Vertex AI"
             assert tool.annotations.read_only_hint and tool.annotations.destructive_hint is False
             assert tool.annotations.open_world_hint == (tool.name == "polish_text")
         with pytest.raises(Exception): await client.call_tool("unknown", {"text": MARKER})

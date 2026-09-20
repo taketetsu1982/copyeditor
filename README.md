@@ -27,9 +27,9 @@ Start from [config.example.yaml](config.example.yaml). The only config path is `
 
 The example fixes `auth.mode: none`; change it before using Google authentication. Its other explicit defaults also override environment settings. OAuth secrets are environment-only: `GOOGLE_OAUTH_CLIENT_SECRET` and `OAUTH_SIGNING_KEY` (at least 32 UTF-8 bytes, generated with sufficient entropy). Neither has a config key; secret placeholders are rejected. Supply them through your deployment's secret manager, never Dockerfile `ARG`/`ENV` or committed files.
 
-**Optional judgment: available only after Task 134 connects the public entry points.** The current public configuration does not yet accept these settings. Judgment defaults to off; after integration, enable `judgment.enabled` (or `COPYEDITOR_JUDGMENT_ENABLED=true`) only after reviewing the additional destination. The model is pinned to `jev-1.13.0`, with `reference-gate-action-v1` and `gate-floor-v1`; moving model aliases and unknown registry IDs are rejected. See [judgment settings](contracts/config.md#judgment-fields).
+**Optional judgment.** Judgment defaults to off; enable `judgment.enabled` (or `COPYEDITOR_JUDGMENT_ENABLED=true`) only after reviewing the additional destination. The model is pinned to `jev-1.13.0`, with `reference-gate-action-v1` and `gate-floor-v1`; moving model aliases and unknown registry IDs are rejected. See [judgment settings](contracts/config.md#judgment-fields).
 
-Supply `TYPESAFE_API_KEY` only through the runtime secret environment, never config, placeholders, Docker build arguments, image contents, or committed files. Disabled mode does not read or require this key. After integration, rollback means setting `judgment.enabled=false` (or `COPYEDITOR_JUDGMENT_ENABLED=false` when no explicit config overrides it) and restarting: subsequent requests return to v1/v2 without changing Vertex ADC or OAuth requirements. There is no per-request switch or change to an in-flight request.
+Supply `TYPESAFE_API_KEY` only through the runtime secret environment, never config, placeholders, Docker build arguments, image contents, or committed files. Disabled mode does not read or require this key. Rollback means setting `judgment.enabled=false` (or `COPYEDITOR_JUDGMENT_ENABLED=false` when no explicit config overrides it) and restarting: subsequent requests return to v1/v2 without changing Vertex ADC or OAuth requirements. There is no per-request switch or change to an in-flight request.
 
 ## Local Docker: none
 
@@ -104,7 +104,7 @@ Put a scoped permission statement in your project's `CLAUDE.md` or `AGENTS.md`, 
 
 The server does not persist text, candidates, or diagnoses; provider retention and infrastructure logs remain outside that guarantee, as described below. Both plugin Skills classify submission permission, exclude confidential or protected content, record source locations and related items, compare returned candidates, and apply only authorized local changes. They recheck the original before applying edits and keep related changes together. A client approval refusal ends the attempt; the Skill does not switch routes or relax permissions.
 
-**When judgment is enabled after Task 134**, body, permitted context/background, and candidates may also go to TypeSafe AI. Both degrees return `schema_version=3`; `lint_text` is unchanged. The Skill checks discovery for each request, includes TypeSafe AI in permission and reporting, and treats unknown disclosure as potentially enabled. Vertex-only permission does not cover this additional destination. Startup stderr, initialization instructions and the tool description disclose it, but **direct MCP calls have no guaranteed per-request consent**; operators must inform those users before enabling it.
+**When judgment is enabled**, body, permitted context/background, and candidates may also go to TypeSafe AI. Both degrees return `schema_version=3`; `lint_text` is unchanged. The Skill checks discovery for each request, includes TypeSafe AI in permission and reporting, and treats unknown disclosure as potentially enabled. Vertex-only permission does not cover this additional destination. Startup stderr, initialization instructions and the tool description disclose it, but **direct MCP calls have no guaranteed per-request consent**; operators must inform those users before enabling it.
 
 Judgment is neither adoption permission nor proof that meaning was preserved. A verification pass does not replace the Skill's meaning comparison or the user's approval. Distinguish insufficient grounds for change and checks not run (unchanged originals) from `verification_rejected` (a discarded candidate, original retained); do not describe the candidate's failed checks as defects in the original. Classification and response rules are in [CTR-01](contracts/tools.md#registered-threshold-classification).
 
@@ -196,9 +196,9 @@ Dockerと、課金およびVertex AI APIを有効にしたGoogle Cloudプロジ�
 
 設定例は `auth.mode: none` を固定しているため、Google認証では変更します。他の明示した既定値も環境変数より優先します。OAuthの秘密は環境変数 `GOOGLE_OAUTH_CLIENT_SECRET` と `OAUTH_SIGNING_KEY`（十分な乱数で生成した32 UTF-8 bytes以上）のみから渡します。対応するconfig keyはなく、秘密のplaceholderも拒否します。デプロイ環境のsecret managerを使い、Dockerfileの `ARG` / `ENV` やcommitするファイルには書きません。
 
-**任意の判定: 利用開始は公開入口を接続するTask 134以降です。** 現在の公開設定では、まだこれらの設定を受け付けません。判定は既定でoffです。接続後、追加送信先を確認したうえで `judgment.enabled`（または `COPYEDITOR_JUDGMENT_ENABLED=true`）を有効にします。対応モデルは `jev-1.13.0`、定義は `reference-gate-action-v1` と `gate-floor-v1` に固定し、追従型モデルaliasや未知のregistry IDは拒否します。詳細は[判定設定](contracts/config.md#judgment-fields)を参照してください。
+**任意の判定。** 判定は既定でoffです。追加送信先を確認したうえで `judgment.enabled`（または `COPYEDITOR_JUDGMENT_ENABLED=true`）を有効にします。対応モデルは `jev-1.13.0`、定義は `reference-gate-action-v1` と `gate-floor-v1` に固定し、追従型モデルaliasや未知のregistry IDは拒否します。詳細は[判定設定](contracts/config.md#judgment-fields)を参照してください。
 
-`TYPESAFE_API_KEY` は実行時のsecret環境変数だけから渡し、config、placeholder、Docker build引数、image、commitするファイルには含めません。無効時はこのkeyを参照せず、要求もしません。接続後に元へ戻すには、`judgment.enabled=false`（明示configが優先していなければ `COPYEDITOR_JUDGMENT_ENABLED=false`）にして再起動します。以後の依頼はv1/v2へ戻り、Vertex ADCやOAuthの要件は変わりません。依頼単位の切替や、処理中の依頼への途中適用はありません。
+`TYPESAFE_API_KEY` は実行時のsecret環境変数だけから渡し、config、placeholder、Docker build引数、image、commitするファイルには含めません。無効時はこのkeyを参照せず、要求もしません。元へ戻すには、`judgment.enabled=false`（明示configが優先していなければ `COPYEDITOR_JUDGMENT_ENABLED=false`）にして再起動します。以後の依頼はv1/v2へ戻り、Vertex ADCやOAuthの要件は変わりません。依頼単位の切替や、処理中の依頼への途中適用はありません。
 
 ### ローカルDocker: none
 
@@ -273,7 +273,7 @@ projectの `CLAUDE.md` または `AGENTS.md` に、例えば「校正を依頼�
 
 サーバーは本文・候補・診断を永続保存しません。providerの保持やインフラログはその保証に含まれず、後述の確認が必要です。両pluginのSkillは、送信許可の判定、機密・保護対象の除外、原文位置と関連itemの記録、候補の比較、許可された局所変更の反映を行います。反映前に原文が変わっていないか確認し、関連する変更はまとめて扱います。clientが承認を拒否したら、その試行は終了します。別経路への切り替えや権限の緩和は行いません。
 
-**Task 134以降に判定を有効にすると**、本文・許可されたcontext/背景・候補はTypeSafe AIにも送信される場合があります。両degreeとも `schema_version=3` を返し、`lint_text` は変わりません。Skillは依頼ごとにdiscoveryを確認し、TypeSafe AIを送信許可と報告に含め、不明時も有効の可能性があるものとして扱います。Vertexだけへの許可は追加先を含みません。起動時stderr、初期化の説明、tool定義で開示しますが、**直接MCPを呼ぶ利用者の依頼ごとの同意は保証しません**。運用者は有効化前に利用者へ知らせてください。
+**判定を有効にすると**、本文・許可されたcontext/背景・候補はTypeSafe AIにも送信される場合があります。両degreeとも `schema_version=3` を返し、`lint_text` は変わりません。Skillは依頼ごとにdiscoveryを確認し、TypeSafe AIを送信許可と報告に含め、不明時も有効の可能性があるものとして扱います。Vertexだけへの許可は追加先を含みません。起動時stderr、初期化の説明、tool定義で開示しますが、**直接MCPを呼ぶ利用者の依頼ごとの同意は保証しません**。運用者は有効化前に利用者へ知らせてください。
 
 判定は採用の許可でも、意味を保持できた証明でもありません。検証passでもSkillの意味比較や人の承認は省きません。変更根拠不足・検査未実施による原文維持と、`verification_rejected` による候補の見送り・原文保持を区別し、候補への不合格判定を原文の欠陥として説明しないでください。分類・応答の規則は[CTR-01](contracts/tools.md#registered-threshold-classification)を参照してください。
 

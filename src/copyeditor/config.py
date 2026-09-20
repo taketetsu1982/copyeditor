@@ -101,6 +101,17 @@ SCHEMA = {
     "server.host": ("COPYEDITOR_HOST", "0.0.0.0", host),
     "server.port": ("PORT", 8080, lambda v: type(v) is int and 1 <= v <= 65535),
 }
+def _judgment_valid(key, value):
+    # The internal resolver imports config primitives; defer its import to avoid a cycle.
+    from .judgment_config import JUDGMENT_FIELDS
+    return JUDGMENT_FIELDS[key][1](value)
+
+SCHEMA.update({"judgment." + key: ("COPYEDITOR_JUDGMENT_" + key.upper(), default,
+    lambda value, key=key: _judgment_valid(key, value)) for key, default in dict(
+    enabled=False, model="jev-1.13.0", policy_version="reference-gate-action-v1", thresholds_version="gate-floor-v1",
+    timeout_ms=10000, polish_deadline_ms=120000, rewrite_deadline_ms=240000, max_calls=64,
+    input_budget=262144, pricing={}).items()})
+
 def freeze(value):
     return MappingProxyType({k: freeze(v) for k, v in value.items()}) if isinstance(value, dict) else tuple(value) if isinstance(value, list) else value
 
@@ -137,11 +148,13 @@ def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None):
                 raise ConfigError(field=parent or "config")
     flatten(raw)
     for name, (variable, default, valid) in SCHEMA.items():
+        if name.startswith("judgment."):
+            continue
         try:
             value, encoded = (explicit[name], False) if name in explicit else (env.get(variable, default), variable in env)
             if isinstance(value, str) and not encoded and value.startswith("${") and value.endswith("}"):
                 variable = value[2:-1]
-                if not matches(r"[A-Z][A-Z0-9_]*", variable) or variable in SECRETS or not env.get(variable):
+                if not matches(r"[A-Z][A-Z0-9_]*", variable) or variable in (*SECRETS, "TYPESAFE_API_KEY") or not env.get(variable):
                     raise ValueError()
                 value, encoded = env[variable], True
             if encoded and (isinstance(default, (list, dict, float, int)) or (name in ("auth.client_id", "auth.base_url") and value == "null")):
@@ -164,4 +177,7 @@ def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None):
                               ("auth", all(secrets.values()) and len(secrets[SECRETS[1]].encode("utf-8")) >= 32)]:
             if not present:
                 raise ConfigError("missing_required", name)
-    return ResolvedConfig(freeze(resolved), freeze(secrets))
+    from .judgment_config import resolve_judgment_config
+    judgment = resolve_judgment_config({name.removeprefix("judgment."): value for name, value in explicit.items()
+                                       if name.startswith("judgment.")}, env)
+    return ResolvedConfig(freeze({**resolved, **judgment.values}), freeze({**secrets, **judgment.secrets}))

@@ -32,7 +32,12 @@ def test_ac_05_7_ctr04_public_paths_and_real_config():
                     headings = re.findall(r"^#+ (.+)$", (ROOT / path).read_text(), re.M)
                     assert anchor in [heading.lower().replace(" ", "-") for heading in headings]
         for field, definition in SCHEMA.items():
-            assert f"`{field}`" in section and f"`{definition[0]}`" in section
+            if field.startswith("judgment."):
+                contract = (ROOT / "contracts/config.md").read_text()
+                assert re.search(r"^\| " + re.escape(field) + r" \|[^\n]*\| " + definition[0] + r" \|", contract, re.M)
+                assert "contracts/config.md#judgment-fields" in section
+            else:
+                assert f"`{field}`" in section and f"`{definition[0]}`" in section
         for term in ("/etc/copyeditor/config.yaml", "/etc/copyeditor/rules.d/ja.md", "65532", "MIT"):
             assert term in section
     assert load_config(ROOT / "config.example.yaml", {"GOOGLE_CLOUD_PROJECT": "fixture"})["auth.mode"] == "none"
@@ -85,7 +90,7 @@ def test_ac_07_1_ac_07_2_ac_07_7_ac_07_10_ac_07_12_rewrite_guidance_matches_both
 def test_optional_judgment_settings_and_disclosure_match_both_languages():
     contract = (ROOT / "contracts/config.md").read_text()
     for section in (EN, JA):
-        for term in ("Task 134", "judgment.enabled", "COPYEDITOR_JUDGMENT_ENABLED=true",
+        for term in ("judgment.enabled", "COPYEDITOR_JUDGMENT_ENABLED=true",
                      "judgment.enabled=false", "COPYEDITOR_JUDGMENT_ENABLED=false", "TYPESAFE_API_KEY",
                      "jev-1.13.0", "reference-gate-action-v1", "gate-floor-v1", "Vertex ADC", "OAuth",
                      "TypeSafe AI", "schema_version=3", "lint_text", "verification_rejected",
@@ -94,14 +99,14 @@ def test_optional_judgment_settings_and_disclosure_match_both_languages():
         for identifier in ("jev-1.13.0", "reference-gate-action-v1", "gate-floor-v1", "TYPESAFE_API_KEY"):
             assert identifier in contract
         assert not re.search(r"TYPESAFE_API_KEY\s*[:=]", section)
-    for phrase in ("available only after Task 134", "does not yet accept these settings",
+    for phrase in ("Optional judgment", "Judgment defaults to off",
                    "Disabled mode does not read or require this key", "and restarting",
                    "no per-request switch", "runtime secret environment", "never config, placeholders",
                    "direct MCP calls have no guaranteed per-request consent", "operators must inform",
                    "Vertex-only permission does not cover", "neither adoption permission nor proof",
                    "retention and processing region follow its own policy", "not added to audit logs"):
         assert phrase in EN
-    for phrase in ("Task 134以降", "まだこれらの設定を受け付けません", "無効時はこのkeyを参照せず",
+    for phrase in ("任意の判定", "判定は既定でoff", "無効時はこのkeyを参照せず",
                    "再起動", "依頼単位の切替", "実行時のsecret環境変数だけ", "config、placeholder",
                    "依頼ごとの同意は保証しません", "運用者は有効化前", "Vertexだけへの許可は追加先を含みません",
                    "意味を保持できた証明でもありません", "保持方針と処理地域", "監査ログに追加せず"):

@@ -79,3 +79,44 @@ async def test_ac_07_1_ac_07_3_ac_07_6_ac_07_10_ctr01_public_versions_and_privat
         assert MARKER not in repr(caplog.records)
     finally:
         logging.disable(disabled)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("broken", [False, True])
+async def test_enabled_provider_and_unexpected_service_failures_are_v3(broken):
+    import httpx
+    from copyeditor.judgment import JudgmentFailure
+    from copyeditor.judged_response import judged_output_schema
+    config = load_config(ROOT / "absent-config", {"GOOGLE_CLOUD_PROJECT": "test",
+        "COPYEDITOR_JUDGMENT_ENABLED": "true", "TYPESAFE_API_KEY": "synthetic"})
+    class Judgment:
+        async def evaluate(self, wire): return JudgmentFailure("provider_error", Usage(None, None, None))
+    service = Service(config, load_rules(ROOT / "rules", None), lambda: pytest.fail("Unexpected editor"), Judgment())
+    if broken:
+        async def fail(arguments): raise RuntimeError(MARKER)
+        service.polish = fail
+    records, disabled = [], logging.root.manager.disable
+    try:
+        server = build_server(config, service.snapshot, service, None, records.append)
+        async with Client(server) as client:
+            result = await client.call_tool("polish_text", dict(text=MARKER, degree="rewrite"), raise_on_error=False)
+        payload = result.structured_content
+        Draft202012Validator(judged_output_schema()).validate(payload)
+        assert result.is_error and payload["error"]["code"] == ("internal_error" if broken else "provider_error")
+        assert payload["model_called"] == (not broken) and payload["degree"] == "rewrite"
+        assert set(records[0]) == FIELDS and records[0]["model_calls"] == 0
+        assert MARKER not in repr(payload) + repr(records)
+        app = server.http_app(json_response=True, stateless_http=True)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost",
+                                        headers={"accept": "application/json, text/event-stream"}) as client:
+                for arguments in (None, [], True, 1, MARKER):
+                    response = await client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/call",
+                        params=dict(name="polish_text", arguments=arguments)))
+                    payload = response.json()["result"]["structuredContent"]
+                    Draft202012Validator(judged_output_schema()).validate(payload)
+                    assert payload["degree"] is None and not payload["model_called"]
+                    assert payload["error"]["code"] == ("internal_error" if broken else "invalid_input")
+        assert len(records) == 6 and all(set(record) == FIELDS for record in records)
+    finally:
+        logging.disable(disabled)

@@ -13,6 +13,8 @@ from mcp.types import TextContent, ToolAnnotations
 from .auth import disable_library_logging
 from .requests import MESSAGES, edit_input_schema
 from .responses import tool_output_schema
+from .judged_response import judged_output_schema
+from .service import judged_error
 
 INSTRUCTIONS = (
     'copyeditor sends polish_text body, context and background to this server and Vertex AI. This server does not '
@@ -25,6 +27,16 @@ INSTRUCTIONS = (
 
 def build_server(config, snapshot, service, auth, audit_sink):
     disable_library_logging()
+    enabled = config["judgment.enabled"]
+    disclosure = ("Body, permitted context and background, and candidates may be sent to TypeSafe AI. "
+                  "Provider retention and processing region are governed by that provider. "
+                  "Judgment does not replace your meaning comparison or approval.")
+    instructions = ("copyeditor sends polish_text body, permitted context/background and candidates to Vertex AI and TypeSafe AI. "
+        "This server does not persist them or judgment results. Providers govern their own retention and processing regions. "
+        "Compare meaning before applying edits. Use text or items [{id,text,context?}], never both; html uses text only. "
+        "Set language when known. lint_text calls no model. Keep originals on errors and flags. "
+        "Judgment is not permission or proof of meaning preservation.")
+    marker = "copyeditor.judgment=" + ("on; destinations=Vertex AI, TypeSafe AI" if enabled else "off; destinations=Vertex AI")
 
     class PublicTool(Tool):
         async def run(self, arguments):
@@ -45,6 +57,8 @@ def build_server(config, snapshot, service, auth, audit_sink):
                            model_calls=0, model_called=False, regeneration_attempted=False)
             if self.name == "polish_text" and arguments.get("degree") == "rewrite":
                 payload.update(schema_version=2, degree="rewrite")
+            if self.name == "polish_text" and enabled:
+                payload = judged_error(config, snapshot, arguments)
             try:
                 try:
                     payload = await getattr(service, "polish" if self.name == "polish_text" else "lint")(arguments)
@@ -57,19 +71,24 @@ def build_server(config, snapshot, service, auth, audit_sink):
                 failed = payload["status"] == "error"
                 items = [] if failed else payload.get("items", [payload] if "text" in payload else [])
                 kinds = [item["flag"]["kind"] for item in items if item["flag"]]
-                record = {key: payload[key] for key in ("language", "rules_version", "model", "usage", "cost", "latency_ms", "model_calls")}
+                projected = payload
+                if payload["schema_version"] == 3:
+                    projected = {**payload, **{key: payload["providers"][0][key] for key in ("model", "usage", "cost", "model_calls")}}
+                record = {key: projected[key] for key in ("language", "rules_version", "model", "usage", "cost", "latency_ms", "model_calls")}
                 record.update(timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), user=user,
                               tool=self.name, status="error" if failed else "flagged" if kinds else "ok",
                               error_code=payload["error"]["code"] if failed else None,
                               regenerated=payload["regeneration_attempted"] if failed else any(item["regenerated"] for item in items),
-                              rejected_count=kinds.count("rejected"), unfixable_count=kinds.count("unfixable"))
+                              rejected_count=kinds.count("rejected") + kinds.count("verification_rejected"), unfixable_count=kinds.count("unfixable"))
                 result = audit_sink(record)
                 if inspect.isawaitable(result):
                     await result
 
-    server = PublicServer("copyeditor", instructions=INSTRUCTIONS, auth=auth, mask_error_details=True)
+    server = PublicServer("copyeditor", instructions=instructions if enabled else INSTRUCTIONS, auth=auth, mask_error_details=True)
+    server.judgment_enabled = enabled
     for name in ("polish_text", "lint_text"):
-        server.add_tool(PublicTool(name=name, parameters=edit_input_schema(name, config, snapshot), output_schema=tool_output_schema(name),
+        server.add_tool(PublicTool(name=name, parameters=edit_input_schema(name, config, snapshot), output_schema=judged_output_schema() if enabled and name == "polish_text" else tool_output_schema(name),
+                                  description=marker + ("\n" + disclosure if enabled else "") if name == "polish_text" else None,
                                   annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=name == "polish_text")))
     @server.custom_route("/health", methods=["GET"])
     async def health(request):
@@ -79,9 +98,10 @@ def build_server(config, snapshot, service, auth, audit_sink):
 
 
 class RawBoundary:
-    def __init__(self, app, path, auth):
+    def __init__(self, app, path, auth, judgment_enabled=False):
         from fastmcp.server.http import RequireAuthMiddleware, build_resource_metadata_url
         self.app, self.path = app, path
+        self.judgment_enabled = judgment_enabled
         self.post = self.receive_post
         if auth:
             resource = auth._get_resource_url(path)
@@ -135,6 +155,7 @@ class RawBoundary:
                     # The SDK rejects non-dicts before Tool.run; an invalid dict preserves service/audit handling.
                     if "arguments" in params and type(params["arguments"]) is not dict:
                         params["arguments"] = {"_invalid_arguments": True}
+                        if self.judgment_enabled: params["arguments"]["degree"] = None
                 code, message = -32602, "Invalid params"
                 TypeAdapter(types.ClientRequest).validate_python(data, strict=True)
             encoded = json.dumps(data, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode()
@@ -158,5 +179,6 @@ class PublicServer(FastMCP):
     def http_app(self, path="/mcp", middleware=None, **kwargs):
         from starlette.middleware import Middleware
         path = path or "/mcp"
-        return super().http_app(path=path, middleware=[Middleware(RawBoundary, path=path, auth=self.auth),
+        return super().http_app(path=path, middleware=[Middleware(RawBoundary, path=path, auth=self.auth,
+                                                                 judgment_enabled=getattr(self, "judgment_enabled", False)),
                                                        *(middleware or [])], **kwargs)

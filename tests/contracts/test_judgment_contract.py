@@ -131,7 +131,7 @@ class NoJudgmentSecret(Mapping):
 def test_current_config_does_not_read_judgment_secret(tmp_path):
     config = load_config(tmp_path / "absent", NoJudgmentSecret())
     assert config["provider"] == "vertex"
-    assert not any(key.startswith("judgment.") for key in config.values)
+    assert config["judgment.enabled"] is False
     for value in ("", "invalid key\n"):
         env = {"GOOGLE_CLOUD_PROJECT": "project", "TYPESAFE_API_KEY": value}
         assert load_config(tmp_path / "absent", env).values == config.values
