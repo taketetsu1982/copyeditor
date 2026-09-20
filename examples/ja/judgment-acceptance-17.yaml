@@ -1,0 +1,10 @@
+id: "judgment-acceptance-17"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "IPv6に対応した家庭用ルーターです。有線の端末は有線のまま、無線の端末は無線のまま接続できます。"
+good: "IPv6に対応した家庭用ルーターです。有線の端末は有線のまま、無線の端末は無線のまま接続できます。"
+reason: "Retain IPv6 and the deliberate wired/wireless repetition: each existing connection type is preserved, not unnecessarily restated."
+lint: null
+must_change: false

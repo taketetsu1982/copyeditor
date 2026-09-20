@@ -1,0 +1,10 @@
+id: "judgment-acceptance-18"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "html"
+bad: "<article><h2>同じ札で遊ぶ</h2><p>見える人も、見えない人も、同じ札で遊べるトランプです。数字とマークを点字でも読めるようにしました。</p></article>"
+good: "<article><h2>同じ札で遊ぶ</h2><p>見える人も、見えない人も、同じ札で遊べるトランプです。数字とマークを点字でも読めるようにしました。</p></article>"
+reason: "Retain the paired people references and the braille term: the repetition expresses inclusion and the term states the actual adaptation."
+lint: null
+must_change: false

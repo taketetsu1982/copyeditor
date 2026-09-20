@@ -1,0 +1,10 @@
+id: "judgment-acceptance-14"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "分数を並べて比べられる教材です。赤は12個、青は8個を入れた構成となっており、赤と青の合計は20個となっています。"
+good: "分数を並べて比べられる教材です。赤12個と青8個の、合計20個が入っています。"
+reason: "Number trap: reduce the repeated construction wording without dropping color-specific counts or confusing the total with each color."
+lint: null
+must_change: true

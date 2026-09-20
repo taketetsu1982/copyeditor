@@ -1,0 +1,10 @@
+id: "judgment-acceptance-19"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "話す言語が違っても、同じ舞台を楽しんでほしい。舞台のせりふを日本語と英語の字幕にして、客席の端末へ届けるサービスです。"
+good: "話す言語が違っても、同じ舞台を楽しんでほしい。舞台のせりふを日本語と英語の字幕にして、客席の端末へ届けるサービスです。"
+reason: "Retain the shared-experience aspiration and its concrete caption service; neither the abstract purpose nor the repeated stage reference requires editing."
+lint: null
+must_change: false
