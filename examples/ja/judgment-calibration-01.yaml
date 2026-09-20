@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "貸出用の展示ケースの返却に際しては、内側の清掃の実施をお願いいたします。"
-good: "貸出用の展示ケースを返す際は、内側を清掃してください。"
-reason: "Stiffness: replace stacked nominal actions with verbs without weakening the request."
+bad: "この本棚は、棚板の高さの調整に対応しています。大きさの異なる本の収納が可能です。"
+good: "棚板の高さを調整できる本棚です。大きさの異なる本を収納できます。"
+reason: "Stiffness: ordinary product facts acquire a mildly bureaucratic tone through nominal adjustment and storage capability."
 lint: null
 must_change: true

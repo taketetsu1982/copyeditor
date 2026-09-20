@@ -3,8 +3,8 @@ language: "ja"
 section: "context"
 degree: "polish"
 format: "text"
-bad: "乾いた布は棚の上に、ぬれた布はバケツの中に入れてください。乾いた布とぬれた布は分けて置きます。"
-good: "乾いた布は棚の上に、ぬれた布はバケツの中に入れてください。乾いた布とぬれた布は分けて置きます。"
-reason: "Retain the repeated dry and wet distinction: it links the destinations to the separation rule."
+bad: "書きかけの考えを、書きかけのまま置いておけるノートです。結論を急がず、考えがまとまるまで同じページに書き足せます。"
+good: "書きかけの考えを、書きかけのまま置いておけるノートです。結論を急がず、考えがまとまるまで同じページに書き足せます。"
+reason: "Retain the abstract but coherent invitation and the purposeful repetition: unfinished thoughts are allowed to remain unfinished."
 lint: null
 must_change: false

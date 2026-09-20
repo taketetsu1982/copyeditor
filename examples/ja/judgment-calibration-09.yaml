@@ -3,8 +3,8 @@ language: "ja"
 section: "structure"
 degree: "polish"
 format: "text"
-bad: "登山道の地図は売店で配っています。登山道の地図は無料です。登山道の地図は持ち帰れます。"
-good: "登山道の地図は売店で無料で配っており、持ち帰れます。"
-reason: "Mechanical repetition: combine identical subjects where they introduce no contrast."
+bad: "このマグは、重ねてしまえる形です。このマグは、食卓にそのまま出せる落ち着いた色です。このマグは、食洗機でも洗えます。"
+good: "重ねてしまえる形のマグです。食卓にそのまま出せる落ち着いた色で、食洗機でも洗えます。"
+reason: "Mechanical repetition: repeated product naming adds no contrast between the three useful features."
 lint: null
 must_change: true

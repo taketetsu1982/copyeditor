@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "家族風呂の予約がない方については、空きがある場合に限って利用していただくことができる形となっています。"
-good: "家族風呂の予約がない方は、空きがある場合に限って利用できます。"
-reason: "Roundabout wording: remove the indirect description of how conditional access works."
+bad: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外すことで、手提げとしてもお使いいただけるようになっています。"
+good: "荷物の少ない日にちょうどいい、小ぶりのバッグです。肩ひもを外せば、手提げとしても使えます。"
+reason: "Roundabout wording: retain the natural opening and remove only the indirect capability ending in otherwise restrained product copy."
 lint: null
 must_change: true
