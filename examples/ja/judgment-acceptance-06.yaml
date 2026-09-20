@@ -1,0 +1,10 @@
+id: "judgment-acceptance-06"
+language: "ja"
+section: "structure"
+degree: "polish"
+format: "html"
+bad: "<section><h2>部屋の緑を季節ごとに</h2><p>室内向けの観葉植物を、季節ごとに交換するサービスです。選ぶのは植物だけではありません。選ぶのは、緑と過ごす日々です。</p></section>"
+good: "<section><h2>部屋の緑を季節ごとに</h2><p>室内向けの観葉植物を季節ごとに交換し、日々、緑を楽しめるサービスです。</p></section>"
+reason: "Formulaic ending: remove the staged contrast about what is being chosen while keeping seasonal exchange and everyday enjoyment."
+lint: null
+must_change: true

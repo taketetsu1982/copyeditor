@@ -1,12 +1,13 @@
 """Calibration drafts only; native review and owner labels have not been obtained."""
 from collections import Counter
 from hashlib import sha256
+import json
 
 import pytest
 
 from copyeditor.judgment import REFERENCES
 from copyeditor.preservation import check
-from tests.contracts.test_ctr05_examples import CASES, ROOT, adapter
+from tests.contracts.test_ctr05_examples import CASES, ROOT, adapter, get_assert
 
 # These independent synthetic briefs are not derived from policy references or legacy examples.
 # Keep evaluation labels outside CTR-05 assets so they cannot become tool input.
@@ -104,3 +105,54 @@ def test_ac_08_13_14_ctr05_calibration_preserves_facts_terms_and_natural_text(ca
     assert all(token in case['bad'] and token in case['good'] for token in anchors)
     if case['id'] in ('judgment-calibration-05', 'judgment-calibration-10', 'judgment-calibration-14', 'judgment-calibration-15'):
         assert case['bad'].count(anchors[0]) >= 2
+
+
+# Held-out problem subset only: all product descriptions. Owner labels are still pending.
+# Natural boundary cases and preservation traps complete the twenty-case set in Task 146.
+ACCEPTANCE_PROBLEM_MANIFEST = {
+    "judgment-acceptance-01": ('stiffness', 'refillable-fountain-pen', ('万年筆', 'インク', 'ペン先'), 'Keep refillable ink, replacement of just the nib, and adjustable line width; add no lifetime or compatibility guarantee.'),
+    "judgment-acceptance-02": ('stiffness', 'rotating-bicycle-light', ('工具を使わず', '取り付けた後'), 'Keep adjustment after mounting, tool-free attachment and detachment, the heading, and all HTML structure; add no brightness claim.'),
+    "judgment-acceptance-03": ('abstraction', 'daylight-privacy-curtain', ('外からの視線', '昼の光', '明るさと落ち着き'), 'Keep blocking outside sightlines while admitting daylight and the intended comfortable room; do not promise nighttime privacy.'),
+    "judgment-acceptance-04": ('abstraction', 'monthly-piano-scores', ('毎月', '作曲家の小品', '短い曲'), 'Keep monthly short piano pieces by previously unfamiliar composers and broader repertoire; preserve the heading and plain register.'),
+    "judgment-acceptance-05": ('formulaic', 'blue-wool-stole', ('毎日の装い', '深い青', '薄手のウールストール'), 'Keep personal taste, everyday styling, deep blue color, thin wool, and the stole; add no warmth or skin-sensitivity claim.'),
+    "judgment-acceptance-06": ('formulaic', 'seasonal-houseplant-rental', ('室内向けの観葉植物', '季節ごと', 'サービス'), 'Keep indoor plants, seasonal exchange, daily enjoyment of greenery, and the entire section structure; add no care or delivery service.'),
+    "judgment-acceptance-07": ('roundabout', 'silent-light-metronome', ('光でも拍を示す', '音を消す設定', '周りに音を出さず'), 'Keep light indicating beats and silent checking conditional on selecting mute; do not imply that the device never produces sound.'),
+    "judgment-acceptance-08": ('roundabout', 'mesh-window-tent', ('窓にメッシュ', '外側のカバー', '虫の侵入を抑え'), 'Keep the mesh window and airflow when the outer cover is opened; insect entry is reduced, not guaranteed absent.'),
+    "judgment-acceptance-09": ('repetition', 'reflective-flexible-umbrella', ('骨', '縁の反射材', '電車', '閉じた傘'), 'Keep flexible ribs for wind, reflective edging for dark roads, and a tie for the closed umbrella on trains; add no storm-resistance guarantee.'),
+    "judgment-acceptance-10": ('repetition', 'repairable-cotton-socks', ('綿', '縫い目がつま先に当たりにくい', '履き口のゴム'), 'Keep cotton, seams less likely to touch the toes, replaceable cuff elastic, and plain register; do not guarantee that seams never touch.'),
+}
+ACCEPTANCE_PROBLEMS = [c for c in CASES if c['language'] == 'ja' and c['id'] in ACCEPTANCE_PROBLEM_MANIFEST]
+# Intended low-end unnatural candidates; no score, threshold tuning, or quality acceptance is implied.
+ACCEPTANCE_BOUNDARY_CANDIDATES = ('judgment-acceptance-01', 'judgment-acceptance-03', 'judgment-acceptance-07')
+
+
+def test_ac_08_13_ctr05_held_out_problem_subset_is_independent_and_incomplete():
+    ids = [f'judgment-acceptance-{i:02}' for i in range(1, 11)]
+    assert list(ACCEPTANCE_PROBLEM_MANIFEST) == [c['id'] for c in ACCEPTANCE_PROBLEMS] == ids
+    assert Counter(v[0] for v in ACCEPTANCE_PROBLEM_MANIFEST.values()) == dict(
+        stiffness=2, abstraction=2, formulaic=2, roundabout=2, repetition=2)
+    assert set(ACCEPTANCE_BOUNDARY_CANDIDATES) <= set(ids)
+    sources = {v[1] for v in ACCEPTANCE_PROBLEM_MANIFEST.values()}
+    assert len(sources) == 10 and not sources & {v[1] for v in CALIBRATION_MANIFEST.values()}
+    others = {r['text'] for r in REFERENCES} | {c[k] for c in CASES if c not in ACCEPTANCE_PROBLEMS for k in ('bad', 'good')}
+    assert len({c['bad'] for c in ACCEPTANCE_PROBLEMS}) == len({c['good'] for c in ACCEPTANCE_PROBLEMS}) == 10
+    assert not {c[k] for c in ACCEPTANCE_PROBLEMS for k in ('bad', 'good')} & others
+    assert all(r['text'] not in c[k] and c[k] not in r['text']
+               for c in ACCEPTANCE_PROBLEMS for k in ('bad', 'good') for r in REFERENCES)
+    assert Counter(c['format'] for c in ACCEPTANCE_PROBLEMS) == dict(text=6, markdown=2, html=2)
+    assert ACCEPTANCE_PROBLEMS[4]['reason'].startswith('Generic wording:')
+    assert ACCEPTANCE_PROBLEMS[5]['reason'].startswith('Formulaic ending:')
+    assert all(c['must_change'] and not c['protected_terms'] and c['degree'] == 'polish' for c in ACCEPTANCE_PROBLEMS)
+    assert not {c['id'] for c in ACCEPTANCE_PROBLEMS} & {f'rewrite-{i:02}' for i in range(1, 25)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case', ACCEPTANCE_PROBLEMS, ids=lambda c: c['id'])
+async def test_ac_08_13_ctr05_held_out_fixture_preserves_structure_and_facts(case):
+    _, _, anchors, invariant = ACCEPTANCE_PROBLEM_MANIFEST[case['id']]
+    assert invariant and case['bad'] != case['good']
+    assert all(token in case['bad'] and token in case['good'] for token in anchors)
+    response = await adapter.call_api('', {}, {'vars': case})
+    output = json.loads(response['output'])
+    assert output['text'] == case['good'] and output['flag'] is None
+    assert get_assert(response['output'], {'vars': case})

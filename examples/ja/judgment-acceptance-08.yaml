@@ -1,0 +1,10 @@
+id: "judgment-acceptance-08"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "このテントは、窓にメッシュを重ねています。外側のカバーを開けた状態にすることによって、虫の侵入を抑えつつ風を通すという使い方ができます。"
+good: "このテントは、窓にメッシュを重ねています。外側のカバーを開ければ、虫の侵入を抑えつつ風を通せます。"
+reason: "Roundabout wording: shorten the described usage pattern without strengthening reduced insect entry into complete prevention."
+lint: null
+must_change: true
