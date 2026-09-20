@@ -12,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 MARKER = "SYNTHETIC_IMAGE_SECRET_" + uuid.uuid4().hex
+JEV_MARKER = "SYNTHETIC_JEV_SECRET_" + uuid.uuid4().hex
 LAUNCHER = '''
 import asyncio, json
 from copyeditor import __main__ as entry
@@ -112,6 +113,7 @@ def images(tmp_path, monkeypatch):
     launcher = tmp_path / "launcher.py"
     launcher.write_text(LAUNCHER)
     launcher.chmod(0o644)
+    monkeypatch.setenv("TYPESAFE_API_KEY", JEV_MARKER)
     for key in ("GOOGLE_OAUTH_CLIENT_SECRET", "OAUTH_SIGNING_KEY"):
         monkeypatch.setenv(key, MARKER)
     def start(tag, mode):
@@ -122,7 +124,7 @@ def images(tmp_path, monkeypatch):
         secrets = ["-e", "GOOGLE_OAUTH_CLIENT_SECRET", "-e", "OAUTH_SIGNING_KEY"] if mode == "google" else []
         docker("run", "-d", "--name", name, "--label", "copyeditor.test=" + label, "--network", "none",
                "--mount", f"type=bind,src={launcher},dst=/launcher.py,readonly", "-e", "GOOGLE_CLOUD_PROJECT=fixture",
-               "-e", "PORT=" + str(port), *secrets, "--entrypoint", "python", tag, "/launcher.py")
+               "-e", "PORT=" + str(port), "-e", "TYPESAFE_API_KEY", *secrets, "--entrypoint", "python", tag, "/launcher.py")
         return name
     yield image, label, start
 
@@ -165,6 +167,9 @@ def test_ac_05_1_ac_05_4_ctr04_all_images_and_secrets(images, tmp_path):
         assert logs.stderr == ("" if mode == "google" else "WARNING: copyeditor is listening without authentication.\n")
         assert len(logs.stdout.splitlines()) == 1 and json.loads(logs.stdout)["tool"] == "polish_text"
         assert MARKER not in logs.stdout + logs.stderr
+        assert JEV_MARKER not in logs.stdout + logs.stderr
+        assert "TYPESAFE_API_KEY=" + JEV_MARKER in state["Config"]["Env"]
+        if report["config"]: assert JEV_MARKER not in docker("exec", name, "cat", "/etc/copyeditor/config.yaml").stdout
         assert any(MARKER in item for item in state["Config"]["Env"]) == (mode == "google")
         docker("stop", name)
         check_image_secrets(tag, tmp_path)
@@ -176,13 +181,13 @@ def test_ac_05_1_ac_05_4_ctr04_all_images_and_secrets(images, tmp_path):
     except FileExistsError:
         pass
     try:
-        excluded.write_text(MARKER)
+        excluded.write_text(MARKER + JEV_MARKER)
         context = label + ":context"
         subprocess.run(["docker", "build", "--network", "none", "--label", "copyeditor.test=" + label,
             "-t", context, "-f", "-", str(ROOT)], input="FROM scratch\nCOPY . /context\n",
             text=True, capture_output=True, check=True, timeout=300)
         check_image_secrets(context, tmp_path)
-        (tmp_path / "leak").write_text(MARKER)
+        (tmp_path / "leak").write_text(JEV_MARKER)
         (tmp_path / "Dockerfile").write_text(f"FROM {image}\nCOPY --chown=65532:65532 leak /tmp/removed-secret\nRUN rm /tmp/removed-secret\n")
         poisoned = label + ":leak-probe"
         docker("build", "--network", "none", "--label", "copyeditor.test=" + label, "-t", poisoned, str(tmp_path))
@@ -198,12 +203,13 @@ def assert_secret_absent(stream):
     tail = b""
     while chunk := stream.read(1024 * 1024):
         combined = tail + chunk
-        assert MARKER.encode() not in combined
-        tail = combined[-len(MARKER):]
+        assert all(marker.encode() not in combined for marker in (MARKER, JEV_MARKER))
+        tail = combined[-max(len(MARKER), len(JEV_MARKER)):]
 
 
 def check_image_secrets(tag, tmp_path):
-    assert MARKER not in docker("history", "--no-trunc", "--format", "{{json .}}", tag).stdout
+    history = docker("history", "--no-trunc", "--format", "{{json .}}", tag).stdout
+    assert all(marker not in history for marker in (MARKER, JEV_MARKER))
     archive = tmp_path / "image.tar"
     docker("save", "-o", str(archive), tag)
     with tarfile.open(archive) as outer:
@@ -214,7 +220,7 @@ def check_image_secrets(tag, tmp_path):
         for layer in {layer for entry in manifest for layer in entry["Layers"]}:
             with tarfile.open(fileobj=outer.extractfile(layer), mode="r:*") as contents:
                 for member in contents:
-                    assert MARKER not in member.name + member.linkname
+                    assert all(marker not in member.name + member.linkname for marker in (MARKER, JEV_MARKER))
                     if member.isfile(): assert_secret_absent(contents.extractfile(member))
     archive.unlink()
 
