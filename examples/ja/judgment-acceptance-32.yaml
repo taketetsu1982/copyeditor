@@ -3,8 +3,8 @@ language: "ja"
 section: "context"
 degree: "polish"
 format: "text"
-bad: "この録音機は、停止ボタンを押しても録音済みの音声は消えません。この点をきちんと理解しておくことが大切です。"
+bad: "この録音機では、停止ボタンを押した場合にも、録音済みの音声の削除が実施されることはありません。"
 good: "この録音機は、停止ボタンを押しても録音済みの音声は消えません。"
-reason: "Negation trap / Formulaic ending: remove the emphatic lesson while keeping the recorded audio undeleted after stopping."
+reason: "Negation trap / Nominalization: replace nominal deletion with a direct negative verb; stopping must not become deleting."
 lint: null
 must_change: true

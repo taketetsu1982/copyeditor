@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "markdown"
-bad: "## 机の振動を抑えるマット\nこのマットを敷くと、卓上ミシンの振動が弱まる場合があります。一方で、必ず弱まるとは限りません。"
+bad: "## 机の振動を抑えるマット\nこのマットを敷いた際に期待できることとして挙げられるのは、卓上ミシンの振動が弱まる場合があるということです。"
 good: "## 机の振動を抑えるマット\nこのマットを敷くと、卓上ミシンの振動が弱まる場合があります。"
-reason: "Promise trap / Roundabout wording: the staged counterpoint repeats the existing uncertainty; retain only a possible reduction in vibration."
+reason: "Promise trap / Roundabout wording: remove the nominal expectation frame while retaining possible rather than guaranteed vibration reduction."
 lint: null
 must_change: true

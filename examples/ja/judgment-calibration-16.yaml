@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "この冊子には、革靴の手入れに役立つ実用記事を載せています。"
-good: "この冊子には、革靴の手入れに役立つ記事を載せています。"
-reason: "Coined vocabulary: only the unnecessary compound for a practical article changes; retain the booklet and useful leather-shoe care advice."
+bad: "この折り紙セットには、鶴を折るときの正本になる写真が付いています。"
+good: "この折り紙セットには、鶴を折るときの見本になる写真が付いています。"
+reason: "Stiff existing vocabulary: replace the misplaced formal word for an authoritative original with the everyday word for a sample; keep the origami set and crane photographs."
 lint: null
 must_change: true
