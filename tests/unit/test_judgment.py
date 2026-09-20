@@ -44,13 +44,33 @@ def test_actions_match_public_contract_and_each_has_one_instruction():
 
 def test_versioned_definitions_have_stable_canonical_hashes():
     assert set(j.POLICIES) == {"reference-gate-action-v1"}
-    assert set(j.THRESHOLDS) == {"gate-floor-v1"}
+    assert set(j.THRESHOLDS) == {"gate-verify-v1"}
     assert j.COMPATIBLE_PAIRS == {(j.POLICY_ID, j.THRESHOLD_ID)}
-    assert j.SNAPSHOT.policy_hash == "6018bdd5e97c0c9792e61820f675ae2b63a17cb5393e0756605ac48556893c54"
-    assert j.SNAPSHOT.threshold_hash == "fab230b94aba689ee1d1938bc3d1b4461ed0684229f3941c2c71823783bdcc07"
+    assert j.SNAPSHOT.policy_hash == "57d2dce9bd99a22577c262f6a27d5e2f7c35aa66e9a2020c7c4ea78fb568fb67"
+    assert j.SNAPSHOT.threshold_hash == "f3d4c24148abb1be9736e093dc9ba38069cd3757b6dcaa8971a4df3ab65b4cb4"
     expected = hashlib.sha256('{"a":"日本語","z":[1,0.53]}'.encode()).hexdigest()
     assert j.definition_hash({"z": (1, 0.53), "a": "日本語"}) == expected
-    assert j.THRESHOLD == {"id": "gate-floor-v1", "floor": 0.53}
+    assert j.THRESHOLD == {"id": "gate-verify-v1", "floor": 0.53,
+                           "verification": {"pass_min": 0.70, "fail_max": 0.30}}
+    assert set(j.POLICY["verification"]) == {"order", "aggregation"}
+
+
+@pytest.mark.parametrize("path", [("floor",), ("verification", "pass_min"), ("verification", "fail_max")])
+def test_threshold_hash_owns_all_decision_parameters_without_changing_policy(path):
+    definition = json.loads(json.dumps(j.THRESHOLD, default=dict))
+    target = definition
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] += 0.01
+    assert j.definition_hash(definition) != j.SNAPSHOT.threshold_hash
+    assert j.definition_hash(j.POLICY) == j.SNAPSHOT.policy_hash
+
+
+def test_retired_threshold_is_rejected_by_both_classifiers():
+    for classify, block in ((j.classify_detection, detection(1)),
+                            (j.classify_verification, j.JudgmentBlockResult(1, tuple(zip(VERIFY, [1] * 4)), None))):
+        with pytest.raises(ValidationError):
+            classify(block, threshold_id="gate-floor-v1")
 
 
 @pytest.mark.parametrize("path", [
@@ -59,7 +79,7 @@ def test_versioned_definitions_have_stable_canonical_hashes():
     ("questions", "detect", 6, "criteria", "preserve_as_is"),
     ("references", 0, "text"), ("references", 0, "label"), ("references", 0, "id"),
     ("action_instructions", "trim_explanation"), ("state", "pairs"), ("packing_version",),
-    ("verification", "pass_min"), ("fallback", "stiff"), ("axis_order",),
+    ("verification", "order"), ("fallback", "stiff"), ("axis_order",),
 ])
 def test_policy_hash_covers_every_semantic_component(path):
     definition = json.loads(json.dumps(j.POLICY, default=lambda value: dict(value)))
@@ -112,7 +132,7 @@ def test_definitions_and_dtos_are_immutable_and_require_nullable_fields():
 
 PUBLIC = (Path(__file__).resolve().parents[2] / "contracts/tools.md").read_text()
 FLOOR = float(re.search(r"p >= ([\d.]+): present", PUBLIC)[1])
-FAIL, PASS = map(float, re.search(r"Fixed p <= ([\d.]+): fail; p >= ([\d.]+): pass", PUBLIC).groups())
+FAIL, PASS = map(float, re.search(r"p <= ([\d.]+): fail; p >= ([\d.]+): pass", PUBLIC).groups())
 FALLBACK = dict(re.findall(r"([a-z_]+)→([a-z_]+)", PUBLIC))
 AXES = tuple(re.search(r"\| Axes \| ([^|]+) \|", PUBLIC)[1].strip().split(", "))
 VERIFY = tuple(re.search(r"\| Verification \| ([^|]+) \|", PUBLIC)[1].strip().split(", "))
@@ -200,8 +220,10 @@ def test_choice_rejects_invalid_shape_selection_and_sum(case):
     assert error.value.code == "invalid_response"
 
 
-@pytest.mark.parametrize("value,result", [(0, "fail"), (FAIL, "fail"), (math.nextafter(FAIL, 1), "indeterminate"),
-                                         (math.nextafter(PASS, 0), "indeterminate"), (PASS, "pass"), (1, "pass")])
+@pytest.mark.parametrize("value,result", [(0, "fail"), (math.nextafter(FAIL, 0), "fail"), (FAIL, "fail"),
+                                         (math.nextafter(FAIL, 1), "indeterminate"),
+                                         (math.nextafter(PASS, 0), "indeterminate"), (PASS, "pass"),
+                                         (math.nextafter(PASS, 1), "pass"), (1, "pass")])
 @pytest.mark.parametrize("index", range(4))
 def test_each_verification_boundary_matches_public_contract(value, result, index):
     values = [1] * 4; values[index] = value

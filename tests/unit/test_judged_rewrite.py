@@ -86,7 +86,7 @@ async def test_eligible_diagnosis_and_issue_retry_keep_action_and_subset_terms()
     assert "one exact expression" in diagnosis.system_instruction and "one sentence" in diagnosis.system_instruction
     assert "no_issue" in diagnosis.system_instruction and "never permits inventing information" in diagnosis.system_instruction
     for data in editor.inputs:
-        assert "make_more_specific" in data.system_instruction and _registry("reference-gate-action-v1", "gate-floor-v1")[0]["action_instructions"]["make_more_specific"] in data.system_instruction
+        assert "make_more_specific" in data.system_instruction and _registry("reference-gate-action-v1", "gate-verify-v1")[0]["action_instructions"]["make_more_specific"] in data.system_instruction
         assert all(word not in data.system_instruction for word in ("probabilities", "confidence", "axis_fallback"))
     assert [item["editing"] for item in result["items"]] == ["generated", "diagnosed_no_issue", "not_run"]
     assert [item["regenerated"] for item in result["items"]] == [True, False, False]

@@ -27,7 +27,7 @@ Start from [config.example.yaml](config.example.yaml). The only config path is `
 
 The example fixes `auth.mode: none`; change it before using Google authentication. Its other explicit defaults also override environment settings. OAuth secrets are environment-only: `GOOGLE_OAUTH_CLIENT_SECRET` and `OAUTH_SIGNING_KEY` (at least 32 UTF-8 bytes, generated with sufficient entropy). Neither has a config key; secret placeholders are rejected. Supply them through your deployment's secret manager, never Dockerfile `ARG`/`ENV` or committed files.
 
-**Optional judgment.** Judgment defaults to off; enable `judgment.enabled` (or `COPYEDITOR_JUDGMENT_ENABLED=true`) only after reviewing the additional destination. The model is pinned to `jev-1.13.0`, with `reference-gate-action-v1` and `gate-floor-v1`; moving model aliases and unknown registry IDs are rejected. See [judgment settings](contracts/config.md#judgment-fields).
+**Optional judgment.** Judgment defaults to off; enable `judgment.enabled` (or `COPYEDITOR_JUDGMENT_ENABLED=true`) only after reviewing the additional destination. The model is pinned to `jev-1.13.0`, with `reference-gate-action-v1` and `gate-verify-v1`; moving model aliases and unknown registry IDs are rejected. See [judgment settings](contracts/config.md#judgment-fields).
 
 Supply `TYPESAFE_API_KEY` only through the runtime secret environment, never config, placeholders, Docker build arguments, image contents, or committed files. Disabled mode does not read or require this key. Rollback means setting `judgment.enabled=false` (or `COPYEDITOR_JUDGMENT_ENABLED=false` when no explicit config overrides it) and restarting: subsequent requests return to v1/v2 without changing Vertex ADC or OAuth requirements. There is no per-request switch or change to an in-flight request.
 
@@ -196,7 +196,7 @@ Dockerと、課金およびVertex AI APIを有効にしたGoogle Cloudプロジ�
 
 設定例は `auth.mode: none` を固定しているため、Google認証では変更します。他の明示した既定値も環境変数より優先します。OAuthの秘密は環境変数 `GOOGLE_OAUTH_CLIENT_SECRET` と `OAUTH_SIGNING_KEY`（十分な乱数で生成した32 UTF-8 bytes以上）のみから渡します。対応するconfig keyはなく、秘密のplaceholderも拒否します。デプロイ環境のsecret managerを使い、Dockerfileの `ARG` / `ENV` やcommitするファイルには書きません。
 
-**任意の判定。** 判定は既定でoffです。追加送信先を確認したうえで `judgment.enabled`（または `COPYEDITOR_JUDGMENT_ENABLED=true`）を有効にします。対応モデルは `jev-1.13.0`、定義は `reference-gate-action-v1` と `gate-floor-v1` に固定し、追従型モデルaliasや未知のregistry IDは拒否します。詳細は[判定設定](contracts/config.md#judgment-fields)を参照してください。
+**任意の判定。** 判定は既定でoffです。追加送信先を確認したうえで `judgment.enabled`（または `COPYEDITOR_JUDGMENT_ENABLED=true`）を有効にします。対応モデルは `jev-1.13.0`、定義は `reference-gate-action-v1` と `gate-verify-v1` に固定し、追従型モデルaliasや未知のregistry IDは拒否します。詳細は[判定設定](contracts/config.md#judgment-fields)を参照してください。
 
 `TYPESAFE_API_KEY` は実行時のsecret環境変数だけから渡し、config、placeholder、Docker build引数、image、commitするファイルには含めません。無効時はこのkeyを参照せず、要求もしません。元へ戻すには、`judgment.enabled=false`（明示configが優先していなければ `COPYEDITOR_JUDGMENT_ENABLED=false`）にして再起動します。以後の依頼はv1/v2へ戻り、Vertex ADCやOAuthの要件は変わりません。依頼単位の切替や、処理中の依頼への途中適用はありません。
 
