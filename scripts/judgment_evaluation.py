@@ -3,7 +3,7 @@ import argparse
 import asyncio
 from collections import Counter
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import json
 from pathlib import Path
 from time import monotonic
@@ -135,6 +135,8 @@ async def run(plan, output, runner=adapter.compare_request):
         if cancelled: raise asyncio.CancelledError
     audit(plan, artifact)
     await probe(plan, artifact, output)
+    if plan['sets'][0]['name'] == SETS['calibration']:
+        artifact.update(calibrate(plan, artifact)); legacy.save(output, artifact)
     return artifact
 
 
@@ -343,9 +345,107 @@ def summarize(plan, artifact):
                 legacy_criteria_met=legacy_met, status=reason, criteria_met=reason == 'criteria_met', quality_accepted=False)
 
 
+def probability(value):
+    if type(value) not in (float, int): return None
+    value = Decimal(str(value))
+    return value if value.is_finite() and 0 <= value <= 1 else None
+
+
+def interval(low, high):
+    if low is None or high is None: return dict(min=None, max=None, range=None, midpoint=None)
+    # Decimal strings preserve a midpoint even between adjacent binary floats.
+    with localcontext() as context:
+        context.prec = max(28, -low.as_tuple().exponent, -high.as_tuple().exponent) + 3
+        return dict(min=str(low), max=str(high), range=str(high - low), midpoint=str((low + high) / 2))
+
+
+def calibrate(plan, artifact):
+    if plan['sets'][0]['name'] != SETS['calibration']: raise ValueError('Calibration population required')
+    reviewed = summarize(plan, artifact)
+    invalid = {r['request_id'] for r in reviewed['judgments'] if 'response_integrity' in r['failures'] or 'preservation' in r['failures']}
+    requests = {r['request_id']: r for r in plan['request_layouts']}
+    kinds = {c['id']: c['kind'] for c in plan['sets'][0]['cases']}
+    observations, risk = [], Counter(planned=0, measured=0, missing=0, high=0, high_verified=0, high_pass=0,
+                                     not_generated=0, no_issue=0, preservation_rejected=0, production_error=0, not_eligible=0)
+    missing_reasons = Counter()
+    for trial in artifact['trials']:
+        if not trial['judgment_enabled']: continue
+        request, calibration = requests[trial['request_id']], trial['calibration'] or {}
+        ordinal = request['ids'].index(trial['example_id']) + 1
+        response = trial['full_response'] or {}
+        block = next((b for b in response.get('items', [response]) if b.get('id', 'text') == ('text' if trial['layout'] == 'text' else f'b{ordinal:04}')), {})
+        detection = block.get('detection', {})
+        gate = probability(calibration.get('gate_probability'))
+        action = detection.get('action') or {}
+        coherent = gate is not None and gate == probability((detection.get('gate') or {}).get('probability')) and all(calibration.get(k) == action.get(v) for k, v in
+            (('raw_action', 'selected'), ('effective_action', 'effective'), ('action_source', 'source'), ('confidence', 'confidence')))
+        if not coherent or trial['error_code'] or trial['request_id'] in invalid: gate = None
+        observations.append(dict(degree=trial['degree'], layout=trial['layout'], repeat=trial['repeat'], example_id=trial['example_id'],
+            kind=kinds[trial['example_id']], gate=gate, eligible=detection.get('status') == 'eligible' if gate is not None else None))
+        risk['planned'] += 1
+        excluded = ('production_error' if trial['error_code'] else 'no_issue' if block.get('editing') == 'diagnosed_no_issue'
+            else 'preservation_rejected' if (block.get('flag') or {}).get('kind') == 'rejected'
+            else 'not_generated' if block.get('editing') != 'generated' else None)
+        if excluded: risk[excluded] += 1
+        if gate is not None and detection.get('status') != 'eligible' and calibration.get('risk_not_run_reason') == 'not_eligible' and all(calibration.get(k) is None for k in ('risk_probability', 'risk_error', 'risk_measurement')):
+            risk['not_eligible'] += 1
+            continue
+        value = probability(calibration.get('risk_probability'))
+        measurement = artifact.get('risk_measurements', {}).get(calibration.get('risk_measurement'), {})
+        index = measurement.get('batch_index')
+        batches = next((p['batches'] for p in trial['batch_plans'] if p['phase'] == 'detect'), [])
+        linked = type(index) is int and 0 <= index < len(batches) and ordinal in batches[index]['ordinals'] and measurement.get('request_id') == trial['request_id'] and measurement.get('model_calls') == 1
+        if gate is None or detection.get('status') != 'eligible' or value is None or calibration.get('risk_error') or calibration.get('risk_not_run_reason') or not linked:
+            risk['missing'] += 1; missing_reasons[calibration.get('risk_not_run_reason') or 'invalid_or_missing_probe'] += 1
+            continue
+        risk['measured'] += 1
+        high = value >= Decimal(str(plan['risk_probe']['high_boundary']))
+        risk['high'] += high
+        verification = block.get('verification', {}).get('status')
+        if high and not excluded and verification in ('pass', 'fail', 'indeterminate'):
+            risk['high_verified'] += 1; risk['high_pass'] += verification == 'pass'
+    def group(values):
+        natural = [v['gate'] for v in values if v['kind'] == 'natural' and v['gate'] is not None]
+        unnatural = [v['gate'] for v in values if v['kind'] == 'problem' and v['gate'] is not None]
+        span = interval(max(natural) if natural else None, min(unnatural) if unnatural else None)
+        return dict(natural_max=span['min'], unnatural_min=span['max'], gap=span['range'], planned=len(values), observed=sum(v['gate'] is not None for v in values),
+            false_positives=sum(v['kind'] == 'natural' and v['eligible'] is True for v in values), misses=sum(v['kind'] == 'problem' and v['eligible'] is False for v in values),
+            complete=all(v['gate'] is not None for v in values))
+    summary = group(observations)
+    summary['by_degree_layout_repeat'], summary['per_case_variation'] = {}, {}
+    for degree in ('polish', 'rewrite'):
+        for layout in ('text', 'items'):
+            values = [v for v in observations if v['degree'] == degree and v['layout'] == layout]
+            for repeat in range(1, 6): summary['by_degree_layout_repeat'][f'{degree}/{layout}/{repeat}'] = group([v for v in values if v['repeat'] == repeat])
+            for identity in kinds:
+                repeated = sorted((v for v in values if v['example_id'] == identity), key=lambda v: v['repeat'])
+                measured = [v['gate'] for v in repeated if v['gate'] is not None]
+                variation = interval(min(measured), max(measured)) if measured else interval(None, None)
+                variation.pop('midpoint')
+                eligibility = [v['eligible'] for v in repeated]
+                summary['per_case_variation'][f'{degree}/{layout}/{identity}'] = dict(variation, planned=5, observed=len(measured),
+                    probabilities=[str(v['gate']) if v['gate'] is not None else None for v in repeated],
+                    eligibility_flipped=len({v for v in eligibility if v is not None}) > 1,
+                    transitions=sum(a is not None and b is not None and a != b for a, b in zip(eligibility, eligibility[1:])))
+    summary['eligibility_flips'] = sum(v['eligibility_flipped'] for v in summary['per_case_variation'].values())
+    risk = dict(risk, missing_reasons=dict(missing_reasons), complete=risk['missing'] == 0,
+        high_pass_rate=risk['high_pass'] / risk['high_verified'] if risk['high_verified'] else None,
+        recommendation='keep_disabled_false_veto' if risk['high_pass'] else 'unconfirmed' if risk['missing'] or not risk['high_verified'] else 'owner_review_required')
+    condition = next(c for c in plan['conditions'] if c['judgment_enabled'])
+    floor = (interval(Decimal(summary['natural_max']), Decimal(summary['unnatural_min']))['midpoint']
+             if summary['complete'] and summary['gap'] is not None and Decimal(summary['gap']) > 0 else None)
+    reason = ('incomplete_calibration' if not summary['complete'] else 'revise_gate_axes_actions_references_with_new_policy_and_remeasure' if floor is None
+              else 'new_threshold_id_contract_hash_and_remeasurement_required' if Decimal(floor) != Decimal(str(THRESHOLDS[condition['thresholds_version']]['floor'])) else 'owner_review_and_unused_held_out_required')
+    decision = dict(derived_floor=floor, thresholds_version=condition['thresholds_version'], policy_version=condition['policy_version'],
+                    references_hash=plan['references_hash'], edit_risk=risk, reason=reason, reviewer=None)
+    previous = artifact.get('calibration_decision') or {}
+    if artifact.get('calibration_summary') == summary and {k: v for k, v in previous.items() if k != 'reviewer'} == {k: v for k, v in decision.items() if k != 'reviewer'} and isinstance(previous.get('reviewer'), str) and previous['reviewer'].strip(): decision['reviewer'] = previous['reviewer']
+    return dict(calibration_summary=summary, calibration_decision=decision)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('plan', 'run', 'check', 'report'))
+    parser.add_argument('operation', choices=('plan', 'run', 'check', 'report', 'calibrate'))
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--artifact', type=Path, default=Path('judgment-evaluation.json'))
     parser.add_argument('--revision', type=int, default=1)
@@ -356,6 +456,13 @@ def main():
     plan = json.loads(args.plan.read_text())
     if args.mode != plan['mode']: parser.error('Mode must match frozen plan; live requires --mode live')
     if args.operation == 'run': asyncio.run(run(plan, args.artifact))
+    elif args.operation == 'calibrate':
+        artifact = json.loads(args.artifact.read_text())
+        try: result = calibrate(plan, artifact)
+        except (ValueError, TypeError, KeyError): result = dict(calibration_summary=None, calibration_decision=None)
+        artifact.update(result); legacy.save(args.artifact, artifact)
+        args.artifact.with_suffix('.md').write_text('# Gate calibration\n\n' + json.dumps(result, ensure_ascii=False, indent=2) + '\n')
+        if result['calibration_decision'] is None or result['calibration_decision']['derived_floor'] is None: raise SystemExit(1)
     elif args.operation == 'report':
         artifact = json.loads(args.artifact.read_text())
         try: result = summarize(plan, artifact)
