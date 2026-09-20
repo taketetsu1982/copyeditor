@@ -3,7 +3,7 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "インクを補充して使い続けられる万年筆です。ペン先のみの交換にも対応しており、筆記時の太さの変更が可能です。"
+bad: "インクを補充して使い続けられる万年筆です。ペン先のみの交換による筆記時の太さの変更にも、きちんと対応しています。"
 good: "インクを補充して使い続けられる万年筆です。ペン先だけを交換して、書く線の太さも変えられます。"
 reason: "Stiffness: retain the ordinary opening and remove the mildly bureaucratic nominal account of changing line width."
 lint: null

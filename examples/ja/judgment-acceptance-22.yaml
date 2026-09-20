@@ -1,0 +1,10 @@
+id: "judgment-acceptance-22"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "markdown"
+bad: "## 服の直し方\nこの冊子では、ほつれた袖を縫う手順を修繕記事にまとめました。"
+good: "## 服の直し方\nこの冊子では、ほつれた袖を縫う手順を記事にまとめました。"
+reason: "Coined vocabulary: only the unnecessary repair-article compound changes; preserve the heading and sewing instructions."
+lint: null
+must_change: true

@@ -1,0 +1,10 @@
+id: "judgment-acceptance-28"
+language: "ja"
+section: "structure"
+degree: "polish"
+format: "html"
+bad: "<section><h2>手のひらの拡大鏡</h2><p>この拡大鏡は、持ち手を折り畳めます。また、ケースに収まります。さらに、ひもを通す穴があります。</p></section>"
+good: "<section><h2>手のひらの拡大鏡</h2><p>持ち手を折り畳んでケースに収められる拡大鏡です。ひもを通す穴もあります。</p></section>"
+reason: "Mechanical repetition: successive connectors overstage three features; preserve every feature and the full section."
+lint: null
+must_change: true

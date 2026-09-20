@@ -1,0 +1,10 @@
+id: "judgment-acceptance-35"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この絵は一枚ずつ手描きです。見本と色合いが少し異なる場合があります。とはいえ、色合いが必ず同じになるわけではありません。"
+good: "この絵は一枚ずつ手描きです。見本と色合いが少し異なる場合があります。"
+reason: "Caveat trap / Roundabout wording: the qualification repeats the stated variation; do not turn the sample into a color-match promise."
+lint: null
+must_change: true

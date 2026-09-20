@@ -3,7 +3,7 @@ language: "ja"
 section: "structure"
 degree: "polish"
 format: "text"
-bad: "綿を使った靴下だ。縫い目がつま先に当たりにくい点が特長だ。履き口のゴムを取り替えられる点も特長だ。"
+bad: "綿を使った靴下だ。また、縫い目がつま先に当たりにくい点が特長だ。さらに、履き口のゴムを取り替えられる点も特長だ。"
 good: "綿を使った、縫い目がつま先に当たりにくい靴下だ。履き口のゴムも取り替えられる。"
 reason: "Mechanical repetition: omit repeated feature announcements rather than changing the actual features; keep plain register."
 lint: null

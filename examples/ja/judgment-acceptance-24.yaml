@@ -1,0 +1,10 @@
+id: "judgment-acceptance-24"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この耳栓は、周囲の音を抑えて休息静穏を助けます。"
+good: "この耳栓は、周囲の音を抑えて静かな休息を助けます。"
+reason: "Coined vocabulary: the compressed rest-tranquility compound is the sole defect; do not promise complete silence."
+lint: null
+must_change: true

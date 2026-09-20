@@ -1,0 +1,10 @@
+id: "judgment-acceptance-36"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "音楽を聞くだけの時間があってもかまいません。好きな曲を持ち寄り、話したい人は話し、聞きたい人は聞く集まりです。"
+good: "音楽を聞くだけの時間があってもかまいません。好きな曲を持ち寄り、話したい人は話し、聞きたい人は聞く集まりです。"
+reason: "Natural abstraction boundary: permission to listen quietly is grounded in a gathering with a choice between talking and listening."
+lint: null
+must_change: false

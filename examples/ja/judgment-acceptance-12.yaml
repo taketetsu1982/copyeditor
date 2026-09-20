@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "text"
-bad: "振動で起こす目覚まし時計です。アラームを止めた後も、設定した時刻の消去が行われることはありません。"
+bad: "振動で起こす目覚まし時計です。アラームを止めた後も、設定した時刻は消えません。この点を押さえておくことが大切です。"
 good: "振動で起こす目覚まし時計です。アラームを止めた後も、設定した時刻は消えません。"
-reason: "Negation trap: simplify the nominal deletion phrase without turning retained alarm settings into deleted settings."
+reason: "Negation trap / Formulaic ending: remove the stock closing lesson without turning retained alarm settings into deleted settings."
 lint: null
 must_change: true

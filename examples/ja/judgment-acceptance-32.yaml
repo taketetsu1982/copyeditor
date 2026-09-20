@@ -1,0 +1,10 @@
+id: "judgment-acceptance-32"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "この録音機は、停止ボタンを押しても録音済みの音声は消えません。この点をきちんと理解しておくことが大切です。"
+good: "この録音機は、停止ボタンを押しても録音済みの音声は消えません。"
+reason: "Negation trap / Formulaic ending: remove the emphatic lesson while keeping the recorded audio undeleted after stopping."
+lint: null
+must_change: true

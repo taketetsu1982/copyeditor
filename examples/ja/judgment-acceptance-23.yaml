@@ -1,0 +1,10 @@
+id: "judgment-acceptance-23"
+language: "ja"
+section: "vocabulary"
+degree: "polish"
+format: "html"
+bad: "<article><h2>銭湯の案内</h2><p>湯の温度や浴槽の深さを載せ、銭湯選択性を高めた案内です。</p></article>"
+good: "<article><h2>銭湯の案内</h2><p>湯の温度や浴槽の深さを載せ、銭湯の選びやすさを高めた案内です。</p></article>"
+reason: "Coined vocabulary: bath selectability replaces a concrete choice relationship; change only that compound and preserve the article."
+lint: null
+must_change: true

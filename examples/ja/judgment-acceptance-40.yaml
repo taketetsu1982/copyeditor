@@ -1,0 +1,10 @@
+id: "judgment-acceptance-40"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "使い込んだ跡も、暮らしの記録になる木のまな板だ。刃の跡を削って、また使える。"
+good: "使い込んだ跡も、暮らしの記録になる木のまな板だ。刃の跡を削って、また使える。"
+reason: "Natural abstraction boundary: traces of use have a concrete counterpart in a wooden board that can be resurfaced; retain plain register."
+lint: null
+must_change: false

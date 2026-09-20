@@ -3,8 +3,8 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "markdown"
-bad: "## 屋外で使うソーラーパネル\n晴天時には、接続した端末の使用時間の延長につながる場合があるというものです。"
+bad: "## 屋外で使うソーラーパネル\n晴天時には、接続した端末を使える時間が延びる場合があります。一方で、必ず延びるとは限らない点も意識しましょう。"
 good: "## 屋外で使うソーラーパネル\n晴天時には、接続した端末を使える時間が延びる場合があります。"
-reason: "Promise trap: remove the vague explanatory ending while retaining a possible benefit rather than guaranteed charging or runtime."
+reason: "Promise trap / Roundabout wording: a staged counterpoint restates the existing uncertainty; preserve sunny conditions and a possible rather than guaranteed benefit."
 lint: null
 must_change: true

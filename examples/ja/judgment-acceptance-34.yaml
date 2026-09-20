@@ -1,0 +1,10 @@
+id: "judgment-acceptance-34"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "この鉱物標本の内容を解説します。結論から言うと、石英が6個、方解石が4個、合計10個入っています。"
+good: "この鉱物標本には、石英が6個、方解石が4個、合計10個入っています。"
+reason: "Number trap / Formulaic framing: remove the article and conclusion announcements without losing the mineral-to-count bindings."
+lint: null
+must_change: true

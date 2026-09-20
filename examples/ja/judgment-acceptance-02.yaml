@@ -3,7 +3,7 @@ language: "ja"
 section: "syntax"
 degree: "polish"
 format: "html"
-bad: "<article><h2>自転車用ライト</h2><p>取り付けた後も、照射方向の調整を行えます。工具を使わずに着脱することが可能です。</p></article>"
+bad: "<article><h2>自転車用ライト</h2><p>取り付けた後も、照射方向の調整を行えます。工具を使わずに着脱することが可能です。この点をしっかりと把握しておくことが重要です。</p></article>"
 good: "<article><h2>自転車用ライト</h2><p>取り付けた後も、光を向ける方向を調整できます。工具を使わずに着脱できます。</p></article>"
 reason: "Stiffness: express direction adjustment and tool-free removal directly while preserving the complete article markup."
 lint: null

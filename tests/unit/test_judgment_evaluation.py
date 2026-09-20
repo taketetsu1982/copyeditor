@@ -29,7 +29,7 @@ def test_ac_08_13_14_all_trials_requests_and_packing_are_retained(completed):
     assert all(t['decision'] == dict.fromkeys('abcd') and t['reviewer'] is None for t in artifact['trials'])
     assert all((t['calibration'] is not None) == t['judgment_enabled'] for t in artifact['trials'])
     assert sum(r['provider_measurements'][0]['model_calls'] for r in requests.values()) < sum(t['provider_measurements'][0]['model_calls'] for t in artifact['trials'])
-    for name, blocks, calls in [('acceptance', 400, 400), ('existing', 480, 480), ('regression', 200, 40)]:
+    for name, blocks, calls in [('acceptance', 800, 800), ('existing', 480, 480), ('regression', 200, 40)]:
         frozen = evaluation.freeze(1, name=name)
         assert len(frozen['planned_trials']) == blocks and len(frozen['request_layouts']) == calls
     frozen_path = path.with_name('plan.json'); evaluation.legacy.save(frozen_path, plan)
@@ -184,12 +184,13 @@ def test_ac_08_13_14_unacceptable_comparisons_cannot_pass(reviewed, mutation):
 def test_ac_08_13_new_and_legacy_rate_boundaries(reviewed, scope, failures, passed):
     plan, artifact, cases = deepcopy(reviewed)
     problem_ids = [i for i, c in cases.items() if c['must_change']]
+    if scope == 'repeat' and len(cases) == 40: failures += 3
     for t in artifact['trials']:
         if t['degree'] != 'rewrite' or not t['judgment_enabled']: continue
         if (scope == 'example' and t['example_id'] == problem_ids[0] and t['repeat'] <= failures) or (scope == 'repeat' and t['repeat'] == 1 and t['example_id'] in problem_ids[:failures]): t['decision']['a'] = False
     group = evaluation.summarize(plan, artifact)['groups']['rewrite/on/text']
     assert group['criteria_met'] is passed
-    assert group['per_repeat']['1']['planned'] == (15 if len(cases) == 20 else 18)
+    assert group['per_repeat']['1']['planned'] == (30 if len(cases) == 40 else 18)
 
 
 def test_ac_08_13_equal_quality_is_not_new_value_and_old_off_failure_is_retained(reviewed):
@@ -200,7 +201,7 @@ def test_ac_08_13_equal_quality_is_not_new_value_and_old_off_failure_is_retained
     summary = evaluation.summarize(plan, artifact)
     assert summary['added_value'] == 0
     assert summary['criteria_met'] is (len(cases) == 24)
-    if len(cases) == 20: assert summary['status'] == 'no_added_value'
+    if len(cases) == 40: assert summary['status'] == 'no_added_value'
     else:
         next(t for t in artifact['trials'] if t['degree'] == 'rewrite' and not t['judgment_enabled'])['decision']['b'] = False
         summary = evaluation.summarize(plan, artifact)
