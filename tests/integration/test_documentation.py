@@ -92,11 +92,11 @@ def test_optional_judgment_settings_and_disclosure_match_both_languages():
     for section in (EN, JA):
         for term in ("judgment.enabled", "COPYEDITOR_JUDGMENT_ENABLED=true",
                      "judgment.enabled=false", "COPYEDITOR_JUDGMENT_ENABLED=false", "TYPESAFE_API_KEY",
-                     "jev-1.13.0", "reference-gate-action-v1", "gate-floor-v1", "Vertex ADC", "OAuth",
+                     "jev-1.13.0", "reference-gate-action-v1", "gate-verify-v1", "Vertex ADC", "OAuth",
                      "TypeSafe AI", "schema_version=3", "lint_text", "verification_rejected",
                      "contracts/config.md#judgment-fields", "contracts/tools.md#registered-threshold-classification"):
             assert term in section
-        for identifier in ("jev-1.13.0", "reference-gate-action-v1", "gate-floor-v1", "TYPESAFE_API_KEY"):
+        for identifier in ("jev-1.13.0", "reference-gate-action-v1", "gate-verify-v1", "TYPESAFE_API_KEY"):
             assert identifier in contract
         assert not re.search(r"TYPESAFE_API_KEY\s*[:=]", section)
     for phrase in ("Optional judgment", "Judgment defaults to off",

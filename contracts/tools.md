@@ -2,7 +2,7 @@
 contract-id: CTR-01
 kind: api
 derives-from: [AC-01-6, AC-01-8, AC-01-9, AC-01-14, AC-02-1, AC-02-2, AC-02-3, AC-02-4, AC-02-5, AC-02-6, AC-02-7, AC-02-8, AC-02-9, AC-02-10, AC-02-11, AC-02-12, AC-02-13, AC-03-1, AC-03-2, AC-03-4, AC-07-1, AC-07-2, AC-07-3, AC-07-4, AC-07-6, AC-07-7, AC-07-10, AC-07-11, AC-07-12, AC-07-13, AC-08-1, AC-08-2, AC-08-3, AC-08-4, AC-08-5, AC-08-6, AC-08-7, AC-08-8, AC-08-9, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-15, AC-08-16, AC-08-17, AC-08-18]
-revision: 8
+revision: 9
 ---
 
 # MCP tool contract
@@ -296,15 +296,17 @@ Provider rows are always present, in editing then judgment order, even with zero
 
 This is the public source of truth for probability/result and aggregate-state consistency. Server, Skill and independent clients use it without private documents. New policy/threshold versions require a contract revision with their complete vocabulary, thresholds and rules. Hash equality is not a replacement. Reject unknown or incompatible versions; compare finite JSON numbers without rounding before classification.
 
-The active pair is policy `reference-gate-action-v1` and thresholds `gate-floor-v1`. The latter contains only `floor=0.53`. This is the initial gate floor, not evidence of completed calibration. A replacement floor needs a new immutable threshold ID, a public contract revision and a new comparison evaluation. Policy questions, references, action vocabulary/instruction mapping, packing rules and fixed verification classification belong to the policy version.
+The active pair is policy `reference-gate-action-v1` and thresholds `gate-verify-v1`. The threshold definition is exactly `{id: "gate-verify-v1", floor: 0.53, verification: {pass_min: 0.70, fail_max: 0.30}}`. All three decision parameters belong to the threshold version; they are provisional starting values, not evidence of completed calibration. Policy owns questions, references, action vocabulary/instruction mapping and packing, but no numeric decision boundary. Verification order and aggregation remain unchanged. Changing any decision parameter requires a new immutable threshold ID, a contract revision and renewed comparison evaluation.
+
+Migration from `gate-floor-v1` changes the published threshold version. That old pair retains its historical 0.53 gate and 0.20/0.80 verification meaning and is not an alias accepted by this registry. Version-checking clients reject the new pair until updated to this contract. The policy ID stays unchanged because no question, reference, instruction or packing changes. Removing fail_max/pass_min from its legacy verification definition changes its canonical hash: this explicit ownership migration supersedes the old hash without reusing the old threshold ID. Hashes are computed from the actual new definitions; never retain a stale hash or silently treat old records as new. Subsequent policy-content changes require a new policy ID.
 
 | Layer | Ordered IDs | Classification |
 |---|---|---|
 | Gate | gate | p >= 0.53: present; p < 0.53: absent |
 | Axes | stiff, abstract, formulaic, roundabout, repetitive | Raw probabilities only; no per-axis thresholds or low/high classes |
-| Verification | meaning, scope, natural, achieved | Fixed p <= 0.20: fail; p >= 0.80: pass; otherwise indeterminate |
+| Verification | meaning, scope, natural, achieved | p <= 0.30: fail; p >= 0.70: pass; otherwise indeterminate |
 
-The only calibrated decision parameter is the gate floor. Verification's fixed conservative boundaries are not tuned alongside that floor; changing them changes policy version and requires reevaluation. Noul values are probabilities of yes, not severity. The gate explicitly covers stiff, abstract, generic, formulaic, roundabout and mechanically repetitive expression. formulaic covers both generic and formulaic wording; roundabout includes redundant explanation. Axis values neither admit nor veto editing.
+Calibration measures the gate floor separately from the two shared verification boundaries. The midpoint-of-gap rule applies only to the gate. All four verification checks use the same fail_max and pass_min, with 0 <= fail_max < pass_min <= 1. Boundary equality belongs to fail/pass respectively; the open interval is indeterminate. No per-check thresholds are introduced. Noul values are probabilities of yes, not severity. The gate explicitly covers stiff, abstract, generic, formulaic, roundabout and mechanically repetitive expression. formulaic covers both generic and formulaic wording; roundabout includes redundant explanation. Axis values neither admit nor veto editing.
 
 | Action | Bounded editing intent |
 |---|---|
@@ -328,7 +330,7 @@ The fallback mapping is stiff→simplify_vocabulary, abstract→make_more_concre
 
 `action.probabilities` is a closed object containing all seven Action keys exactly once; JSON key order is immaterial. All probabilities and confidence must be finite numbers in [0,1], never booleans. The sum must differ from 1 by no more than 0.000001, without renormalization. selected must be an exact maximum-probability key; for tied maxima preserve any returned maximal choice. Missing/extra/duplicate keys, unknown choices and non-maximal choices are invalid_response. confidence is the provider's separate statistic, not selected probability or an invented entropy formula. effective/source must exactly match the table and axis mapping; effective is not required to maximize the Choice distribution when source=axis_fallback.
 
-A finite gate probability always has a floor classification, including p=0.5 (absent for gate-floor-v1); do not manufacture an uncertainty band or a second threshold. Detection.status retains indeterminate as a distinct successful non-change concept, but the current pinned Noul protocol and this registry do not emit it: missing/null/nonfinite answers are invalid_response, not normal indeterminacy. Consumers reject an indeterminate detection claimed under this active pair rather than inventing evidence. Verification has an explicit indeterminate interval. A future normal indeterminate detection representation would require a published protocol/registry revision; it may not be silently conflated with insufficient or not_run (AC-08-3).
+A finite gate probability always has a floor classification, including p=0.5 (absent for gate-verify-v1); do not manufacture an uncertainty band or a second threshold. Detection.status retains indeterminate as a distinct successful non-change concept, but the current pinned Noul protocol and this registry do not emit it: missing/null/nonfinite answers are invalid_response, not normal indeterminacy. Consumers reject an indeterminate detection claimed under this active pair rather than inventing evidence. Verification has an explicit indeterminate interval. A future normal indeterminate detection representation would require a published protocol/registry revision; it may not be silently conflated with insufficient or not_run (AC-08-3).
 
 Evaluated verification is pass only when all four checks pass; any fail makes the aggregate fail, otherwise it is indeterminate. meaning compares facts, numbers, conditions, negation and strength of commitments; scope bounds the edit to effective action; natural asks whether the candidate is more natural than the original for this audience, not whether it is acceptable in isolation; achieved asks whether that effective action was accomplished. not_run denotes non-execution, never missing probabilities.
 
@@ -573,7 +575,7 @@ Retain every legacy case with judgment disabled and require byte/shape/call-sequ
 | Mixed items and HTML/text/markdown, ja/en/zh | input order/IDs retained, same control, HTML whole document |
 | Final-item API error or invalid answer after prior successes | whole-request content discard, retained usage, zero later calls |
 | V3 model_called accounting table | every row and flipped-boolean negative case; false never reported as proof of no transmission |
-| Public floor classification and Choice | 0.53 equality and neighbors; verification 0.20/0.80 equality; exact option set/sum/ties/non-max/unknown/NaN; fallback axis ties; confidence changes alone never change control; unknown pair rejected |
+| Public floor classification and Choice | 0.53 equality and neighbors; verification 0.30/0.70 equality and immediate neighbors; threshold-only boundary ownership; exact option set/sum/ties/non-max/unknown/NaN; fallback axis ties; confidence changes alone never change control; unknown pair rejected |
 | Whole-request state and deterministic packing | 7*N / 4*M questions; one call per phase when within limits; stable internal IDs, six fixed references on every detection batch, two local limit boundaries, singleton refusal, no failure-based repartition |
 | Boundaries on inputs, probabilities, hashes, payloads, caps, call counts, deadlines | at-bound accepted where applicable, above rejected, booleans/NaN rejected |
 | Deadline + invalid answer; invalid answer + overrun; valid answer + overrun | provider_timeout; invalid_response; request_budget respectively |

@@ -36,7 +36,7 @@ CASES = [
     ("judgment.enabled", False, [None, 1, "yes"]),
     ("judgment.model", "jev-1.13.0", ["jev-latest", "jev-preview", None]),
     ("judgment.policy_version", "reference-gate-action-v1", ["unknown", None]),
-    ("judgment.thresholds_version", "gate-floor-v1", ["unknown", None]),
+    ("judgment.thresholds_version", "gate-verify-v1", ["gate-floor-v1", "unknown", None]),
     *[("judgment." + key, maximum, [0, maximum + 1, True, 1.5]) for key, maximum in
       (("timeout_ms", 60000), ("polish_deadline_ms", 120000), ("rewrite_deadline_ms", 240000),
        ("max_calls", 64), ("input_budget", 262144))],

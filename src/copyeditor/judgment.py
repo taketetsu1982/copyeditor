@@ -101,7 +101,7 @@ class BatchPlan(NamedTuple):
 
 
 POLICY_ID = "reference-gate-action-v1"
-THRESHOLD_ID = "gate-floor-v1"
+THRESHOLD_ID = "gate-verify-v1"
 ACTION_CRITERIA = _freeze({
     'preserve_as_is': 'Keep the original wording.',
     'simplify_vocabulary': 'Use familiar equivalent words while retaining necessary technical terms and precision.',
@@ -170,14 +170,14 @@ POLICY = _freeze({
     },
     "packing_version": "request-pack-v1",
     "verification": {"order": ("meaning", "scope", "natural", "achieved"),
-                     "fail_max": 0.20, "pass_min": 0.80,
                      "aggregation": ("all_pass", "any_fail", "otherwise_indeterminate")},
     "fallback": {"stiff": "simplify_vocabulary", "abstract": "make_more_concrete",
                  "formulaic": "make_more_specific", "roundabout": "simplify_phrasing",
                  "repetitive": "simplify_structure"},
     "axis_order": ("stiff", "abstract", "formulaic", "roundabout", "repetitive"),
 })
-THRESHOLD = _freeze({"id": THRESHOLD_ID, "floor": 0.53})
+THRESHOLD = _freeze({"id": THRESHOLD_ID, "floor": 0.53,
+                     "verification": {"pass_min": 0.70, "fail_max": 0.30}})
 POLICIES = _freeze({POLICY_ID: POLICY})
 THRESHOLDS = _freeze({THRESHOLD_ID: THRESHOLD})
 COMPATIBLE_PAIRS = frozenset({(POLICY_ID, THRESHOLD_ID)})
@@ -239,13 +239,13 @@ def classify_detection(block, *, policy_id=POLICY_ID, threshold_id=THRESHOLD_ID)
 
 
 def classify_verification(block, *, policy_id=POLICY_ID, threshold_id=THRESHOLD_ID):
-    policy, _ = _registry(policy_id, threshold_id)
+    policy, threshold = _registry(policy_id, threshold_id)
     valid(isinstance(block, JudgmentBlockResult) and block.choice is None)
     rule = policy["verification"]
     values = _probabilities(block.probabilities, rule["order"])
     checks = [{"id": key, "probability": value,
-               "result": "fail" if value <= rule["fail_max"] else
-                         "pass" if value >= rule["pass_min"] else "indeterminate"}
+               "result": "fail" if value <= threshold["verification"]["fail_max"] else
+                         "pass" if value >= threshold["verification"]["pass_min"] else "indeterminate"}
               for key, value in values.items()]
     results = {check["result"] for check in checks}
     status = "pass" if results == {"pass"} else "fail" if "fail" in results else "indeterminate"

@@ -2,7 +2,7 @@
 contract-id: CTR-04
 kind: schema
 derives-from: [AC-05-1, AC-05-2, AC-05-3, AC-05-4, AC-05-5, AC-05-6, AC-05-8, AC-05-9, AC-02-6, AC-02-10, AC-02-11, AC-08-1, AC-08-7, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-17, AC-08-18]
-revision: 6
+revision: 7
 ---
 
 # Configuration and image layout
@@ -53,14 +53,14 @@ Domains are lowercase ASCII DNS names of at most 253 characters, with at least o
 
 ### Judgment fields
 
-The initial image provides exactly the policy/threshold registry IDs below as one compatible pair. Earlier expression-v1 / conservative-v1 and state-action-v1 / state-action-conservative-v1 definitions retain their historical meaning but are not accepted as aliases. The active policy includes six fixed synthetic references, gate/axis/verification questions, action vocabulary, Japanese instruction mapping and deterministic packing. gate-floor-v1 contains floor=0.53. No per-axis threshold, confidence threshold, new leaf or per-request action switch is introduced; confidence is observation only. Unknown registry IDs fail startup as invalid_config at the corresponding leaf; there is no fallback/latest registry selection. Updating a registry body requires a new immutable version ID and new evaluation records. The server computes hashes from the bundled definitions, not from caller-supplied hashes. The public classification rules for every registered threshold version are in [CTR-01](tools.md#registered-threshold-classification); new versions require updating that public contract. Operators select these registered versions; they cannot upload prompts or arbitrary threshold maps through configuration.
+The initial image provides exactly the policy/threshold registry IDs below as one compatible pair. Earlier expression-v1 / conservative-v1 and state-action-v1 / state-action-conservative-v1 definitions retain their historical meaning but are not accepted as aliases. The active policy includes six fixed synthetic references, gate/axis/verification questions, action vocabulary, Japanese instruction mapping and deterministic packing. gate-verify-v1 contains floor=0.53 and verification={pass_min: 0.70, fail_max: 0.30}; policy contains no numeric decision boundaries. The retired gate-floor-v1 is not accepted or aliased. No per-axis threshold, confidence threshold, new leaf or per-request action switch is introduced; confidence is observation only. Unknown registry IDs fail startup as invalid_config at the corresponding leaf; there is no fallback/latest registry selection. Updating a registry body requires a new immutable version ID and new evaluation records, except for the explicit policy ownership migration documented in CTR-01, which preserves the policy ID and recomputes its hash. The server computes hashes from the bundled definitions, not from caller-supplied hashes. The public classification rules for every registered threshold version are in [CTR-01](tools.md#registered-threshold-classification); new versions require updating that public contract. Operators select these registered versions; they cannot upload prompts or arbitrary threshold maps through configuration.
 
 | Config leaf | Type / accepted values | Environment | Image default |
 |---|---|---|---|
 | judgment.enabled | boolean (not number or string in YAML; JSON true/false in environment) | COPYEDITOR_JUDGMENT_ENABLED | false |
 | judgment.model | string, jev-1.13.0 only for this implementation | COPYEDITOR_JUDGMENT_MODEL | jev-1.13.0 |
 | judgment.policy_version | registered string, reference-gate-action-v1 | COPYEDITOR_JUDGMENT_POLICY_VERSION | reference-gate-action-v1 |
-| judgment.thresholds_version | registered string, gate-floor-v1 | COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION | gate-floor-v1 |
+| judgment.thresholds_version | registered string, gate-verify-v1 | COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION | gate-verify-v1 |
 | judgment.timeout_ms | integer, 1..60000 | COPYEDITOR_JUDGMENT_TIMEOUT_MS | 10000 |
 | judgment.polish_deadline_ms | integer, 1..120000 | COPYEDITOR_JUDGMENT_POLISH_DEADLINE_MS | 120000 |
 | judgment.rewrite_deadline_ms | integer, 1..240000 | COPYEDITOR_JUDGMENT_REWRITE_DEADLINE_MS | 240000 |
@@ -128,7 +128,7 @@ judgment:
   enabled: false
   model: jev-1.13.0
   policy_version: reference-gate-action-v1
-  thresholds_version: gate-floor-v1
+  thresholds_version: gate-verify-v1
   timeout_ms: 10000
   polish_deadline_ms: 120000
   rewrite_deadline_ms: 240000

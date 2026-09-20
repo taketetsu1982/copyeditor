@@ -108,7 +108,7 @@ def _judgment_valid(key, value):
 
 SCHEMA.update({"judgment." + key: ("COPYEDITOR_JUDGMENT_" + key.upper(), default,
     lambda value, key=key: _judgment_valid(key, value)) for key, default in dict(
-    enabled=False, model="jev-1.13.0", policy_version="reference-gate-action-v1", thresholds_version="gate-floor-v1",
+    enabled=False, model="jev-1.13.0", policy_version="reference-gate-action-v1", thresholds_version="gate-verify-v1",
     timeout_ms=10000, polish_deadline_ms=120000, rewrite_deadline_ms=240000, max_calls=64,
     input_budget=262144, pricing={}).items()})
 

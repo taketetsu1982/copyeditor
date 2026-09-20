@@ -33,7 +33,7 @@ def test_public_contract_is_referenced_without_repeating_classification_rules(sk
     assert set(refs) == {"judgment-payloads-and-validation", "registered-threshold-classification"}
     assert set(refs) <= headings
     section = skill.split("## Optional judgment", 1)[1].split("## Apply only permitted local edits", 1)[0]
-    assert not any(value in section for value in ("0.53", "0.20", "0.80", "|", "Fixed reporting examples"))
+    assert not any(value in section for value in ("0.53", "0.30", "0.70", "|", "Fixed reporting examples"))
     assert "validation fails, leave the response unprocessed" in section
     assert "never downgrade broken v3 to legacy" in section
 

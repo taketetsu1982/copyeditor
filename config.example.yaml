@@ -34,7 +34,7 @@ judgment:
   enabled: false
   model: jev-1.13.0
   policy_version: reference-gate-action-v1
-  thresholds_version: gate-floor-v1
+  thresholds_version: gate-verify-v1
   timeout_ms: 10000
   polish_deadline_ms: 120000
   rewrite_deadline_ms: 240000

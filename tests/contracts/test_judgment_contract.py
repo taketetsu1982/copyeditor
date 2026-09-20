@@ -23,7 +23,7 @@ def test_legacy_case_bytes_and_inventory_are_preserved():
 def test_action_shape_and_public_classification_agree():
     contract = CONTRACT.read_text()
     metadata = contract.split("---", 2)[1]
-    assert "revision: 8" in metadata and "base-revision" not in metadata
+    assert "revision: 9" in metadata and "base-revision" not in metadata
     assert "AC-08-18" in metadata
     registry = contract.split("### Registered threshold classification\n")[1].split("### Detection")[0]
     actions = re.findall(r'"([a-z_]+)"', re.search(r"^Action = (.+)$", contract, re.M)[1])
@@ -73,7 +73,7 @@ CONFIG_CONTRACT = CONTRACT.with_name("config.md")
 def test_legacy_config_contract_is_preserved():
     contract = CONFIG_CONTRACT.read_text()
     legacy = re.sub(r"\n### [^\n]+\n.*?(?=\n## |\Z)", "", contract, flags=re.S)
-    legacy = legacy.replace("revision: 6", "revision: 2")
+    legacy = legacy.replace("revision: 7", "revision: 2")
     legacy = re.sub(r", AC-08-\d+", "", legacy)
     legacy = legacy.replace("This table and the judgment fields table define", "This table is")
     legacy = legacy.replace("`credentials`, `judgment.credentials`;", "`credentials`;")
@@ -84,7 +84,7 @@ def test_legacy_config_contract_is_preserved():
 def test_judgment_config_example_and_leaf_contract_agree():
     contract = CONFIG_CONTRACT.read_text()
     metadata = contract.split("---", 2)[1]
-    assert "revision: 6" in metadata and "base-revision" not in metadata
+    assert "revision: 7" in metadata and "base-revision" not in metadata
     example = strict_yaml(re.search(r"```yaml\n(.*?)\n```", contract, re.S)[1])["judgment"]
     rows = re.findall(r"^\| judgment\.([a-z_]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$", contract, re.M)
     assert len(rows) == len(example) == 10
@@ -95,7 +95,7 @@ def test_judgment_config_example_and_leaf_contract_agree():
         assert strict_yaml("value: " + default.strip())["value"] == example[key]
     assert example["enabled"] is False and example["model"] == "jev-1.13.0"
     assert (example["policy_version"], example["thresholds_version"]) == (
-        "reference-gate-action-v1", "gate-floor-v1")
+        "reference-gate-action-v1", "gate-verify-v1")
     assert all(example[key] in CONTRACT.read_text() for key in ("policy_version", "thresholds_version"))
     assert "tools.md#registered-threshold-classification" in contract
     assert "ctr01-us08-draft" not in contract
