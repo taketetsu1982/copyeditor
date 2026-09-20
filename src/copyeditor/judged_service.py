@@ -10,7 +10,7 @@ from .lint import lint_response
 from .prompt import system_instruction
 from .providers.base import GenerationInput, ProviderFailure
 from .requests import ValidationError
-from .responses import parse_generation, valid
+from .responses import preservation_payload, parse_generation, valid
 from .rewrite_budget import RewriteFailure
 from .rewrite_response import BUDGET_MESSAGE
 
@@ -143,7 +143,7 @@ async def _run(service, request, judgment, metrics, *, items_route=False):
                         detection=detections[i], verification=verification, **lint_response(item["text"], rules))
             items.append(item)
         result = dict(metadata(), status="ok", protected_terms_checked=len(preservation.request_terms(request.items, rules.protected_terms)),
-                      preservation={"length_ratio": ratio})
+                      preservation=preservation_payload(ratio))
         del result["model_called"], result["regeneration_attempted"]
         result.update(items=items) if items_route else result.update({key: value for key, value in items[0].items() if key != "id"})
         validate_judged_final(result, request.items, format=request.format)

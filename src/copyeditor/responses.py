@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from types import MappingProxyType
 from typing import NamedTuple
@@ -10,6 +11,13 @@ class Candidate(NamedTuple):
     id: str
     text: str
     flag: object
+
+
+def preservation_payload(ratio):
+    # Keep Decimal thresholds in checks; only response metadata uses JSON floats.
+    # Positive thresholds below float range must not become the forbidden zero.
+    return {"length_ratio": {key: max(float(value), math.nextafter(0.0, 1.0))
+                             for key, value in ratio.items()}}
 
 
 def valid(condition):

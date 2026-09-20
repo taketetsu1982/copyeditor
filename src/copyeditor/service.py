@@ -6,7 +6,7 @@ from .metrics import Metrics
 from .prompt import system_instruction
 from .providers.base import GenerationInput, ProviderFailure
 from .requests import ValidationError, parse_edit_request
-from .responses import nonblank, parse_generation, validate_final
+from .responses import preservation_payload, nonblank, parse_generation, validate_final
 from .rewrite_response import validate_rewrite_final
 from .rewrite_service import rewrite
 from .judged_metrics import JudgedMetrics
@@ -154,7 +154,7 @@ class Service:
             raise ValidationError("output_limit", None)
         for item in items:
             item.update(lint_response(item["text"], rules))
-        result = dict(status="ok", protected_terms_checked=len(terms), preservation={"length_ratio": ratio})
+        result = dict(status="ok", protected_terms_checked=len(terms), preservation=preservation_payload(ratio))
         if items_route:
             result["items"] = items
         else:
