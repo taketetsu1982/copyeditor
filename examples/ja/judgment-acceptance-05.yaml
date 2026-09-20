@@ -1,0 +1,10 @@
+id: "judgment-acceptance-05"
+language: "ja"
+section: "context"
+degree: "polish"
+format: "text"
+bad: "自分らしさを大切にするあなたに、毎日の装いを楽しむための一枚を。深い青の薄手のウールストールです。"
+good: "自分の好みに合わせて毎日の装いを楽しめる、深い青の薄手のウールストールです。"
+reason: "Generic wording: replace the stock appeal to personal identity with a direct description without removing the invitation to enjoy dressing."
+lint: null
+must_change: true
