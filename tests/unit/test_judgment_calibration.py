@@ -280,3 +280,141 @@ def test_calibration_cli_overwrites_stale_decisions_without_changing_thresholds(
     artifact['trials'].pop(); evaluation.legacy.save(path, artifact)
     assert evaluation.legacy.subprocess.run(command, capture_output=True).returncode == 1
     assert json.loads(path.read_text())['calibration_decision'] is None
+
+
+@pytest.fixture(scope='module')
+def verification(ledger):
+    from copyeditor.judgment import JudgmentBlockResult, JudgmentResult
+    from copyeditor.providers.base import Usage
+    pairs = [dict(id=f"{c['id']}-{good}", source_id=c['id'], candidate=c['good'] if good else c['bad'] + ' 9',
+                  action='simplify_vocabulary', labels=dict.fromkeys(('meaning', 'scope', 'natural', 'achieved'), good), reviewer='owner-fixture')
+             for c in evaluation.population('calibration') for good in (True, False)]
+    plan = evaluation.freeze(1, created_at=ledger[0]['created_at'], pairs=pairs)
+    artifact = deepcopy(ledger[1])
+    artifact.update(manifest_bytes=evaluation.encoded(plan), manifest_hash=evaluation.legacy.digest(evaluation.encoded(plan).encode()), run_cost=dict(amount='1', currency='USD'))
+    artifact.update(evaluation.calibrate(plan, artifact))
+    original = deepcopy(artifact)
+    calls = []
+    async def caller(frozen, wire):
+        payload = json.loads(wire); calls.append(payload)
+        assert all(secret not in wire.decode() for secret in ('owner-fixture', 'source_id', 'labels', 'judgment-calibration'))
+        assert len(payload['questions']) == 4 * len(payload['state']['pairs']) and len(wire) + 4096 <= 64000
+        blocks = tuple(JudgmentBlockResult(int(key[1:]), tuple((a, .1 if value['candidate'].endswith(' 9') else .9) for a in plan['verification']['axes']), None) for key, value in payload['state']['pairs'].items())
+        return JudgmentResult('jev-1.13.0', blocks, Usage(0, 0, 0))
+    with patch.object(evaluation.legacy, 'save'):
+        asyncio.run(evaluation.run_verification(plan, artifact, Path('/unused'), caller))
+    return plan, artifact, original, calls
+
+
+def test_owner_pair_measurements_are_separate_and_reproducible(verification):
+    plan, artifact, original, calls = verification
+    result = evaluation.verification_summary(plan, artifact)
+    assert result == artifact['verification_summary'] and result['complete']
+    assert (result['fail_max'], result['pass_min'], result['candidates']) == ('0.3', '0.7', 5050)
+    assert len(calls) == len(artifact['verification_measurements']) == 360 and len(artifact['verification_trials']) == 600
+    assert evaluation.audit(plan, artifact) == evaluation.audit(plan, original)
+    assert artifact['calibration_decision'] == original['calibration_decision'] and artifact['run_cost'] is None
+    assert result['confusion']['all']['satisfied']['pass'] == 1200
+    assert result['confusion']['all']['unsatisfied'] == dict(zip(('pass', 'fail', 'indeterminate'), (0, 1200, 0)))
+    assert result['items'] == dict(planned=600, adoptable=300, non_adoptable=300, accepted=300, false_acceptance=0, missed_adoptable=0)
+    assert len(result['per_pair_variation']) == 120 and all(v['meaning']['range'] == '0.0' and len(v['meaning']['probabilities']) == 5 for v in result['per_pair_variation'].values())
+    assert result['reason'].startswith('new_threshold_id') and not result['quality_accepted']
+    with pytest.raises(ValueError, match='already attempted'):
+        asyncio.run(evaluation.run_verification(plan, deepcopy(artifact), Path('/unused')))
+
+
+@pytest.mark.parametrize('fault', ['missing', 'duplicate', 'probability', 'bool', 'nan', 'error', 'link', 'ordinal', 'no_separation', 'no_pass'])
+def test_verification_never_fills_missing_or_infeasible_observations(verification, fault):
+    plan, artifact = deepcopy(verification[:2]); row = artifact['verification_trials'][0]
+    if fault == 'missing': artifact['verification_trials'].pop()
+    if fault == 'duplicate': artifact['verification_trials'][-1] = deepcopy(row)
+    if fault in ('probability', 'bool', 'nan'): row['probabilities']['meaning'] = {'probability': 1.01, 'bool': True, 'nan': float('nan')}[fault]
+    if fault == 'error': row['error'] = 'verification_error'
+    if fault == 'link': row['measurement'] = 'absent'
+    if fault == 'ordinal': artifact['verification_measurements'][row['measurement']]['ordinals'] = [999]
+    if fault in ('no_separation', 'no_pass'):
+        for t in artifact['verification_trials']: t['probabilities']['meaning'] = .5 if fault == 'no_separation' else 0
+    result = evaluation.verification_summary(plan, artifact)
+    assert not result['complete'] and result['fail_max'] is result['pass_min'] is None
+
+
+def test_verification_maximizes_correct_classification_before_reference_distance(verification):
+    plan, artifact = deepcopy(verification[:2])
+    for row in artifact['verification_trials']:
+        row['probabilities'] = {a: .5 if p == .9 else .4 for a, p in row['probabilities'].items()}
+    result = evaluation.verification_summary(plan, artifact)
+    assert (result['fail_max'], result['pass_min']) == ('0.4', '0.5')
+    from decimal import Decimal as D
+    rank = lambda n, l, h: evaluation.verification_rank(n, D(l), D(h))
+    assert rank(2, '.1', '.9') < rank(1, '.3', '.7')
+    assert rank(2, '.3', '.7') < rank(2, '.2', '.7')
+    assert rank(2, '.3', '.8') < rank(2, '.2', '.7')
+    assert rank(2, '.2', '.7') < rank(2, '.4', '.7')
+
+
+@pytest.mark.parametrize('fault', ['source', 'held_out', 'duplicate', 'same_candidate', 'label'])
+def test_owner_pairs_reject_leakage_and_invalid_definitions(verification, fault):
+    pairs = deepcopy(verification[0]['verification']['pairs'])
+    if fault == 'source': pairs[0]['source_id'] = 'judgment-acceptance-01'
+    if fault == 'held_out': pairs[0]['candidate'] = evaluation.population('acceptance')[0]['good']
+    if fault == 'duplicate': pairs[1]['id'] = pairs[0]['id']
+    if fault == 'same_candidate': pairs[1]['candidate'] = pairs[0]['candidate']
+    if fault == 'label': pairs[0]['labels']['meaning'] = 1
+    with pytest.raises(ValueError): evaluation.freeze(1, pairs=pairs)
+
+
+@pytest.mark.parametrize('fault', ['labels', 'one_label', 'credentials', 'budget', 'exception', 'timeout', 'cancel'])
+def test_verification_preserves_unmeasured_and_failed_trials(verification, tmp_path, monkeypatch, fault):
+    from copyeditor.judgment_batch import JudgmentBudgetError
+    plan, _, artifact = deepcopy(verification[:3])
+    pairs = plan['verification']['pairs']
+    if fault == 'labels': pairs[0]['labels']['meaning'] = None
+    if fault == 'one_label':
+        for pair in pairs: pair['labels']['meaning'] = True
+    plan = evaluation.freeze(1, created_at=plan['created_at'], pairs=pairs)
+    artifact.update(manifest_bytes=evaluation.encoded(plan), manifest_hash=evaluation.legacy.digest(evaluation.encoded(plan).encode()))
+    monkeypatch.setattr(evaluation.legacy, 'save', lambda *args: None)
+    environment = evaluation.adapter.comparison_environment
+    if fault == 'credentials': monkeypatch.setattr(evaluation.adapter, 'comparison_environment', lambda *args: (_ for _ in ()).throw(ValueError()) if args[2] else environment(*args))
+    if fault == 'budget': monkeypatch.setattr(evaluation, 'prepare_judgments', lambda *args, **kwargs: (_ for _ in ()).throw(JudgmentBudgetError()))
+    calls = []
+    async def caller(*args):
+        calls.append(1)
+        raise {'exception': RuntimeError, 'timeout': TimeoutError, 'cancel': asyncio.CancelledError}.get(fault, AssertionError)()
+    if fault == 'cancel':
+        with pytest.raises(asyncio.CancelledError): asyncio.run(evaluation.run_verification(plan, artifact, tmp_path / 'out', caller))
+        assert len(calls) == 1
+    else: asyncio.run(evaluation.run_verification(plan, artifact, tmp_path / 'out', caller))
+    assert not evaluation.verification_summary(plan, artifact)['complete']
+    assert len(calls) == (360 if fault in ('exception', 'timeout') else 1 if fault == 'cancel' else 0)
+    assert len(artifact['verification_trials']) == 600
+
+
+def test_verification_cli_recomputes_and_clears_stale_success(verification, tmp_path, monkeypatch):
+    plan, artifact = deepcopy(verification[:2])
+    plan_path, path = tmp_path / 'plan.json', tmp_path / 'observations.json'
+    evaluation.legacy.save(plan_path, plan); evaluation.legacy.save(path, artifact)
+    monkeypatch.setattr(sys, 'argv', ['judgment_evaluation', 'verify-report', '--plan', str(plan_path), '--artifact', str(path)])
+    evaluation.main()
+    assert json.loads(path.read_text())['verification_summary']['complete']
+    artifact['manifest_hash'] = 'changed'
+    evaluation.legacy.save(path, artifact)
+    with pytest.raises(SystemExit) as error: evaluation.main()
+    assert error.value.code == 1 and not json.loads(path.read_text())['verification_summary']['complete']
+    assert 'invalid_artifact' in path.with_suffix('.md').read_text()
+
+
+def test_pair_manifest_freezes_labels_bodies_and_budget(verification):
+    plan = deepcopy(verification[0])
+    for field, value in [('candidate', 'replaced'), ('labels', dict.fromkeys(plan['verification']['axes'], False))]:
+        changed = deepcopy(plan); changed['verification']['pairs'][0][field] = value
+        with pytest.raises(ValueError): evaluation.check_plan(changed)
+    plan['verification']['max_calls'] += 1
+    with pytest.raises(ValueError): evaluation.check_plan(plan)
+
+
+def test_missing_owner_pairs_remain_unmeasured_in_normal_run(production):
+    plan, artifact, _ = production
+    assert artifact['verification_trials'] == [] and artifact['verification_measurements'] == {}
+    assert artifact['verification_summary']['reason'] == 'owner_pairs_required'
+    assert not artifact['verification_summary']['complete']
