@@ -102,3 +102,150 @@ async def test_ac_08_13_14_interruption_saves_observed_plan_and_rejects_unrun_tr
     artifact = json.loads(path.read_text())
     assert artifact['trials'][0]['batch_plans'] == [dict(phase='detect', batches=[])]
     with pytest.raises(ValueError): evaluation.audit(plan, artifact)
+
+
+@pytest.fixture(scope='module', params=['acceptance', 'existing'])
+def reviewed(request):
+    plan = evaluation.freeze(1, name=request.param)
+    cases = {c['id']: c for c in evaluation.population(request.param)}
+    async def collect():
+        responses = {}
+        for degree in ('polish', 'rewrite'):
+            for enabled in (False, True):
+                for case in cases.values():
+                    plans = []
+                    response = await evaluation.adapter.compare_request([case], degree, enabled, 'text', 'fixture', plans)
+                    responses[degree, enabled, case['id']] = response, plans
+        return responses
+    responses, trials = asyncio.run(collect()), []
+    for row in plan['planned_trials']:
+        response, plans = deepcopy(responses[row['degree'], row['judgment_enabled'], row['example_id']])
+        problem = cases[row['example_id']]['must_change']
+        decision = dict(a=True if problem else None, b=True, c=True, d=None if problem else True)
+        trials.append(dict(row, full_response=response, batch_plans=plans, started_at='fixture', error_code=None,
+            provider_measurements=response.get('providers'), latency_ms=1, calibration=None, decision=decision,
+            reasons={k: 'Synthetic review, not owner evidence.' if v is not None else None for k, v in decision.items()}, reviewer='fixture-reviewer'))
+    artifact = dict(manifest_bytes=evaluation.encoded(plan), manifest_hash=evaluation.legacy.digest(evaluation.encoded(plan).encode()), trials=trials)
+    off = next(t for t in trials if t['degree'] == 'polish' and not t['judgment_enabled'] and cases[t['example_id']]['must_change'])
+    off['full_response']['text'] = cases[off['example_id']]['bad']; off['decision']['a'] = False
+    return plan, artifact, cases
+
+
+def test_ac_08_13_comparison_keeps_population_denominators_and_owner_reasons(reviewed):
+    plan, artifact, cases = reviewed
+    summary = evaluation.summarize(plan, artifact)
+    assert summary['criteria_met'] and summary['complete'] and not summary['quality_accepted']
+    assert summary['added_value'] == 1
+    for group in summary['groups'].values():
+        assert group['counts']['planned'] == len(cases) * 5
+        assert group['counts']['problem'] == sum(c['must_change'] for c in cases.values()) * 5
+        assert group['counts']['natural'] == sum(not c['must_change'] for c in cases.values()) * 5
+        assert all(t['planned'] == 5 for t in group['per_example'].values())
+        assert group['requests'] == len(cases) * 5
+    assert summary['judgments'][0]['reasons'] == artifact['trials'][0]['reasons']
+    assert summary['legacy_criteria_met'] is (True if len(cases) == 24 else None)
+
+
+@pytest.mark.parametrize('mutation', ['keep', 'missing', 'duplicate', 'condition', 'pending', 'old_version', 'registry', 'old_artifact', 'reason', 'boolean', 'missing_response', 'meaning', 'unnecessary', 'natural'])
+def test_ac_08_13_14_unacceptable_comparisons_cannot_pass(reviewed, mutation):
+    plan, artifact, cases = deepcopy(reviewed)
+    trials = artifact['trials']
+    on = next(t for t in trials if t['judgment_enabled'])
+    if mutation == 'keep':
+        for t in trials:
+            if t['judgment_enabled']: t['full_response']['text'] = cases[t['example_id']]['bad']
+    elif mutation == 'missing': trials.pop()
+    elif mutation == 'duplicate': trials.append(deepcopy(trials[0]))
+    elif mutation == 'condition': trials[0]['degree'] = 'rewrite'
+    elif mutation == 'pending': on['decision']['b'] = None
+    elif mutation == 'reason': on['reasons']['b'] = ' '
+    elif mutation == 'boolean': on['decision']['b'] = 1
+    elif mutation == 'old_version': on['full_response'] = deepcopy(trials[0]['full_response'])
+    elif mutation == 'registry': on['full_response']['thresholds_hash'] = 'sha256:' + '0' * 64
+    elif mutation == 'old_artifact': artifact = dict(plan=plan, trials=trials)
+    elif mutation == 'missing_response':
+        on.update(full_response=None, error_code='evaluation_error'); on['decision'].update(b=None, c=None)
+    elif mutation in ('meaning', 'unnecessary'): on['decision']['b' if mutation == 'meaning' else 'c'] = False
+    elif mutation == 'natural':
+        next(t for t in trials if t['judgment_enabled'] and not cases[t['example_id']]['must_change'])['full_response']['text'] += ' '
+    if mutation in ('missing', 'duplicate', 'condition', 'boolean', 'old_artifact'):
+        with pytest.raises(ValueError): evaluation.summarize(plan, artifact)
+    else:
+        summary = evaluation.summarize(plan, artifact)
+        assert not summary['criteria_met'] and not summary['quality_accepted']
+        assert all(g['counts']['planned'] == len(cases) * 5 for g in summary['groups'].values())
+        assert any(j['failures'] for j in summary['judgments'])
+        if mutation == 'keep': assert all(g['counts']['improved'] == 0 for k, g in summary['groups'].items() if '/on/' in k)
+
+
+@pytest.mark.parametrize('scope,failures,passed', [('example', 1, True), ('example', 2, False), ('repeat', 3, True), ('repeat', 4, False)])
+def test_ac_08_13_new_and_legacy_rate_boundaries(reviewed, scope, failures, passed):
+    plan, artifact, cases = deepcopy(reviewed)
+    problem_ids = [i for i, c in cases.items() if c['must_change']]
+    for t in artifact['trials']:
+        if t['degree'] != 'rewrite' or not t['judgment_enabled']: continue
+        if (scope == 'example' and t['example_id'] == problem_ids[0] and t['repeat'] <= failures) or (scope == 'repeat' and t['repeat'] == 1 and t['example_id'] in problem_ids[:failures]): t['decision']['a'] = False
+    group = evaluation.summarize(plan, artifact)['groups']['rewrite/on/text']
+    assert group['criteria_met'] is passed
+    assert group['per_repeat']['1']['planned'] == (15 if len(cases) == 20 else 18)
+
+
+def test_ac_08_13_equal_quality_is_not_new_value_and_old_off_failure_is_retained(reviewed):
+    plan, artifact, cases = deepcopy(reviewed)
+    for t in artifact['trials']:
+        if t['decision']['a'] is False:
+            t['decision']['a'] = True; t['full_response']['text'] = cases[t['example_id']]['good']
+    summary = evaluation.summarize(plan, artifact)
+    assert summary['added_value'] == 0
+    assert summary['criteria_met'] is (len(cases) == 24)
+    if len(cases) == 20: assert summary['status'] == 'no_added_value'
+    else:
+        next(t for t in artifact['trials'] if t['degree'] == 'rewrite' and not t['judgment_enabled'])['decision']['b'] = False
+        summary = evaluation.summarize(plan, artifact)
+        assert not summary['legacy_criteria_met'] and not summary['criteria_met']
+        assert summary['groups']['rewrite/on/text']['criteria_met']
+
+
+def test_ac_08_13_report_entry_point_retains_reason_and_rejects_unreviewed(completed, tmp_path):
+    plan, artifact, _ = deepcopy(completed)
+    path, frozen = tmp_path / 'judgment-evaluation.json', tmp_path / 'plan.json'
+    evaluation.legacy.save(path, artifact); evaluation.legacy.save(frozen, plan)
+    result = subprocess.run([sys.executable, 'scripts/judgment_evaluation.py', 'report', '--plan', str(frozen), '--artifact', str(path)], capture_output=True, text=True)
+    assert result.returncode == 1 and 'unreviewed_or_invalid' in result.stdout
+    summary = json.loads(path.read_text())['summary']
+    assert not summary['criteria_met'] and sum(g['counts']['planned'] for g in summary['groups'].values()) == 600
+    assert 'reviewer' in path.with_suffix('.md').read_text()
+    artifact['summary'] = dict(criteria_met=True); artifact['trials'].pop()
+    evaluation.legacy.save(path, artifact)
+    invalid = subprocess.run(result.args, capture_output=True, text=True)
+    assert invalid.returncode == 1 and 'invalid_artifact' in invalid.stdout
+    assert not json.loads(path.read_text())['summary']['criteria_met']
+
+
+def test_ac_08_14_report_costs_count_each_request_once_and_exclude_risk(completed):
+    plan, artifact, _ = deepcopy(completed)
+    for t in artifact['trials']:
+        response = t['full_response']
+        response['cost'] = dict(amount='0.010000', currency='USD')
+        for provider in response.get('providers', []): provider['cost'] = dict(amount='0.005000', currency='USD')
+    summary = evaluation.summarize(plan, artifact)
+    for key, group in summary['groups'].items():
+        assert group['counts']['planned'] == 75
+        assert group['requests'] == (15 if key.endswith('/items') else 75)
+        assert group['cost'] == dict(amount='0.150000' if key.endswith('/items') else '0.750000', currency='USD')
+    assert summary['status'] == 'unreviewed_or_invalid' and not summary['quality_accepted']
+
+
+@pytest.mark.parametrize('change', ['criteria', 'model', 'policy', 'source', 'reviewer'])
+def test_ac_08_14_frozen_conditions_and_review_identity_cannot_be_reused(reviewed, change):
+    plan, artifact, _ = deepcopy(reviewed)
+    if change == 'criteria': plan['acceptance_criteria']['comparison']['required_gain'] = 0
+    elif change == 'model': plan['conditions'][0]['editing_model'] = 'other-model'
+    elif change == 'policy': plan['conditions'][1]['policy_hash'] = '0' * 64
+    elif change == 'source': plan['source_commit'] = '0' * 40
+    else: artifact['trials'][0]['reviewer'] = None
+    if change == 'reviewer':
+        summary = evaluation.summarize(plan, artifact)
+        assert not summary['criteria_met'] and not summary['complete']
+    else:
+        with pytest.raises(ValueError): evaluation.summarize(plan, artifact)
