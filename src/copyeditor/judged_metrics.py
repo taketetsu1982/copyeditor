@@ -42,6 +42,8 @@ class JudgedMetrics:
     def snapshot(self):
         rows = []
         for role, provider in (("editing", "vertex"), ("judgment", "typesafe")):
+            if role not in self.meters:
+                continue
             measured = self.meters[role].snapshot()
             rows.append({"role": role, "provider": provider, "model": self.models[role],
                          "model_calls": measured["model_calls"],
@@ -65,3 +67,11 @@ class JudgedMetrics:
                 "latency_ms": round((self.clock() - self.started_at) * 1000),
                 "model_called": bool(called),
                 "regeneration_attempted": self.meters["editing"].regenerated}
+
+
+class EditMetrics(JudgedMetrics):
+    def __init__(self, *args, judgment_enabled=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.meters["editing"].max_calls = 2 if self.meters["editing"].degree == "polish" else 16
+        if not judgment_enabled:
+            del self.meters["judgment"]
