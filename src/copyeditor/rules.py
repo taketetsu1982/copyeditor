@@ -141,3 +141,25 @@ def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"),
         return RuleSnapshot(common, "sha256:" + hashlib.sha256(common).hexdigest(), "sha256:" + version, MappingProxyType(languages))
     except Exception:
         raise ConfigError("invalid_rules", "rules") from None
+
+
+def default_style(raw, language, *, overlay=False):
+    """Read the built-in marker without imposing v4 requirements on the old loader."""
+    from .responses import nonblank as body_nonblank
+    try:
+        prose, _, _, _ = parse(raw, language, overlay)
+        text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        markers = re.findall(r"^Default style: (.*)$", text, re.MULTILINE)
+        if overlay:
+            require(not markers)
+            return None
+        require(len(markers) == 1 and "Default style: " + markers[0] in prose[4].splitlines())
+        require(body_nonblank(markers[0]) and len(markers[0]) <= 1000)
+        return markers[0]
+    except Exception:
+        raise ConfigError("invalid_rules", "rules") from None
+
+
+def effective_tone(tone, style):
+    from .responses import nonblank as body_nonblank
+    return tone if body_nonblank(tone) else style
