@@ -35,10 +35,11 @@ def _parse(data, request):
         probabilities, choice = blocks.setdefault(ordinal, ([], None))
         answer = answers[key]
         valid(type(answer) is dict and answer.get("type") == question["type"])
-        if question["type"] == "noul":
+        if question["type"] in ("noul", "Noul"):
             valid(set(answer) == {"type", "noul"})
             probabilities.append((predicate, _probability(answer["noul"])))
         else:
+            valid(question["type"] == "choice")
             valid(set(answer) == {"type", "choice", "probabilities", "confidence"})
             choice = validate_choice(answer["choice"], answer["probabilities"], answer["confidence"])
         blocks[ordinal] = (probabilities, choice)
