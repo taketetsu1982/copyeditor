@@ -36,7 +36,7 @@ within relative 1e-12 / absolute 1e-15. It does not round the production gap.
 
 ## Resource envelope and evidence
 
-Owner confirmation: pending (to be confirmed during PR review).
+Owner confirmation: confirmed 2026-09-22 (PR #123).
 
 The proposed dependency-process envelope is cold import/preload under 30 seconds,
 12,031-character detection under 5 seconds, and peak RSS below 512 MiB.
