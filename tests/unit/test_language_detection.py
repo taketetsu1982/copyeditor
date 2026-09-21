@@ -144,3 +144,21 @@ def test_gap_does_not_depend_on_decimal_context():
         context.prec = 1
         with pytest.raises(ValidationError):
             subject.resolve_language(items("Hello"), {"en"}, detector=model)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("Eng<span>li</span><b>s</b><!-- comment -->h", "English"),
+    ("<p>First</p><div>Second<br>Third</div>", "First Second Third"),
+    ("First<code>excluded</code>Second", "First Second"),
+])
+def test_html_prose_preserves_inline_words_and_block_boundaries(raw, expected):
+    model = Detector([score("EN", 0.8), score("DE", 0.1)])
+    assert subject.resolve_language(items(raw), {"en"}, format="html", detector=model) == "en"
+    assert " ".join(model.inputs[0].split()) == expected
+
+
+def test_real_model_handles_a_sentence_with_each_letter_in_an_inline_span():
+    plain = "This is a short English sentence."
+    raw = "".join(f"<span>{c}</span>" if c.isalpha() else c for c in plain)
+    assert subject._prose(raw) == plain
+    assert subject.resolve_language(items(raw), {"en"}, format="html") == "en"

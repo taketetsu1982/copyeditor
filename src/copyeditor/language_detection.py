@@ -3,6 +3,7 @@ from fractions import Fraction
 from functools import lru_cache
 from html import unescape
 from math import isfinite
+import re
 
 from .html_trace import trace
 from .html_trace_types import HTMLTraceError
@@ -29,8 +30,18 @@ def _prose(raw):
         if span.kind in ("text", "reference") and not protected:
             text = raw[span.start:span.end]
             pieces.append(unescape(text) if span.kind == "reference" else text)
-        else:
+        elif protected:
             pieces.append(" ")
+        elif span.kind == "markup":
+            # Inline markup and comments do not introduce visible word boundaries.
+            tag = re.match(r"</?([a-zA-Z][^\s/>]*)", raw[span.start:span.end])
+            if tag and tag[1].lower() in {
+                "address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt",
+                "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
+                "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre",
+                "section", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul",
+            }:
+                pieces.append(" ")
     return "".join(pieces)
 
 
