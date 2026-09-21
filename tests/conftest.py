@@ -231,6 +231,7 @@ class Phase1Contracts:
     def __init__(self, config):
         self.config, self.errors, self.items = config, [], []
         self.reports = defaultdict(list)
+        self.nodeids = []
         self.groups = {}
         self.acceptance = config.getoption("--require-phase1-acceptance") or "COPYEDITOR_ACCEPTANCE_EVIDENCE" in os.environ
         self.evidence = os.environ.get("COPYEDITOR_ACCEPTANCE_EVIDENCE", "")
@@ -246,6 +247,7 @@ class Phase1Contracts:
 
     def pytest_collection_finish(self, session):
         self.items = session.items
+        self.nodeids = [item.nodeid for item in self.items]
         root = self.config.rootpath
         if self.config.option.collectonly or [Path(a).resolve() for a in self.config.args] != [root / "tests"]:
             self.errors.append("Full execution of tests is required")
@@ -279,17 +281,39 @@ class Phase1Contracts:
         except Exception:
             self.errors.append("Invalid contract inventory")
 
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_xdist_node_collection_finished(self, node, ids):
+        if self.nodeids and self.nodeids != ids:
+            self.errors.append("Worker collections differ")
+        self.nodeids = list(ids)
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_testnodedown(self, node, error):
+        evidence = getattr(node, "workeroutput", {}).get("contracts")
+        if error or not evidence or evidence["nodeids"] != self.nodeids:
+            self.errors.append("Missing or inconsistent worker inventory")
+        else:
+            self.errors.extend(evidence["errors"])
+            self.groups = evidence["groups"]
+
     def pytest_runtest_logreport(self, report):
         self.reports[report.nodeid].append(report)
 
     def pytest_sessionfinish(self, session, exitstatus):
+        if hasattr(self.config, "workerinput"):
+            # Each worker validates the full inventory, but executes only its assigned files.
+            self.config.workeroutput["contracts"] = dict(
+                nodeids=self.nodeids, errors=self.errors, groups=self.groups)
+            return
+        nodeids = self.nodeids or [item.nodeid for item in self.items]
         complete = set()
-        for item in self.items:
-            reports = self.reports[item.nodeid]
+        for nodeid in nodeids:
+            reports = self.reports[nodeid]
             if (Counter(r.when for r in reports) == Counter(("setup", "call", "teardown"))
                     and all(r.passed and not hasattr(r, "wasxfail") for r in reports)):
-                complete.add(item.nodeid)
-        if not self.items or len(complete) != len(self.items) or exitstatus:
+                complete.add(nodeid)
+        if (not nodeids or len(complete) != len(nodeids) or exitstatus
+                or set(self.reports) != set(nodeids)):
             self.errors.append("Incomplete or unsuccessful execution")
         if self.errors:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED

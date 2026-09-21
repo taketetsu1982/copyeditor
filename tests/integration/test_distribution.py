@@ -38,7 +38,7 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
     assert jobs["publish"]["steps"][0]["with"]["ref"] == "${{ needs.gate.outputs.commit }}"
     runs = [s["run"] for job in CI["jobs"].values() for s in job["steps"] if "run" in s]
     suites = [shlex.split(command) for command in runs if "pytest" in shlex.split(command)]
-    assert len(suites) == 1
+    assert len(suites) == 2
     assert suites[0][:4] == ["python", "-m", "pytest", "tests"]
     assert "--require-phase1-contracts" in suites[0] and "--durations=20" in suites[0]
     assert not any(flag in suites[0] for flag in ("--collect-only", "--require-phase1-acceptance", "--ignore", "-k"))
@@ -53,7 +53,17 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
         path="phase1.xml", **{"if-no-files-found": "warn", "retention-days": 14})
     assert "--junitxml=phase1.xml" in suites[0]
     assert not any("continue-on-error" in s for s in steps)
-    assert not any("if" in s for s in steps if s not in uploads)
+    full = "steps.scope.outputs.scope == 'full'"
+    docs = "steps.scope.outputs.scope == 'docs'"
+    assert next(s for s in steps if s.get("id") == "scope")["env"] == {
+        "PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}"}
+    assert steps[0]["with"]["fetch-depth"] == 0
+    assert [s["if"] for s in steps if "pytest tests " in s.get("run", "")] == [full]
+    assert next(s for s in steps if s.get("name") == "Check documentation and distribution")["if"] == docs
+    assert "--dist=loadfile" in suites[0] and "--max-worker-restart=0" in suites[0]
+    assert suites[0][suites[0].index("-n") + 1] == "2"
+    assert all(s.get("if") == full for s in steps if s.get("uses") in (
+        "docker/setup-buildx-action@v4", "actions/cache@v5"))
     assert CI["concurrency"] == {
         "group": "copyeditor-tests-${{ github.event.pull_request.number || github.run_id }}",
         "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
