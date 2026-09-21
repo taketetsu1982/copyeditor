@@ -167,3 +167,57 @@ async def test_ac_07_4_ctr01_rewrite_queue_shortage_or_surplus_is_never_hidden(i
     responses = case["provider"] + case["provider"][1:] if extra else case["provider"][:1]
     with pytest.raises(AssertionError):
         await invoke(case["tool"], case["input"], responses, prepared=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.consumer("CTR-02")
+@pytest.mark.consumer("CTR-04")
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("degree", ["polish", "rewrite"])
+@pytest.mark.parametrize("items_route", [False, True])
+async def test_generation4_prepared_service_keeps_real_response_validation(enabled, degree, items_route):
+    from .harness import invoke_generation4
+    arguments = dict(language="en", degree=degree)
+    originals = [dict(id="a", text="Original."), dict(id="b", text="Original.")]
+    arguments.update(items=originals) if items_route else arguments.update(text="Original.")
+    ids = [item["id"] for item in originals] if items_route else ["text"]
+    candidate = lambda identity: dict(id=identity, text="Candidate.", flag=None, diagnosis=None if degree == "polish" else "Clearer wording.")
+    case = dict(generation=4, judgment_enabled=enabled, tool="polish_text", input=arguments,
+                provider=[dict(items=[candidate(identity) for identity in reversed(ids)])],
+                expect=dict(status="ok", schema_version=4, degree=degree, judgment_enabled=enabled))
+    payload, inputs = await invoke_generation4(case, ROOT)
+    rows = payload["items"] if items_route else [payload]
+    assert [row["text"] for row in rows] == ["Candidate."] * len(ids)
+    assert all(row["regenerated"] is False for row in rows)
+    assert [row["diagnosis"] for row in rows] == [candidate(ids[0])["diagnosis"]] * len(ids)
+    if items_route:
+        assert [row["id"] for row in rows] == ids
+    assert all((row["detection"]["status"] == "eligible") if enabled else row["detection"] is None for row in rows)
+    assert [item.id for item in inputs[0].items] == ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["extra", "missing", "schema", "correlation", "expected"])
+async def test_generation4_fixture_rejects_queue_and_response_mismatches(fault):
+    from .harness import assert_fixture, invoke_generation4
+    case = dict(generation=4, judgment_enabled=False, tool="polish_text",
+                input=dict(text="Original.", language="en", degree="polish"),
+                provider=[dict(items=[dict(id="text", text="Candidate.", flag=None, diagnosis=None)])],
+                expect=dict(status="ok", schema_version=4))
+    if fault in ("extra", "missing"):
+        case["provider"] = case["provider"] * (2 if fault == "extra" else 0)
+        with pytest.raises(AssertionError, match="Unconsumed|underflow"):
+            await invoke_generation4(case, ROOT)
+        return
+    payload, _ = await invoke_generation4(case, ROOT)
+    if fault == "schema":
+        payload["schema_version"] = 3
+        from jsonschema import ValidationError
+    elif fault == "correlation":
+        payload["providers"][0]["model_calls"] = 0
+        from copyeditor.requests import ValidationError
+    else:
+        case["expect"]["status"] = "error"
+        ValidationError = AssertionError
+    with pytest.raises(ValidationError):
+        assert_fixture(payload, case)

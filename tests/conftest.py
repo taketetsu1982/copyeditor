@@ -61,8 +61,19 @@ REWRITE_TOOL_CASES = {
 }
 
 
-# V3 pins are reviewed separately from legacy fixtures; never regenerate on collection.
+# Consumer pins are reviewed explicitly; never regenerate on collection.
 JUDGMENT_MODULES = {
+    'tests/unit/test_lingua_dependency.py': (2, 'c5e57c5432750307aae49d0e9c0f9e9255517f4d6e58d4e6fa342d9db0ccfc68'),
+    'tests/contracts/test_ctr01_tools.py': (55, '702f79e841769ab743a362a3939bf7a19d3cbe9d9e32421fc6d2d339a9160cb1'),
+    'tests/contracts/test_generation4_schema.py': (60, '258c68dc0207788b09bc887f2ed6cd42070031ac668e6b0e63d30fd5a860e0ca'),
+    'tests/unit/test_language_detection.py': (36, '05bee600a14c289d26e9edf81e1de50f1c7e13d2b3671862a45858fdf727dca7'),
+    'tests/unit/test_judgment_v2.py': (46, '75192a2714ef155dda73d0c890f17604a38c3cfbf5a9a5924c8965273ed1281b'),
+    'tests/unit/test_judgment_v2_batch.py': (28, '17eb5ae21ce0601bab8741966c5869c4eac20d4392c7cb0e06959fbd6560e6c6'),
+    'tests/unit/test_edit_generation.py': (38, '75ae8ee49ba9bf43b3f98ef9f9d72f68d49cb7eef2d26e29c556754d1fcccdc9'),
+    'tests/unit/test_config_v4.py': (13, '1f1c5bcee6689fb3d4ddfa4f2e8ea60875ca885f3e4a4ca34fa671e2500f150b'),
+    'tests/unit/test_default_style.py': (10, 'adff79a91b9cd99ed34ea6b7aee59ccb7d16766de45a20cf089cf1060e8cdaf3'),
+    'tests/unit/test_edit_pipeline.py': (19, '184463986af5190f8960699e452c2950994faedbfb69ffcaaf6fa209482785f7'),
+    'tests/unit/test_edit_rewrite_pipeline.py': (12, '85df62b095943d72bcc52784970bc6341bf915cd6f6baa2a208462e04f916dea'),
     'tests/contracts/test_ctr04_config.py': (45, '1a9a09c49bb9c365c6c1ce7ff0809f5c1435f2d52c5452a6163944054b751749'),
     'tests/contracts/test_judged_final.py': (33, 'fe2b547e8acc28bdc7dac218401586028fe6dfdef03e37caf3422685a910fe5e'),
     'tests/contracts/test_judged_schema.py': (34, '2883974d560a6db31c50aa5afa72b705e4eacfe480c182cdf0b2c6a99165164f'),
@@ -86,7 +97,7 @@ JUDGMENT_MODULES = {
 
 
 
-# Evaluation ownership is separate from the nineteen runtime consumers.
+# Evaluation ownership is separate from runtime consumers.
 EVALUATION_MODULES = {
     'tests/unit/test_judgment_examples.py': (74, '00d3c90298c579b37acd0a6d44b0b7c9e293bbdf63e7a3fb36e0c1c55f0ab9a9'),
     'tests/unit/test_judgment_evaluation.py': (66, 'df05969bf72742a1ad2920c4253cd232b8d9abb05c1ad89f5e215134d5acea88'),
