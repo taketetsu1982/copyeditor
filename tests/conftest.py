@@ -89,8 +89,8 @@ JUDGMENT_MODULES = {
 # Evaluation ownership is separate from the nineteen runtime consumers.
 EVALUATION_MODULES = {
     'tests/unit/test_judgment_examples.py': (74, '00d3c90298c579b37acd0a6d44b0b7c9e293bbdf63e7a3fb36e0c1c55f0ab9a9'),
-    'tests/unit/test_judgment_evaluation.py': (66, '4a8d6b78c69b6833578b73707f22846fcdc9c601b71d966e83a7cb8697ff298f'),
-    'tests/unit/test_judgment_calibration.py': (55, '011a3eb09b7fec887b72747d4ccae18f4956d3b4b1a9db769ba9f8d94f4f6265'),
+    'tests/unit/test_judgment_evaluation.py': (66, 'df05969bf72742a1ad2920c4253cd232b8d9abb05c1ad89f5e215134d5acea88'),
+    'tests/unit/test_judgment_calibration.py': (55, '933c1229814671451f8d6a9120ba9e48d61f5df92f4dbdd66d066ba6b76736fb'),
     'tests/integration/test_judgment_acceptance.py': (57, '079043469eadf2528ba72da1bcfedead0bd89390e263833547c998b15f027018'),
 }
 EVALUATION_SETS = {

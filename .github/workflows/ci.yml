@@ -4,6 +4,10 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
+# PR updates supersede earlier checks; main and release callers keep their runs.
+concurrency:
+  group: copyeditor-tests-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
@@ -29,3 +33,11 @@ jobs:
       - run: python -m pytest tests --require-phase1-contracts --junitxml=phase1.xml --durations=20 -q
         env:
           COPYEDITOR_BUILD_CACHE_DIR: ${{ runner.temp }}/copyeditor-build-cache
+      - name: Upload test timings and results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: phase1.xml
+          if-no-files-found: warn
+          retention-days: 14
