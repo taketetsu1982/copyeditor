@@ -7,6 +7,7 @@ dependencies = [
     "google-genai==2.23.0",
     "py-key-value-aio[memory]==0.4.5",
     "html5lib==1.1",
+    "lingua-language-detector==2.2.0",
     "ruamel.yaml",
     "google-re2",
 ]
