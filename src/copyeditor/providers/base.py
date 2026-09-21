@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Literal, NamedTuple, Protocol
 if TYPE_CHECKING:
     from ..diagnosis import DiagnosticItem
 class SourceItem(NamedTuple):
@@ -18,6 +18,13 @@ class GenerationInput(NamedTuple):
     system_instruction: str
     stage: str = "polish"
     diagnoses: tuple["DiagnosticItem", ...] = ()
+class EditGenerationInput(NamedTuple):
+    items: tuple[SourceItem, ...]
+    language: str
+    format: str
+    background: Background
+    system_instruction: str
+    stage: Literal["polish", "rewrite"] = "polish"
 class Usage(NamedTuple):
     input_tokens: int | None
     output_tokens: int | None
