@@ -70,7 +70,7 @@ async def polish(service, request, judgment, metrics, *, items_route=False, regi
 
     failure = None
     try:
-        valid(request.degree == "polish" and metrics.meters["editing"].degree == request.degree)
+        valid(request.degree in ("polish", "rewrite") and metrics.meters["editing"].degree == request.degree)
         if request.format == "html" and not html.analyze(request.items[0].text).accepted:
             raise ValidationError("invalid_input", "text")
         no_prose = request.format == "html" and not nonblank(_prose(request.items[0].text))
@@ -82,40 +82,47 @@ async def polish(service, request, judgment, metrics, *, items_route=False, regi
                 protected_terms=list(preservation.matched_terms(item.text, rules.protected_terms)), detection=detections[item.id])
         pending = tuple(item for item in request.items if not enabled or detections[item.id]["status"] == "eligible")
         provider = service.provider_factory() if pending else None
+        size = 4 if request.degree == "rewrite" else max(1, len(pending))
+        groups = tuple(pending[start:start + size] for start in range(0, len(pending), size))
         for attempt in range(2):
             if not pending:
                 break
-            instruction = edit_system_instruction(ruleset.common_bytes.decode(), rules.prose,
-                                                  preservation.request_terms(pending, rules.protected_terms))
-            data = EditGenerationInput(pending, request.language, request.format, request.background, instruction)
-            estimate = await operation("editing", provider.estimate_input, data, estimation=True)
-            budget.checkpoint(provider_error=estimate.code if isinstance(estimate, ProviderFailure) else None)
-            generated = await operation("editing", provider.generate, data, estimated_input=estimate, is_regeneration=bool(attempt))
-            invalid, candidates = None, ()
-            if not isinstance(generated, ProviderFailure):
+            retry = set()
+            for group in groups:
+                batch = tuple(item for item in group if item in pending)
+                if not batch:
+                    continue
+                instruction = edit_system_instruction(ruleset.common_bytes.decode(), rules.prose,
+                                                      preservation.request_terms(batch, rules.protected_terms), request.degree)
+                data = EditGenerationInput(batch, request.language, request.format, request.background, instruction, request.degree)
+                estimate = await operation("editing", provider.estimate_input, data, estimation=True)
+                budget.checkpoint(provider_error=estimate.code if isinstance(estimate, ProviderFailure) else None)
+                generated = await operation("editing", provider.generate, data, estimated_input=estimate, is_regeneration=bool(attempt))
+                invalid, candidates = None, ()
+                if not isinstance(generated, ProviderFailure):
+                    try:
+                        candidates = parse_generation(generated, batch, stage=request.degree)
+                    except ValidationError as error:
+                        invalid = error.code
+                # Inspect received integrity and merged body size before measured reservation excess.
+                overrun, budget.overrun = budget.overrun, False
                 try:
-                    candidates = parse_generation(generated, pending, stage="polish")
-                except ValidationError as error:
-                    invalid = error.code
-            # Inspect received integrity and merged body size before measured reservation excess.
-            overrun, budget.overrun = budget.overrun, False
-            try:
-                budget.checkpoint(provider_error=generated.code if isinstance(generated, ProviderFailure) else None,
-                                  finish=getattr(generated, "finish", None), validation_error=invalid)
-                retry = set()
-                for original, candidate in zip(pending, candidates):
-                    checked = preservation.check(original.text, candidate.text, rules.protected_terms, ratio,
-                                                 "text" if request.format == "html" else request.format)
-                    flag = ({**candidate.flag, "checks": []} if candidate.flag else
-                            dict(kind="rejected", reason="Preservation checks failed.", checks=list(checked.failed)) if checked.failed else None)
-                    accepted[original.id].update(text=candidate.text, diagnosis=candidate.diagnosis,
-                                                flag=flag, regenerated=bool(attempt))
-                    if not candidate.flag and (checked.failed or (enabled and candidate.text == original.text)):
-                        retry.add(original.id)
-                if sum(len(item["text"]) for item in accepted.values()) > 16000:
-                    raise ValidationError("output_limit", None)
-            finally:
-                budget.overrun = overrun
+                    budget.checkpoint(provider_error=generated.code if isinstance(generated, ProviderFailure) else None,
+                                      finish=getattr(generated, "finish", None), validation_error=invalid)
+                    for original, candidate in zip(batch, candidates):
+                        checked = preservation.check(original.text, candidate.text, rules.protected_terms, ratio,
+                                                     "text" if request.format == "html" else request.format)
+                        flag = ({**candidate.flag, "checks": []} if candidate.flag else
+                                dict(kind="rejected", reason="Preservation checks failed.", checks=list(checked.failed)) if checked.failed else None)
+                        accepted[original.id].update(text=candidate.text, diagnosis=candidate.diagnosis,
+                                                    flag=flag, regenerated=bool(attempt))
+                        if not candidate.flag and (checked.failed or (enabled and candidate.text == original.text)):
+                            retry.add(original.id)
+                finally:
+                    budget.overrun = overrun
+            if (sum(len(item["text"]) for item in accepted.values()) > 16000
+                    or sum(len(item["diagnosis"] or "") for item in accepted.values()) > 8192):
+                raise ValidationError("output_limit", None)
             budget.checkpoint()
             verifying = tuple(item for item in pending if accepted[item.id]["text"] != item.text
                               and not (accepted[item.id]["flag"] and accepted[item.id]["flag"]["kind"] == "unfixable"))
