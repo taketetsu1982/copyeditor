@@ -81,7 +81,7 @@ JUDGMENT_MODULES = {
     'tests/unit/test_judgment.py': (181, '1b9470aafce99bfa5bbd80fcc84c415a8b0c6d35a341e3195310520db89829e8'),
     'tests/unit/test_judgment_batch.py': (14, '2faa53ba0b04f57d1532e48af62dc0ac5a025b9792e7c0efc590eecc621bb661'),
     'tests/unit/test_judgment_config.py': (45, '61ffc824970ea055d787481ba18d6c888885cb244ae5b9cea4829f4066982147'),
-    'tests/unit/test_typesafe.py': (32, 'd5aa13000ac6eb1af239dad3a3c690725d22e6ae1490e54661e073595f4429a0'),
+    'tests/unit/test_typesafe.py': (55, '902e9b58f919b6d39468dd56d0cbd158e6bebb4c5a894285b1330607204db3cf'),
 }
 
 
