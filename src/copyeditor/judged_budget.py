@@ -33,7 +33,7 @@ class JudgedBudget(RewriteBudget):
         def amount(reservations, price):
             return sum(Decimal(value) * Decimal(str(price[key])) for reserved in reservations
                        for value, key in zip(reserved, ("input_per_million", "output_per_million"))) / Decimal(1000000)
-        ceiling = amount([(262144, 16384 if self.meter.degree == "polish" else 139264)], prices[0])
+        ceiling = amount([(262144, 8192 * self.meter.max_calls)], prices[0])
         if amount(editing, prices[0]) + amount(judgment, prices[1]) > ceiling:
             self.checkpoint(validation_error="request_budget")
 
@@ -88,3 +88,47 @@ class JudgedBudget(RewriteBudget):
         actual = self.metrics.meters[role].calls[slot]
         reserved = (self.reservations if role == "editing" else self.judgment_reservations)[slot]
         self.overrun |= any(value is not None and value > limit for value, limit in zip(actual[:2], reserved))
+
+
+class EditBudget(JudgedBudget):
+    def __init__(self, metrics, config):
+        super().__init__(metrics, config)
+        self.last_round = -1
+        if "judgment" not in metrics.meters:
+            self.deadline = metrics.started_at + (120 if self.meter.degree == "polish" else 240)
+
+    def _money(self, editing, judgment):
+        if "judgment" in self.metrics.meters:
+            super()._money(editing, judgment)
+
+    def plan(self, data, *, candidate_round=0):
+        from .judgment_v2_batch import prepare_judgments as prepare_v2
+        self.checkpoint()
+        if "judgment" not in self.metrics.meters or candidate_round != self.last_round + 1:
+            raise ValueError("Judgment phases must be admitted once in order")
+        failed = False
+        try:
+            prepared = prepare_v2(data, candidate_round=candidate_round,
+                policy_id=self.config["judgment.policy_version"],
+                remaining_calls=self.config["judgment.max_calls"] - len(self.judgment_reservations),
+                remaining_input_units=self.config["judgment.input_budget"] - sum(r[0] for r in self.judgment_reservations))
+        except JudgmentBudgetError:
+            failed = True
+        if failed:
+            self.checkpoint(validation_error="request_budget")
+        added = [(batch.input_units, 65536) for batch in prepared.plan.batches]
+        self._money(self.reservations, self.judgment_reservations + added)
+        self.judgment_reservations.extend(added)
+        self.last_round = candidate_round
+        return prepared
+
+    @contextmanager
+    def call(self, role, *, estimated_input=None, estimation=False, is_regeneration=False):
+        self.checkpoint()
+        if role not in self.metrics.meters:
+            raise ValueError("Inactive provider")
+        if estimation and self.metrics.estimations[role] >= self.meter.max_calls:
+            self.checkpoint(validation_error="request_budget")
+        with super().call(role, estimated_input=estimated_input, estimation=estimation,
+                          is_regeneration=is_regeneration) as slot:
+            yield slot

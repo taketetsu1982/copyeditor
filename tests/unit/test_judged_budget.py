@@ -153,3 +153,134 @@ def test_combined_money_accepts_exact_ceiling_and_refuses_one_price_unit_above(r
             with ledger.call("editing", estimated_input=0):
                 pytest.fail("Money ceiling exceeded")
         assert not ledger.reservations and not ledger.metrics.snapshot()["model_called"]
+
+
+def edit_budget(degree="polish", enabled=True, pricing=None, **changes):
+    from copyeditor.judged_budget import EditBudget
+    from copyeditor.judged_metrics import EditMetrics
+    from copyeditor.judgment_v2 import POLICY_ID as V2_POLICY
+    old, now = budget(degree, **changes)
+    config = dict(old.config, **{"judgment.policy_version": V2_POLICY})
+    metrics = EditMetrics(10, "editor", pricing or {}, clock=lambda: now[0],
+                          degree=degree, judgment_enabled=enabled)
+    return EditBudget(metrics, config), now
+
+
+@pytest.mark.parametrize("degree,limit", [("polish", 2), ("rewrite", 16)])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_v4_generation_and_estimation_caps_keep_all_reservations(degree, limit, enabled):
+    ledger, _ = edit_budget(degree, enabled)
+    for index in range(limit):
+        with ledger.call("editing", estimation=True):
+            pass
+        with ledger.call("editing", estimated_input=0, is_regeneration=index >= limit // 2) as slot:
+            ledger.record_usage("editing", slot, Usage(0, 0, 0))
+    assert ledger.reservations == [(1024, 8192)] * limit
+    assert ledger.metrics.estimations["editing"] == limit
+    assert sum(r[1] for r in ledger.reservations) == limit * 8192
+    with pytest.raises(RewriteFailure, match="request_budget"):
+        with ledger.call("editing", estimated_input=0):
+            pytest.fail("Extra generation started")
+    ledger, _ = edit_budget(degree, enabled)
+    for _ in range(limit):
+        with ledger.call("editing", estimation=True):
+            pass
+    with pytest.raises(RewriteFailure, match="request_budget"):
+        with ledger.call("editing", estimation=True):
+            pytest.fail("Extra estimation started")
+    assert not ledger.metrics.snapshot()["model_called"]
+
+
+def test_v4_three_phases_use_real_payloads_and_atomic_cumulative_admission():
+    import json
+    ledger, _ = edit_budget(max_calls=3)
+    for round_ in range(3):
+        prepared = ledger.plan(data(phase="detect" if round_ == 0 else "verify"), candidate_round=round_)
+        assert prepared.plan.candidate_round == round_
+        assert all(q["type"] == "Noul" for q in json.loads(prepared.requests[0])["questions"].values())
+        with ledger.call("judgment") as slot:
+            ledger.record_usage("judgment", slot, Usage(0, 0, None))
+    assert len(ledger.judgment_reservations) == 3
+    with pytest.raises(ValueError):
+        ledger.plan(data())
+    ledger, _ = edit_budget(max_calls=1)
+    ledger.plan(data())
+    with pytest.raises(RewriteFailure, match="request_budget"):
+        ledger.plan(data(phase="verify"), candidate_round=1)
+    assert len(ledger.judgment_reservations) == 1 and not ledger.metrics.snapshot()["model_called"]
+    ledger, _ = edit_budget()
+    for round_ in range(3):
+        assert ledger.plan(data(0, "detect" if round_ == 0 else "verify"), candidate_round=round_).requests == ()
+    assert not ledger.judgment_reservations
+
+
+@pytest.mark.parametrize("degree,rate", [("polish", 0.25), ("rewrite", 2)])
+def test_v4_money_ceiling_uses_current_output_cap_without_refunds(degree, rate):
+    prices = {"editor": dict(currency="USD", input_per_million=0, output_per_million=1),
+              "jev-1.13.0": dict(currency="USD", input_per_million=0, output_per_million=rate)}
+    ledger, _ = edit_budget(degree, pricing=prices)
+    ledger.plan(data())
+    with ledger.call("judgment") as slot:
+        ledger.record_usage("judgment", slot, Usage(0, 0, 0))
+    with pytest.raises(RewriteFailure, match="request_budget"):
+        with ledger.call("editing", estimated_input=0):
+            pytest.fail("Judgment reservation was refunded")
+    assert not ledger.reservations and len(ledger.judgment_reservations) == 1
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_v4_fake_clock_failure_priority_and_cancel_stop_future_calls(enabled):
+    ledger, now = edit_budget(enabled=enabled)
+    assert ledger.timeout("editing") == 60
+    with ledger.call("editing", estimated_input=0) as slot:
+        ledger.record_usage("editing", slot, Usage(1025, None, None))
+    with pytest.raises(RewriteFailure, match="invalid_response"):
+        ledger.checkpoint(validation_error="invalid_response")
+    with pytest.raises(RewriteFailure, match="invalid_response"):
+        with ledger.call("editing", estimation=True):
+            pytest.fail("Terminal estimation started")
+    ledger, now = edit_budget(enabled=enabled)
+    now[0] += 120
+    with pytest.raises(RewriteFailure, match="provider_timeout"):
+        ledger.checkpoint(provider_error="provider_error")
+    ledger, _ = edit_budget(enabled=enabled)
+    with pytest.raises(asyncio.CancelledError):
+        with ledger.call("editing", estimated_input=0):
+            raise asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        with ledger.call("editing", estimation=True):
+            pytest.fail("Post-cancel call started")
+    assert ledger.metrics.snapshot()["providers"][0]["usage"] == Usage(None, None, None)._asdict()
+    assert len(ledger.reservations) == 1
+
+
+def test_v4_input_phase_boundary_and_disabled_judgment_refusal():
+    ledger, _ = edit_budget()
+    units = ledger.plan(data()).plan.batches[0].input_units
+    ledger, _ = edit_budget(input_budget=units)
+    ledger.plan(data())
+    assert ledger.judgment_reservations == [(units, 65536)]
+    ledger, _ = edit_budget(input_budget=units - 1)
+    with pytest.raises(RewriteFailure, match="request_budget"):
+        ledger.plan(data())
+    assert not ledger.judgment_reservations and ledger.last_round == -1
+    ledger, _ = edit_budget(enabled=False)
+    with pytest.raises(ValueError, match="Inactive provider"):
+        with ledger.call("judgment"):
+            pytest.fail("Disabled judgment started")
+    assert not ledger.metrics.snapshot()["model_called"]
+
+
+@pytest.mark.parametrize("degree,seconds", [("polish", 120), ("rewrite", 240)])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_v4_disabled_deadline_ignores_inactive_judgment_setting(degree, seconds, enabled):
+    ledger, now = edit_budget(degree, enabled, **{degree + "_deadline_ms": 1})
+    now[0] += 0.002
+    if enabled:
+        with pytest.raises(RewriteFailure, match="provider_timeout"):
+            ledger.checkpoint()
+    else:
+        ledger.checkpoint()
+        now[0] = 10 + seconds
+        with pytest.raises(RewriteFailure, match="provider_timeout"):
+            ledger.checkpoint()

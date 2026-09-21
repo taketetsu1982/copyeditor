@@ -133,3 +133,39 @@ def test_failure_usage_keeps_known_components_and_does_not_hide_failure(missing)
     row = m.snapshot()["providers"][0]
     assert row["usage"] == Usage(*expected)._asdict()
     assert row["cost"] == ({"amount": "0.000011", "currency": "USD"} if missing == 2 else None)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_v4_rows_unknown_usage_and_total_cost_preserve_accounting(enabled):
+    from copyeditor.judged_metrics import EditMetrics
+    now = [0.0]
+    m = EditMetrics(0, "editor", {"editor": price(), "jev-1.13.0": price()},
+                    clock=lambda: now[0], judgment_enabled=enabled)
+    empty = m.snapshot()
+    assert len(empty["providers"]) == (2 if enabled else 1)
+    assert all(row["usage"] == Usage(0, 0, 0)._asdict() for row in empty["providers"])
+    with m.call("editing", estimation=True):
+        now[0] = 0.25
+    assert not m.snapshot()["model_called"]
+    record(m, "editing", Usage(1, 0, None))
+    if enabled:
+        record(m, "judgment", Usage(1, 0, None))
+    result = m.snapshot()
+    assert result["cost"] == {"amount": "0.000001", "currency": "USD"}
+    assert result["providers"][0]["latency_ms"] == 250
+    with m.call("editing"):
+        pass
+    assert m.snapshot()["cost"] is None
+    assert m.snapshot()["providers"][0]["usage"] == Usage(None, None, None)._asdict()
+
+
+@pytest.mark.parametrize("other", [None, price(currency="JPY")])
+def test_v4_called_unknown_or_different_currency_has_no_total(other):
+    from copyeditor.judged_metrics import EditMetrics
+    pricing = {"editor": price()}
+    if other is not None:
+        pricing["jev-1.13.0"] = other
+    m = EditMetrics(0, "editor", pricing, judgment_enabled=True)
+    for role in ("editing", "judgment"):
+        record(m, role, Usage(1, 0, 1))
+    assert m.snapshot()["cost"] is None
