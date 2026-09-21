@@ -1,5 +1,5 @@
 """Offline request-language resolution; not connected to the public runtime yet."""
-from decimal import Decimal
+from fractions import Fraction
 from functools import lru_cache
 from html import unescape
 from math import isfinite
@@ -57,8 +57,8 @@ def resolve_language(items, loaded_languages, *, language=None, format="text", d
     if any(not isfinite(v.value) or not 0 <= v.value <= 1 for v in values):
         raise ValidationError("invalid_input", "language")
     first, second = sorted(values, key=lambda v: v.value, reverse=True)[:2]
-    # Decimal spelling avoids turning the exact 0.6 - 0.4 boundary into a rejection.
-    if Decimal(str(first.value)) - Decimal(str(second.value)) < Decimal("0.20"):
+    # Decimal representations keep the boundary exact without ambient rounding.
+    if Fraction(str(first.value)) - Fraction(str(second.value)) < Fraction("0.20"):
         raise ValidationError("invalid_input", "language")
     iso = first.language.iso_code_639_1
     if iso is None:

@@ -135,3 +135,12 @@ def test_missing_iso_identifier_is_undetermined():
     with pytest.raises(ValidationError) as e:
         subject.resolve_language(items("Hello"), {"en"}, detector=model)
     assert (e.value.code, e.value.field) == ("invalid_input", "language")
+
+
+def test_gap_does_not_depend_on_decimal_context():
+    from decimal import localcontext
+    model = Detector([score("EN", 0.5999999999999999), score("DE", 0.4)])
+    with localcontext() as context:
+        context.prec = 1
+        with pytest.raises(ValidationError):
+            subject.resolve_language(items("Hello"), {"en"}, detector=model)
