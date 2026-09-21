@@ -18,21 +18,38 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Select checks
+        id: scope
+        run: python scripts/ci_scope.py
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       - uses: docker/setup-buildx-action@v4
+        if: steps.scope.outputs.scope == 'full'
       - uses: actions/cache@v5
+        if: steps.scope.outputs.scope == 'full'
         with:
           path: ${{ runner.temp }}/copyeditor-build-cache
           key: ${{ runner.os }}-${{ runner.arch }}-copyeditor-buildx-v1-${{ hashFiles('Dockerfile', 'tests/fixtures/Dockerfile.benchmark', 'requirements.generated.txt', 'package-lock.json') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-copyeditor-buildx-v1-${{ hashFiles('Dockerfile', 'tests/fixtures/Dockerfile.benchmark', 'requirements.generated.txt', 'package-lock.json') }}-
       - run: python -m pip install -r requirements.generated.txt
-      # The strict suite runs the real image and offline benchmark drivers once.
-      - run: python -m pytest tests --require-phase1-contracts --junitxml=phase1.xml --durations=20 -q
+      # File scheduling preserves module fixtures; full inventory is checked on every worker.
+      - run: python -m pytest tests --require-phase1-contracts -n 2 --dist=loadfile --max-worker-restart=0 --junitxml=phase1.xml --durations=20 -q
+        if: steps.scope.outputs.scope == 'full'
         env:
           COPYEDITOR_BUILD_CACHE_DIR: ${{ runner.temp }}/copyeditor-build-cache
+      - name: Check documentation and distribution
+        if: steps.scope.outputs.scope == 'docs'
+        run: >-
+          python -m pytest tests/integration/test_documentation.py
+          tests/integration/test_distribution.py tests/integration/test_plugin_distribution.py
+          tests/contracts/test_ctr03_rules.py tests/contracts/test_ctr05_examples.py
+          tests/acceptance/test_provenance.py tests/acceptance/test_publication_gate.py
+          tests/acceptance/test_release_evidence.py --junitxml=phase1.xml -q
       - name: Upload test timings and results
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

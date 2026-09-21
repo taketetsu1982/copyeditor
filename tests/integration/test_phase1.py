@@ -38,9 +38,18 @@ def run(suite, *args):
     return result
 
 
+def test_parallel_worker_crash_cannot_pass_contracts(suite):
+    (suite / "tests/test_consumer.py").write_text("def test_crash():\n    import os\n    os._exit(23)\n")
+    result = run(suite, "tests", "-n", "2", "--dist=loadfile", "--max-worker-restart=0")
+    assert result.returncode != 0
+    assert "CONTRACTS FAIL" in result.stdout
+    assert "Missing or inconsistent worker inventory" in result.stdout
+
+
+@pytest.mark.parametrize("workers", [0, 2])
 @pytest.mark.parametrize("change", ["ok", "delete", "empty", "skip", "xfail", "xpass", "fail", "setup", "teardown",
                                    "partial", "subset", "collect", "duplicate", "parameter", "unconnected", "ignore"])
-def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_strict_reports(suite, change):
+def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_strict_reports(suite, change, workers):
     # Keep every marker on another test: markers alone must never satisfy the gate.
     path = suite / "tests/test_consumer.py"
     text = path.read_text()
@@ -65,7 +74,7 @@ def test_ac_05_1_ac_05_3_ac_05_4_ctr01_ctr02_ctr03_ctr04_ctr05_strict_reports(su
     elif change == "subset": args = ["tests/test_consumer.py"]
     elif change == "collect": args = ["--collect-only"]
     elif change == "ignore": args = ["--ignore=tests/test_other.py"]
-    result = run(suite, *args)
+    result = run(suite, *args, "-n", str(workers), "--dist=loadfile", "--max-worker-restart=0")
     assert result.returncode == (0 if change == "ok" else 1), result.stdout + result.stderr
     assert ("CONTRACTS PASS" if change == "ok" else "CONTRACTS FAIL") in result.stdout
 
