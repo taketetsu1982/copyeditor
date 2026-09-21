@@ -175,3 +175,94 @@ async def test_whole_operation_deadline_cancels_stalled_transport():
     result = await client.evaluate(prepared(), remaining_seconds=0.01)
     assert result.code == "provider_timeout" and cancelled == [True]
     await client.aclose()
+
+
+def prepared_v2(phase="detect", round_=0):
+    from copyeditor.judgment_v2_batch import prepare_judgments as prepare_v2
+    data = JudgmentInput(phase, "ja", "text", Background("", "", "private-tone", ""), "private-style",
+        tuple(JudgmentBlock(i, "private-source", "private-context", "private-candidate", None) for i in (2, 4)))
+    return prepare_v2(data, candidate_round=round_).requests[0]
+
+
+def answer_v2(request):
+    return {"model": "jev-1.13.0", "answers": {
+        key: {"type": "Noul", "noul": 0.5} for key in json.loads(request)["questions"]}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase,round_", [("detect", 0), ("verify", 1), ("verify", 2)])
+async def test_v2_actual_bytes_and_complete_noul_results(phase, round_):
+    request, calls = prepared_v2(phase, round_), []
+    def handler(wire):
+        calls.append(wire)
+        assert wire.content == request
+        assert b"private-tone" not in wire.content and b"private-style" not in wire.content
+        return httpx.Response(200, json=answer_v2(request))
+    client = adapter(handler)
+    try:
+        result = await client.evaluate(request)
+        assert [block.ordinal for block in result.blocks] == [2, 4]
+        expected = (("gate", 0.5),) if phase == "detect" else (("gate", 0.5), ("meaning", 0.5))
+        assert all(block.probabilities == expected and block.choice is None for block in result.blocks)
+        assert result.usage == Usage(None, None, None) and len(calls) == 1
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["missing", "extra", "duplicate", "nan", "infinity", "overflow", "negative",
+    "above", "bool", "string", "choice", "lowercase", "extra_field", "model", "oversize", "output"])
+async def test_v2_rejects_invalid_noul_without_retry_or_sensitive_output(kind, caplog, capsys):
+    request, calls = prepared_v2("verify", 2), []
+    data = answer_v2(request)
+    key = "b0002.meaning"
+    if kind == "missing": del data["answers"][key]
+    if kind == "extra": data["answers"]["b9999.gate"] = data["answers"][key]
+    if kind in ("negative", "above", "bool", "string"):
+        data["answers"][key]["noul"] = {"negative": -0.1, "above": 1.1, "bool": True, "string": "0.5"}[kind]
+    if kind in ("choice", "lowercase"):
+        data["answers"][key]["type"] = "choice" if kind == "choice" else "noul"
+    if kind == "extra_field": data["answers"][key]["private"] = "private-response"
+    if kind == "model": data["model"] = "jev-latest"
+    if kind == "output": data["usage"] = {"output_tokens": 65537}
+    body = json.dumps(data).encode()
+    if kind == "duplicate": body = body.replace(b'"noul": 0.5', b'"noul": 0.5, "noul": 0.5', 1)
+    if kind in ("nan", "infinity", "overflow"):
+        body = body.replace(b'0.5', {"nan": b'NaN', "infinity": b'Infinity', "overflow": b'1e999'}[kind], 1)
+    if kind == "oversize": body = b" " * 65537
+    def handler(wire):
+        calls.append(wire)
+        return httpx.Response(200, content=body)
+    client = adapter(handler)
+    try:
+        result = await client.evaluate(request)
+        assert isinstance(result, JudgmentFailure) and result.code == "invalid_response"
+        assert len(calls) == 1
+        sinks = caplog.text + str(capsys.readouterr()) + repr(result) + repr(client)
+        assert not any(secret in sinks for secret in (
+            "private-source", "private-context", "private-candidate", "private-response", "synthetic-credential-sentinel"))
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", [302, 429, "timeout", "cancel"])
+async def test_v2_http_failures_and_cancel_do_not_retry_or_redirect(outcome):
+    request, calls = prepared_v2(), []
+    def handler(wire):
+        calls.append(wire)
+        if outcome == "timeout": raise httpx.ReadTimeout("private-error")
+        if outcome == "cancel": raise asyncio.CancelledError()
+        return httpx.Response(outcome, headers={"Location": "https://elsewhere.invalid"})
+    client = adapter(handler)
+    try:
+        if outcome == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await client.evaluate(request)
+        else:
+            result = await client.evaluate(request)
+            assert result.code == ("provider_timeout" if outcome == "timeout" else "provider_error")
+        assert len(calls) == 1
+    finally:
+        await client.aclose()
+    assert (await client.evaluate(request)).code == "provider_error" and len(calls) == 1
