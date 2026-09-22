@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-14"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "地域ラジオへのリクエストは、曲名と放送してほしい理由を添えて送ってください。音楽を通じて地域の想いをつなぎ、共感の輪を広げる架け橋となります。"
+good: "地域ラジオへのリクエストは、曲名と放送してほしい理由を添えて送ってください。"
+reason: "Abstraction: Keep both required fields and the request; do not promise that every song will be broadcast."
+lint: null
+must_change: true

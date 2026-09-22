@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-20"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "離島便の運航状況は、港の掲示板で案内します。また、欠航の理由も掲示します。さらに、天候が変わると案内を更新します。そして、前日の案内は当日の運航を保証しません。"
+good: "離島便の運航状況と欠航の理由は、港の掲示板で案内します。天候が変わると案内を更新します。前日の案内は当日の運航を保証しません。"
+reason: "Repetition: Keep status, cancellation reason, weather-driven updates and the explicit lack of a next-day guarantee."
+lint: null
+must_change: true
