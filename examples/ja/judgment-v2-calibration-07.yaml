@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-07"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "窯の温度が80度以下になるまで、扉を開けないでください。結論から申し上げますと、温度計で確認するということが必要になると言えるでしょう。"
+good: "窯の温度が80度以下になるまで、扉を開けないでください。温度計で確認してください。"
+reason: "Roundabout: Keep the prohibition and temperature condition; do not introduce a cooling duration."
+lint: null
+must_change: true

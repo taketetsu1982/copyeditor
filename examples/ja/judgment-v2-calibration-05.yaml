@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-05"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "干潟の案内板には、満潮の時刻を掲示しています。時刻は日によって変わります。いかがでしたか。潮の動きを意識して、散策を楽しみましょう。"
+good: "干潟の案内板には、満潮の時刻を掲示しています。時刻は日によって変わるので、散策前に確認してください。"
+reason: "Formulaic: Keep daily variation and checking before a walk; add no statement that walking is safe."
+lint: null
+must_change: true
