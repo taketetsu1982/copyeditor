@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-08"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "練習会の時間中は、プールの2コースを貸切にします。一般の方は残りのコースをご利用いただく形になるという点をお伝えしたいと思います。"
+good: "練習会の時間中は、プールの2コースを貸切にします。一般の方は残りのコースをご利用ください。"
+reason: "Roundabout: Keep the time-limited two-lane reservation and public access to remaining lanes; do not close the entire pool."
+lint: null
+must_change: true

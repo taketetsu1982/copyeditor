@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-07"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "機密書類の回収箱には、紙だけを入れてください。クリップは外すということが必要になるのではないでしょうか。回収日は毎週水曜日です。"
+good: "機密書類の回収箱には、紙だけを入れてください。クリップは外してください。回収日は毎週水曜日です。"
+reason: "Roundabout: Keep paper-only collection, clip removal and weekday; add no destruction certification."
+lint: null
+must_change: true

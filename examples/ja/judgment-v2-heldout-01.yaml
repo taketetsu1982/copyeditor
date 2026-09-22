@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-01"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "水道メーターの点検は、建物の外から行います。点検日に在宅していただく必要はありません。この点をしっかりと把握しておくことが大切です。"
+good: "水道メーターの点検は、建物の外から行います。点検日に在宅していただく必要はありません。"
+reason: "Stiffness: Keep exterior inspection and no attendance requirement; do not add an entry or shutoff requirement."
+lint: null
+must_change: true

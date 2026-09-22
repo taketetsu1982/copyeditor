@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-09"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "人形作りの会は、小学生を対象に開きます。また、保護者の同伴が必要です。さらに、材料は会場で渡します。そして、完成した人形は持ち帰れます。"
+good: "人形作りの会は、小学生が保護者と一緒に参加する会です。材料は会場で渡します。完成した人形は持ち帰れます。"
+reason: "Repetition: Keep the age group, required guardian, supplied materials and take-home permission."
+lint: null
+must_change: true
