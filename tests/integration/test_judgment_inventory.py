@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_ac_08_1_2_3_4_5_6_7_8_9_10_11_12_15_16_17_18_ctr01_ctr04_fixed_consumers(collected_contracts):
-    assert len(JUDGMENT_MODULES) == 30
+    assert len(JUDGMENT_MODULES) == 31
     assert 'tests/unit/test_judgment_batch.py' in JUDGMENT_MODULES
     assert all(judgment_fingerprint(ROOT, module, collected_contracts.items) == expected
                for module, expected in JUDGMENT_MODULES.items())
