@@ -45,7 +45,7 @@ def string(value, field, body=False):
     check(not body or re.search("[^" + SPACE + "]", value) is not None, field)
 
 
-def parse_request(tool, arguments, config, snapshot):
+def parse_request(tool, arguments, config, snapshot, *, generation4=False):
     check(tool in ("polish_text", "lint_text"))
     polish = tool == "polish_text"
     fields = ("text", "items", "format", *Background._fields, "language") if polish else ("text", "language")
@@ -76,10 +76,11 @@ def parse_request(tool, arguments, config, snapshot):
     for field in Background._fields:
         if polish:
             string(arguments.get(field, ""), field)
-    language = arguments.get("language", config["default_language"])
-    string(language, "language")
-    check(len(language) <= 35 and re.fullmatch(LANGUAGE, language) is not None, "language")
-    check(language in snapshot.languages, "language", "unsupported_language")
+    language = arguments.get("language") if generation4 else arguments.get("language", config["default_language"])
+    if not generation4 or "language" in arguments:
+        string(language, "language")
+        check(len(language) <= 35 and re.fullmatch(LANGUAGE, language) is not None, "language")
+        check(language in snapshot.languages, "language", "unsupported_language")
     background = Background(*(arguments.get(field, "") for field in Background._fields))
     check(1 <= len(items) <= 32, "items", "input_limit")
     for name, limit in (("text", 12000), ("context", 1000)):
@@ -92,6 +93,12 @@ def parse_request(tool, arguments, config, snapshot):
     bodies, contexts, backgrounds = sum(len(i.text) for i in items), sum(len(i.context) for i in items), sum(map(len, background))
     check(backgrounds <= 4000 and contexts + backgrounds <= 4000 and bodies + contexts + backgrounds <= 16000,
           None, "input_limit")
+    if generation4:
+        from .language_detection import resolve_language
+        from .rules import effective_tone
+        language = resolve_language(items, snapshot.languages, language=language, format=format)
+        if polish:
+            background = background._replace(tone=effective_tone(background.tone, snapshot.languages[language].default_style))
     return Request(tuple(items), language, format, background)
 
 
@@ -125,13 +132,13 @@ def input_schema(tool, config, snapshot):
     return schema
 
 
-def parse_edit_request(tool, arguments, config, snapshot):
+def parse_edit_request(tool, arguments, config, snapshot, *, generation4=False):
     check(type(arguments) is dict)
     degree = arguments.get("degree", "polish")
     check(tool == "polish_text" or "degree" not in arguments, "degree")
     check(type(degree) is str and degree in ("polish", "rewrite"), "degree")
     body = {key: value for key, value in arguments.items() if key != "degree"}
-    return parse_request(tool, body, config, snapshot)._replace(degree=degree)
+    return parse_request(tool, body, config, snapshot, generation4=generation4)._replace(degree=degree)
 
 
 def edit_input_schema(tool, config, snapshot):
