@@ -100,10 +100,11 @@ JUDGMENT_MODULES = {
 
 # Evaluation ownership is separate from runtime consumers.
 EVALUATION_MODULES = {
+    'tests/unit/test_generation4_evaluation.py': (23, 'b3e27c2c5e63f177bbbbefa48901fa861726058b003289cb0992b8857f5e100e'),
     'tests/unit/test_judgment_examples.py': (74, '00d3c90298c579b37acd0a6d44b0b7c9e293bbdf63e7a3fb36e0c1c55f0ab9a9'),
     'tests/unit/test_judgment_evaluation.py': (66, 'df05969bf72742a1ad2920c4253cd232b8d9abb05c1ad89f5e215134d5acea88'),
     'tests/unit/test_judgment_calibration.py': (55, '933c1229814671451f8d6a9120ba9e48d61f5df92f4dbdd66d066ba6b76736fb'),
-    'tests/integration/test_judgment_acceptance.py': (57, '079043469eadf2528ba72da1bcfedead0bd89390e263833547c998b15f027018'),
+    'tests/integration/test_judgment_acceptance.py': (65, '283d046de3f56a77f4f7bd73c60d9db85b95aab510cf88499bd1ea15351b310f'),
 }
 EVALUATION_SETS = {
     'judgment-calibration': (30, '1f5bd7410d0a73864a0576dfc5565ef6d7dc67ee80bb6d7d130e98288679ef53'),

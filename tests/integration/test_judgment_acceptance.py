@@ -19,10 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_ac_08_13_14_fixed_evaluation_modules_and_populations(collected_contracts):
     assert set(EVALUATION_MODULES) == {
         'tests/unit/test_judgment_examples.py', 'tests/unit/test_judgment_evaluation.py',
-        'tests/unit/test_judgment_calibration.py', 'tests/integration/test_judgment_acceptance.py'}
+        'tests/unit/test_judgment_calibration.py', 'tests/integration/test_judgment_acceptance.py',
+        'tests/unit/test_generation4_evaluation.py'}
     assert {k: v[0] for k, v in EVALUATION_SETS.items()} == {
         'judgment-calibration': 30, 'judgment-acceptance': 40, 'rewrite': 24}
-    assert len(evaluation_inventory(ROOT)) == 4
+    assert len(evaluation_inventory(ROOT)) == 5
     for module, expected in EVALUATION_MODULES.items():
         assert judgment_fingerprint(ROOT, module, collected_contracts.items) == expected
     for name, size in [('calibration', 1200), ('acceptance', 800), ('existing', 480), ('regression', 200)]:

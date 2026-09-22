@@ -37,32 +37,34 @@ def fixtures():
             if case["language"] == "ja" and case["degree"] == "rewrite"}
 
 
-def freeze(revision, mode="fixture"):
+def freeze(revision, mode="fixture", *, prepared=None):
     if type(revision) is not int or revision < 1 or mode not in ("fixture", "live"):
         raise ValueError("Invalid evaluation plan")
     cases = fixtures()
     if not set(FIXED) <= cases.keys():
         raise ValueError("Missing fixed examples")
     groups = {"acceptance": FIXED, "regression": sorted(cases.keys() - set(FIXED))}
+    from copyeditor.prompt import edit_system_instruction
+    instruction = edit_system_instruction if prepared else system_instruction
     entries = []
     for group, ids in groups.items():
         for identity in ids:
             case = cases[identity]
-            config, snapshot = environment(case, mode)
+            config, snapshot = prepared(case, mode, False)[:2] if prepared else environment(case, mode)
             path = f"examples/ja/{identity}.yaml"
             entries.append(dict(group=group, id=identity, path=path, sha256=digest((ROOT / path).read_bytes()),
                 repeats=5, must_change=case["must_change"], model=config["model"], thinking=config["thinking"],
-                rules_version=snapshot.rules_version, common_version=snapshot.common_version, instruction_hashes={stage: digest(system_instruction(
+                rules_version=snapshot.rules_version, common_version=snapshot.common_version, instruction_hashes={stage: digest(instruction(
                     snapshot.common_bytes.decode(), snapshot.languages["ja"].prose, preservation.request_terms(
                         (SourceItem("text", case["bad"], ""),), snapshot.languages["ja"].protected_terms), stage).encode())
-                    for stage in ("diagnose", "rewrite")}))
+                    for stage in (("rewrite",) if prepared else ("diagnose", "rewrite"))}))
     return dict(revision=revision, mode=mode, source_commit=subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), thresholds=THRESHOLDS.copy(), entries=entries,
         prompt_hash=digest((ROOT / "src/copyeditor/prompt.py").read_bytes()))
 
 
-def check_plan(plan):
-    if plan != freeze(plan["revision"], plan["mode"]):
+def check_plan(plan, *, prepared=None):
+    if plan != freeze(plan["revision"], plan["mode"], prepared=prepared):
         raise ValueError("Evaluation inputs changed; freeze and review a new plan")
 
 
@@ -76,8 +78,8 @@ def batch_plan():
             for n in (1, 4, 5, 16, 32) for body in (1000, 6000, 12000) for context in (0, 4000)])
 
 
-async def run(plan, output):
-    check_plan(plan)
+async def run(plan, output, *, prepared=None):
+    check_plan(plan, prepared=prepared)
     cases = fixtures()
     artifact = dict(plan=json.loads(json.dumps(plan)), started_at=datetime.now(timezone.utc).isoformat(), trials=[], batch_plan=batch_plan())
     save(output, artifact)
@@ -85,7 +87,7 @@ async def run(plan, output):
         for repeat in range(1, entry["repeats"] + 1):
             response, error = None, None
             try:
-                reply = await call_api("", {"config": {"mode": plan["mode"]}}, {"vars": cases[entry["id"]]})
+                reply = await call_api("", {"config": {"mode": plan["mode"]}}, {"vars": cases[entry["id"]]}, **({"prepared": prepared} if prepared else {}))
                 response = json.loads(reply["output"])
             except Exception:
                 error = "evaluation_error"
@@ -96,8 +98,8 @@ async def run(plan, output):
     return artifact
 
 
-def summarize(plan, artifact):
-    check_plan(plan)
+def summarize(plan, artifact, *, prepared=None):
+    check_plan(plan, prepared=prepared)
     if artifact["plan"] != plan:
         raise ValueError("Evaluation plan was replaced")
     expected = {(e["group"], e["id"], r) for e in plan["entries"] for r in range(1, e["repeats"] + 1)}
@@ -123,16 +125,22 @@ def summarize(plan, artifact):
             if response is None or trial["error"] == "evaluation_error":
                 raise ValueError()
             entry = next(e for e in plan["entries"] if e["id"] == trial["id"])
-            if any(response.get(k) != entry[k] for k in ("model", "rules_version", "common_version")):
+            if any(response.get(k) != entry[k] for k in ("rules_version", "common_version")):
                 raise ValueError()
-            validate_rewrite_final(response, (SourceItem("text", case["bad"], ""),))
+            if prepared:
+                from copyeditor.edit_protocol import validate_final
+                if response['providers'][0]['model'] != entry['model']: raise ValueError()
+                validate_final(response, (SourceItem("text", case["bad"], ""),), expected_enabled=False, format=case['format'])
+            else:
+                if response.get('model') != entry['model']: raise ValueError()
+                validate_rewrite_final(response, (SourceItem("text", case["bad"], ""),))
             if healthy:
-                config, snapshot = environment(case, plan["mode"])
+                config, snapshot = prepared(case, plan["mode"], False)[:2] if prepared else environment(case, plan["mode"])
                 ratio = {k: config["length_ratio." + k] for k in ("min", "max")}
                 if preservation.check(case["bad"], response["text"], snapshot.languages["ja"].protected_terms,
                         ratio, "text" if case["format"] == "html" else case["format"]).failed:
                     raise ValueError()
-                if case["format"] == "html" and not html.same_structure(case["bad"], response["text"]):
+                if not prepared and case["format"] == "html" and not html.same_structure(case["bad"], response["text"]):
                     raise ValueError()
             elif response["error"]["code"] in ("invalid_response", "html_structure"):
                 raise ValueError()

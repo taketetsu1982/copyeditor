@@ -46,8 +46,11 @@ class FixtureProvider:
                                 "stop", Usage(0, 0, 0))
 
 
-async def call_api(prompt, options, context):
+async def call_api(prompt, options, context, *, prepared=None):
     case, mode = context["vars"], options.get("config", {}).get("mode", "fixture")
+    if prepared:
+        result = await compare_request([case], case.get('degree', 'polish'), False, 'text', mode, [], prepared=prepared)
+        return {"output": json.dumps(result, ensure_ascii=False, allow_nan=False)}
     config, snapshot = environment(case, mode)
     arguments = dict(text=case["bad"], language=case["language"], format=case["format"],
                      **{key: value for key, value in case["background"].items() if key in ("audience", "purpose", "tone", "message")})
@@ -79,19 +82,28 @@ def comparison_environment(case, mode, enabled):
     return {**base.values, **judgment.values}, snapshot, judgment.secrets.get('TYPESAFE_API_KEY')
 
 
-async def compare_request(cases, degree, enabled, layout, mode, plans):
+# The temporary internal injection keeps legacy CLI consumers active until the atomic cutover.
+async def compare_request(cases, degree, enabled, layout, mode, plans, *, prepared=None):
     import httpx
     from contextlib import ExitStack
     from copyeditor import judged_budget
     from copyeditor.judgment import ACTION_CRITERIA
     from copyeditor.providers.typesafe import TypeSafe
-    config, snapshot, secret = comparison_environment(cases[0], mode, enabled)
+    if prepared:
+        if mode != 'fixture': raise ValueError('Prepared evaluation is fixture-only until public cutover')
+        config, snapshot, registry = prepared(cases[0], mode, enabled)
+        secret = config.secrets.get('TYPESAFE_API_KEY')
+    else:
+        config, snapshot, secret = comparison_environment(cases[0], mode, enabled)
     arguments = dict(language='ja', degree=degree, format=cases[0]['format'], **cases[0]['background'])
     if layout == 'text': arguments['text'] = cases[0]['bad']
     else: arguments['items'] = [dict(id=f'b{i:04}', text=c['bad'], context='') for i, c in enumerate(cases, 1)]
     outputs = {c['bad']: c['good'] for c in cases}
     class Editor(FixtureProvider):
         async def generate(self, data):
+            if prepared:
+                return GenerationResult(json.dumps({'items': [dict(id=i.id, text=outputs[i.text], flag=None,
+                    diagnosis=None if degree == 'polish' else 'Clearer wording.') for i in data.items]}), 'stop', Usage(0, 0, 0))
             if data.stage == 'diagnose': return await super().generate(data)
             return GenerationResult(json.dumps({'items': [dict(id=i.id, text=outputs[i.text], flag=None) for i in data.items]}), 'stop', Usage(0, 0, 0))
     def reply(wire):
@@ -99,16 +111,22 @@ async def compare_request(cases, degree, enabled, layout, mode, plans):
         answers = {k: (dict(type='noul', noul=.9) if q['type'] == 'noul' else
                    dict(type='choice', choice='simplify_vocabulary', confidence=1,
                         probabilities={a: int(a == 'simplify_vocabulary') for a in ACTION_CRITERIA})) for k, q in data['questions'].items()}
+        if prepared:
+            checking = 'originals' in data['state']
+            answers = {key: dict(type='Noul', noul=.9 if not checking or key.endswith('meaning') else .3)
+                       for key in data['questions']}
         return httpx.Response(200, json=dict(model='jev-1.13.0', answers=answers, usage=dict(input_tokens=0, output_tokens=0)))
-    prepare = judged_budget.prepare_judgments
+    prepare = judged_budget.EditBudget.plan if prepared else judged_budget.prepare_judgments
     def observe(*args, **kwargs):
-        prepared = prepare(*args, **kwargs)
-        plans.append(dict(version=prepared.plan.version, phase=prepared.plan.phase,
-                          batches=[b._asdict() for b in prepared.plan.batches]))
-        return prepared
+        result = prepare(*args, **kwargs)
+        plans.append(dict(version=result.plan.version, phase=result.plan.phase,
+                          batches=[b._asdict() for b in result.plan.batches]))
+        if prepared: plans[-1]['candidate_round'] = kwargs['candidate_round']
+        return result
     adapter = None
     with ExitStack() as stack:
-        stack.enter_context(patch.object(judged_budget, 'prepare_judgments', observe))
+        stack.enter_context(patch.object(judged_budget.EditBudget if prepared else judged_budget,
+                                        'plan' if prepared else 'prepare_judgments', observe))
         if mode == 'fixture':
             network = stack.enter_context(patch('socket.socket', side_effect=RuntimeError('Fixture network denied')))
             dns = stack.enter_context(patch('socket.getaddrinfo', side_effect=RuntimeError('Fixture network denied')))
@@ -118,7 +136,11 @@ async def compare_request(cases, degree, enabled, layout, mode, plans):
             factory = lambda: Vertex(config)
         try:
             if enabled: adapter = TypeSafe(secret, timeout_ms=config['judgment.timeout_ms'], transport=httpx.MockTransport(reply) if mode == 'fixture' else None)
-            response = await Service(config, snapshot, factory, adapter).polish(arguments)
+            if prepared:
+                from copyeditor.edit_service import EditService
+                response = await EditService(config, snapshot, factory, adapter, registry=registry).polish(arguments)
+            else:
+                response = await Service(config, snapshot, factory, adapter).polish(arguments)
             if mode == 'fixture' and (network.called or dns.called): raise RuntimeError('Fixture attempted network')
             return response
         finally:
