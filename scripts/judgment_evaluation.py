@@ -1,6 +1,7 @@
 """Freeze and run offline or explicitly opted-in live judgment comparisons; never accept quality."""
 import argparse
 import asyncio
+from bisect import bisect_left
 from collections import Counter
 from contextlib import contextmanager
 from unittest.mock import patch
@@ -402,6 +403,123 @@ def summarize(plan, artifact):
                 legacy_criteria_met=legacy_met, status=reason, criteria_met=reason == 'criteria_met', quality_accepted=False)
 
 
+PAIR_KINDS = frozenset(('improved', 'same', 'unimproved', 'unrelated', 'meaning', 'negation', 'condition', 'promise'))
+
+
+def calibrate(plan, artifact, pair_plan, pair_artifact):
+    """Derive offline candidates from complete observations and pre-labelled pairs."""
+    observations = audit(plan, artifact)
+    if plan['sets'][0]['name'] != SETS['calibration']:
+        raise ValueError('A complete calibration population and owner manifest are required')
+    source_hash = legacy.digest(encoded(plan).encode())
+    cases = {c['id']: c for c in population('calibration')}
+    if type(pair_plan) is not dict or type(pair_artifact) is not dict:
+        raise ValueError('Invalid candidate pair ledger')
+    labels = pair_plan.get('labels', {})
+    if (pair_plan.get('source_manifest_hash') != source_hash or
+            not isinstance(pair_plan.get('owner'), str) or not pair_plan['owner'].strip() or
+            type(labels) is not dict or set(labels) != set(cases)):
+        raise ValueError('Missing or changed owner labels')
+    for identity, case in cases.items():
+        label = labels[identity]
+        if (type(label) is not dict or label.get('kind') != ('problem' if case['must_change'] else 'natural') or
+                not isinstance(label.get('reason'), str) or not label['reason'].strip()):
+            raise ValueError('Missing or changed owner labels')
+    pairs = pair_plan.get('pairs', [])
+    if (type(pairs) is not list or not pairs or
+            any(type(p) is not dict or not isinstance(p.get('id'), str) or not p['id'].strip() for p in pairs) or
+            len({p['id'] for p in pairs}) != len(pairs)):
+        raise ValueError('Missing or duplicate candidate pairs')
+    by_id, coverage = {}, {identity: set() for identity in cases}
+    for pair in pairs:
+        identity, kind = pair['source_id'], pair['kind']
+        if (not isinstance(identity, str) or identity not in cases or not isinstance(kind, str) or kind not in PAIR_KINDS or
+                type(pair.get('accepted')) is not bool or pair['accepted'] != (kind == 'improved') or
+                not isinstance(pair.get('reason'), str) or not pair['reason'].strip() or
+                not isinstance(pair.get('candidate'), str) or not pair['candidate'].strip() or
+                (pair['candidate'] == cases[identity]['bad']) != (kind == 'same')):
+            raise ValueError('Missing or inconsistent prior pair judgment')
+        by_id[pair['id']] = pair
+        coverage[identity].add(kind)
+    if any(kinds != PAIR_KINDS for kinds in coverage.values()):
+        raise ValueError('Missing candidate controls')
+    pair_bytes = encoded(pair_plan)
+    if pair_artifact.get('manifest_bytes') != pair_bytes or pair_artifact.get('manifest_hash') != legacy.digest(pair_bytes.encode()):
+        raise ValueError('Pair manifest replaced')
+    expected_pairs = Counter((p['id'], repeat) for p in pairs for repeat in range(1, 6))
+    trials = pair_artifact.get('trials', [])
+    if (type(trials) is not list or any(type(t) is not dict or
+            not isinstance(t.get('pair_id'), str) or type(t.get('repeat')) is not int for t in trials) or
+            Counter((t['pair_id'], t['repeat']) for t in trials) != expected_pairs):
+        raise ValueError('Missing, duplicate or moved pair trials')
+    limit = pair_plan.get('search_limit')
+    if type(limit) is not int or limit < 1:
+        raise ValueError('Missing finite search budget')
+    detected, measured = [], []
+    for request in plan['request_layouts']:
+        observation = observations[request['request_id']]
+        if observation['error_code'] or not observation['full_response'] or observation['full_response'].get('status') != 'ok':
+            raise ValueError('Incomplete calibration observations')
+        for event in observation['trace']:
+            if event['kind'] != 'judgment' or event['phase'] != 'detect': continue
+            if event['error'] or event['result'] is None:
+                raise ValueError('Incomplete detection observations')
+            for block in event['result']['blocks']:
+                identity = request['ids'][block['ordinal'] - 1]
+                detected.append((identity, request['degree'], request['layout'], request['repeat']))
+                measured.append((labels[identity]['kind'], Decimal(str(_probability(block['probabilities']['gate'])))))
+    expected = Counter((t['example_id'], t['degree'], t['layout'], t['repeat'])
+                       for t in plan['planned_trials'] if t['judgment_enabled'])
+    if Counter(detected) != expected:
+        raise ValueError('Missing detection trials')
+    pair_values = []
+    for trial in trials:
+        if 'error' not in trial or trial['error'] is not None:
+            raise ValueError('Failed pair observation')
+        values = tuple(Decimal(str(_probability(trial[key]))) for key in ('source_gate', 'candidate_gate', 'meaning'))
+        pair_values.append((by_id[trial['pair_id']]['accepted'], *values))
+    values = [v for _, v in measured] + [v for row in pair_values for v in row[1:]]
+    # Work in decimal input precision; converting candidates to float can collapse a midpoint.
+    with localcontext() as context:
+        context.prec = max(32, max(-v.as_tuple().exponent for v in values) + 4)
+        natural = max(v for label, v in measured if label == 'natural')
+        problem = min(v for label, v in measured if label == 'problem')
+        gap = problem - natural
+        result = dict(status='not_separated', N=format(natural, 'f'), U=format(problem, 'f'), G=format(gap, 'f'),
+            thresholds=None, quality_accepted=False, production_registered=False,
+            source_manifest_hash=source_hash, pair_manifest_hash=legacy.digest(pair_bytes.encode()))
+        if gap <= 0: return result
+        floor = (natural + problem) / 2
+        scores = [(accepted, source - candidate, meaning) for accepted, source, candidate, meaning in pair_values]
+        def candidates(values):
+            ordered = sorted(set(values))
+            return sorted({Decimal(0), Decimal(1), *ordered,
+                           *((left + right) / 2 for left, right in zip(ordered, ordered[1:]))})
+        gaps = [v for v in candidates(delta for _, delta, _ in scores if delta > 0) if v > 0]
+        meanings = candidates(meaning for _, _, meaning in scores)
+        combinations = len(gaps) * len(meanings)
+        result.update(search_candidates=combinations, search_limit=limit)
+        if combinations > limit:
+            result['status'] = 'search_budget_exceeded'
+            return result
+        best = None
+        for candidate_gap in gaps:
+            positives = sorted(meaning for accepted, delta, meaning in scores if accepted and delta >= candidate_gap)
+            forbidden = max((meaning for accepted, delta, meaning in scores if not accepted and delta >= candidate_gap), default=Decimal(-1))
+            for meaning_floor in meanings:
+                if meaning_floor <= forbidden: continue
+                count = len(positives) - bisect_left(positives, meaning_floor)
+                if count and (best is None or (count, candidate_gap, meaning_floor) > best):
+                    best = count, candidate_gap, meaning_floor
+        if best is None:
+            result['status'] = 'no_feasible_thresholds'
+            return result
+        count, selected_gap, meaning_floor = best
+        result.update(status='candidate', accepted_improvement_trials=count,
+            thresholds={k: format(v, 'f') for k, v in dict(floor=floor, gap=selected_gap, meaning_floor=meaning_floor).items()})
+        return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('plan', 'run', 'check', 'report', 'calibrate', 'verify', 'verify-report'))
@@ -416,7 +534,20 @@ def main():
     plan = json.loads(args.plan.read_text())
     if args.mode != plan['mode']: parser.error('Mode must match frozen plan; live requires --mode live')
     if args.operation == 'run': asyncio.run(run(plan, args.artifact))
-    elif args.operation in ('verify', 'verify-report', 'calibrate'):
+    elif args.operation == 'calibrate':
+        try:
+            if args.pairs is None:
+                raise ValueError('Generation-four calibration requires a complete population and owner manifest')
+            bundle = json.loads(args.pairs.read_text())
+            artifact = json.loads(args.artifact.read_text())
+            result = calibrate(plan, artifact, bundle['manifest'], bundle['observations'])
+        except (ValueError, KeyError, TypeError) as error:
+            parser.error(str(error))
+        artifact['calibration'] = result
+        legacy.save(args.artifact, artifact)
+        print(result['status'])
+        if result['status'] != 'candidate': raise SystemExit(1)
+    elif args.operation in ('verify', 'verify-report'):
         parser.error('Generation-four calibration requires a complete population and owner manifest')
     elif args.operation == 'report':
         artifact = json.loads(args.artifact.read_text())
