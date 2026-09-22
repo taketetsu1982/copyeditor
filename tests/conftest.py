@@ -118,7 +118,7 @@ EVALUATION_MODULES = {
     'tests/unit/test_judgment_examples.py': (74, '27d1c498bb8639488edea49c84805e37a0410a22f97eac56aace713cceefb605'),
     'tests/unit/test_judgment_evaluation.py': (54, 'a272a2028c811f1ae5b312b02e0c98fd93569acb51aab7d057d5e75ed3381419'),
     'tests/unit/test_judgment_calibration.py': (38, '0805a8d862be7e2a7331fb9966c4748fbf3b1f07c6fbb27b3a96610d15c1418e'),
-    'tests/integration/test_judgment_acceptance.py': (78, '02da8879e18d4c78f869c2e0d798474930b31a7579ab4b6ce365de64c1de99a1'),
+    'tests/integration/test_judgment_acceptance.py': (97, 'd18ef00516c5edbc282df2fbaf0800cc120857c4293b7fa68ee64b40160e265a'),
 }
 EVALUATION_SETS = {
     'judgment-v2-heldout': (40, '915867574207ba3970f5a8df9ee49ccb5b690182ecd14474abcb413872f90f19'),
