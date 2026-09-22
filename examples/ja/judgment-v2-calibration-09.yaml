@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-09"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "駐輪札には番号が付いています。また、番号は受付の控えにも記載します。さらに、帰る際は駐輪札を受付へ返してください。そして、紛失した場合は係員に伝えてください。"
+good: "駐輪札には番号が付いており、受付の控えにも記載します。帰る際は駐輪札を受付へ返してください。紛失した場合は係員に伝えてください。"
+reason: "Repetition: Keep the shared number, return instruction and lost-tag condition; keep necessary repeated references to the tag."
+lint: null
+must_change: true

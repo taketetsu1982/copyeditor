@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-08"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この統計表には、個人の氏名は載せていません。地区別の人数は確認できますが、個人を特定できるわけではないという点が重要なポイントなのではないでしょうか。"
+good: "この統計表には、個人の氏名は載せていません。地区別の人数は確認できますが、個人は特定できません。"
+reason: "Roundabout: Keep the absence of names and the limit on identifying individuals; add no privacy certification."
+lint: null
+must_change: true

@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-02"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "化石の標本箱には、採集地と地層の名前を記録できます。記入欄は、ふたの裏にあります。まさに、記録を残すうえで非常に頼もしい標本箱と言っても過言ではありません。"
+good: "化石の標本箱には、採集地と地層の名前を記録できます。記入欄は、ふたの裏にあります。"
+reason: "Stiffness: Keep both recorded fields and the possibility of recording them; add no archival guarantee."
+lint: null
+must_change: true

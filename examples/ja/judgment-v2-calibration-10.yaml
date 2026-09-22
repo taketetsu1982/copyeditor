@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-10"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "養蜂日誌には、巣箱ごとの重さを記録します。また、測った日も記録します。さらに、巣箱を持ち上げられない日は空欄にします。そして、推測した重さは書きません。"
+good: "養蜂日誌には、巣箱ごとの重さと測った日を記録します。巣箱を持ち上げられない日は空欄にし、推測した重さは書きません。"
+reason: "Repetition: Keep measured weight and date, the blank-entry condition and the ban on estimated values."
+lint: null
+must_change: true
