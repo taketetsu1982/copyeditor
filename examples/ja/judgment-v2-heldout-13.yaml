@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-13"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この納品書は、上の紙に書くと下の紙にも同じ内容が写ります。上の紙は納品先へ渡し、下の紙は控えとして残します。書類体験をシームレスに最適化します。"
+good: "この納品書は、上の紙に書くと下の紙にも同じ内容が写ります。上の紙は納品先へ渡し、下の紙は控えとして残します。"
+reason: "Abstraction: Keep transfer behavior and which sheet goes to each recipient; do not reverse the copies."
+lint: null
+must_change: true

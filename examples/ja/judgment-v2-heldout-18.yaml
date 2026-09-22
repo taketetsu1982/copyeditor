@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-18"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "土曜日は、登録済みの入館カードで入館できます。日曜日は入館できないという点が重要なポイントと言えるでしょう。カードの登録は平日に受け付けます。"
+good: "土曜日は、登録済みの入館カードで入館できます。日曜日は入館できません。カードの登録は平日に受け付けます。"
+reason: "Roundabout: Keep Saturday access, Sunday prohibition and weekday registration; add no entry procedure."
+lint: null
+must_change: true
