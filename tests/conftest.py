@@ -87,9 +87,26 @@ JUDGMENT_MODULES = {
 
 
 GENERATION4_MODULES = {
-    'tests/integration/test_generation4_acceptance.py': (42, '469ddcab2fd931cd1017ad70c7d21905c447c18a7406a9cf5090ecb859d51b00'),
+    'tests/integration/test_generation4_acceptance.py': (83, 'd1d93eae8d6663b62715f216a5e047dc04bd7c56d7f17567e044afaf32331ad4'),
     'tests/integration/test_generation4_transport.py': (18, '0df07122487902cd37d0b819219521cf47a55137ae87cf2061fb57de2eb3e94a'),
     'tests/integration/test_generation4_inventory.py': (10, '66f156ae98dd3bbb3e07bd54c3e4c2dd360a1045a24532719fcfee2b43d328ed'),
+}
+
+
+# Additional existing consumers required by Should acceptance.
+SHOULD_MODULES = {
+    'tests/integration/test_rewrite_acceptance.py': (25, 'f6c2ce6989e59a3c03e6becfcc91f91e9fc954356f28770aceac2271fe871cd0'),
+    'tests/unit/test_rewrite_evaluation.py': (21, '1dedee3a45f93a71a90ecd471efc37d73789b8d3921c990a14181dd6c8cee31a'),
+    'tests/unit/test_lint.py': (21, 'f72d33dfe89497bc24a05a86e36bcae5278ffd254149be2f296b9ab208c76f4e'),
+    'tests/contracts/test_ctr03_rules.py': (27, 'c1b9d00f7b62eb85b63a4a60d7a8fb1d15212f19f9561d1ec1f614f29a820fc4'),
+    'tests/contracts/test_ctr03_en_zh.py': (17, '87953451ff32cfe86ba4300896a87953a2d89022a260b6b20003e96d8d74562d'),
+    'tests/contracts/test_ctr05_examples.py': (225, '30a51acd839d1c61fb7b5a6a395336d68bfba42ce5ff6f72624fcd691d459ca6'),
+    'tests/contracts/test_rewrite_examples.py': (12, '7da2247a7ccb21ce349d0defdbe1d8841cd52f8658cd70bd0bec05ea9fe3d303'),
+    'tests/integration/test_transport.py': (37, 'd6328753ed49af791c4842064d3a2258446a460ae5476673acd3c35557efc7fc'),
+    'tests/integration/test_rewrite_skill.py': (21, '4706f2f69a809738a222a4096801c42b40baae32193820cd88c680177fb3217b'),
+    'tests/integration/test_plugin_claude.py': (31, '0253ea0eb03b094ff199d8d01e6951f3b96bf7d97a446b97223cd5cd27772be2'),
+    'tests/integration/test_plugin_codex.py': (53, '78544a6cf8357a703540fcaff815559a39536cc67f799b437625dc6f2334a550'),
+    'tests/integration/test_plugin_distribution.py': (17, '15736043d81322c75cbe9cc8ee50558fe3a138f1c45eb627250f0f760f3708c2'),
 }
 
 
@@ -224,6 +241,8 @@ def phase1_inventory(root):
     groups.update(evaluation_inventory(root))
     groups.update({module + "::*": {digest: {"count": count}}
                    for module, (count, digest) in GENERATION4_MODULES.items()})
+    groups.update({module + "::*": {digest: {"count": count}}
+                   for module, (count, digest) in SHOULD_MODULES.items()})
     return groups
 
 
