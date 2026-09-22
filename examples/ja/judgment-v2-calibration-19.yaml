@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-19"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "陶芸教室の道具は、使った後に洗ってください。また、水気を拭き取ってください。さらに、番号の付いた棚へ戻してください。そして、欠けた道具は棚に戻さず受付へ渡してください。"
+good: "陶芸教室の道具は、使った後に洗い、水気を拭き取って番号の付いた棚へ戻してください。欠けた道具は棚に戻さず受付へ渡してください。"
+reason: "Repetition: Keep washing, drying and return order with the damaged-tool exception."
+lint: null
+must_change: true

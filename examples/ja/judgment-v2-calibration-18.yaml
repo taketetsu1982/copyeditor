@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-18"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "水車の展示は、毎月最初の火曜日に点検します。点検中は水車を動かさないという形になることを、あらかじめお伝えしておきたいと思います。"
+good: "水車の展示は、毎月最初の火曜日に点検します。点検中は水車を動かしません。"
+reason: "Roundabout: Keep the recurring date and stopped-operation condition; do not imply the entire exhibition closes."
+lint: null
+must_change: true

@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-12"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "乗り換え案内には、次のバスの発車時刻と乗り場を表示します。乗換納得を支える案内として、待ち時間の見通しを伝えます。"
+good: "乗り換え案内には、次のバスの発車時刻と乗り場を表示します。待ち時間の見通しを伝える案内です。"
+reason: "Stiffness: Keep departure time, stop and waiting-time information; do not guarantee a connection."
+lint: null
+must_change: true
