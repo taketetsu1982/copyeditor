@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-21"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "接眼レンズのケースには、焦点距離と見掛け視界を記したラベルが付いています。ラベルはレンズを収めたまま読めます。"
+good: "接眼レンズのケースには、焦点距離と見掛け視界を記したラベルが付いています。ラベルはレンズを収めたまま読めます。"
+reason: "Natural technical control: Keep the optical terms, label fields and visibility without removing the lens; keep every character unchanged."
+lint: null
+must_change: false

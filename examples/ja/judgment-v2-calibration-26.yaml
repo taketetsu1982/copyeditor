@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-26"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "積雪深は、観測用の目盛り板を使って記録します。観測時刻は毎朝8時です。目盛りが読めない日は、数値を書かずに欠測と記します。"
+good: "積雪深は、観測用の目盛り板を使って記録します。観測時刻は毎朝8時です。目盛りが読めない日は、数値を書かずに欠測と記します。"
+reason: "Natural technical control: Keep the measurement method, time and missing-data condition; keep every character unchanged."
+lint: null
+must_change: false

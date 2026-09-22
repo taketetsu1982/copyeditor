@@ -21,7 +21,9 @@ from examples_to_promptfoo import load_examples
 COMPARISON = dict(acceptance=dict(problem=30, natural=10, per_example=4, per_repeat=24),
                   existing=dict(problem=18, natural=6, per_example=4, per_repeat=15), repeats=5, required_gain=1)
 
-SETS = dict(calibration="calibration-v3", acceptance="judgment-acceptance-v3", existing="existing-rewrite-v4", regression="packing-regression-v4")
+SETS = dict(calibration="calibration-v4", acceptance="judgment-acceptance-v3", existing="existing-rewrite-v4", regression="packing-regression-v4")
+
+POPULATION_PINS = {'calibration': ('judgment-v2-calibration', 30, '65292c4234855ff9b55d3d3c7d9d6f7e0df687897838c693364b9bc99d00dfc5')}
 
 
 def encoded(value):
@@ -30,8 +32,14 @@ def encoded(value):
 
 def population(name):
     name = next((k for k, v in SETS.items() if v == name), name)
+    if name in POPULATION_PINS:
+        prefix, count, expected = POPULATION_PINS[name]
+        paths = sorted((legacy.ROOT / 'examples/ja').glob(prefix + '-*.yaml'))
+        rows = [(p.relative_to(legacy.ROOT).as_posix(), legacy.digest(p.read_bytes())) for p in paths]
+        if [p.stem for p in paths] != [f'{prefix}-{i:02}' for i in range(1, count + 1)] or legacy.digest(json.dumps(rows).encode()) != expected:
+            raise ValueError('Missing or changed evaluation population')
     cases = {c['id']: c for c in load_examples(legacy.ROOT / 'examples', load_rules(legacy.ROOT / 'rules', None)) if c['language'] == 'ja'}
-    prefix, count = {'calibration': ('judgment-calibration', 30), 'acceptance': ('judgment-acceptance', 40), 'existing': ('rewrite', 24)}.get(name, ('', 0))
+    prefix, count = {'calibration': ('judgment-v2-calibration', 30), 'acceptance': ('judgment-acceptance', 40), 'existing': ('rewrite', 24)}.get(name, ('', 0))
     if name == 'regression':
         return [dict(cases['judgment-calibration-01'], id=f'packing-{i}', bad=str(i) + 'あ' * 2390, good=str(i) + 'あ' * 2390, must_change=True) for i in range(1, 6)]
     return [cases[f'{prefix}-{i:02}'] for i in range(1, count + 1)]
@@ -40,7 +48,7 @@ def population(name):
 def freeze(revision, mode='fixture', name='existing', created_at=None, pairs=None):
     name = next((k for k, v in SETS.items() if v == name), name)
     if type(revision) is not int or revision < 1 or mode not in ('fixture', 'live') or name not in ('calibration', 'acceptance', 'existing', 'regression'): raise ValueError('Invalid comparison plan')
-    if name in ('calibration', 'acceptance') or pairs is not None:
+    if name == 'acceptance' or name == 'calibration' and mode == 'live' or pairs is not None:
         raise ValueError('Generation-four evaluation population and owner manifest are not complete')
     created_at = created_at or datetime.now(timezone.utc).isoformat()
     cases = population(name)
@@ -50,7 +58,8 @@ def freeze(revision, mode='fixture', name='existing', created_at=None, pairs=Non
     selected = registry(selected_config['judgment.policy_version'], selected_config['judgment.thresholds_version'])
     policy, threshold = selected.policy, selected.threshold
     entries = [dict(id=c['id'], path=None if name == 'regression' else f"examples/ja/{c['id']}.yaml",
-                    sha256=legacy.digest(encoded(c).encode() if name == 'regression' else (legacy.ROOT / f"examples/ja/{c['id']}.yaml").read_bytes()), input_hash=legacy.digest(encoded(c).encode()), kind='problem' if c['must_change'] else 'natural') for c in cases]
+                    sha256=legacy.digest(encoded(c).encode() if name == 'regression' else (legacy.ROOT / f"examples/ja/{c['id']}.yaml").read_bytes()), input_hash=legacy.digest(encoded(c).encode()), kind='problem' if c['must_change'] else 'natural',
+                    origin='synthetic-v2:' + c['id'] if name in POPULATION_PINS else 'historical-regression:' + c['id']) for c in cases]
     layouts = {'text': [[c['id']] for c in cases]}
     if name == 'calibration': layouts['items'] = [[c['id'] for c in cases[i:i + 5]] for i in range(0, 30, 5)]
     if name == 'regression': layouts = {'items': [[c['id'] for c in cases]], 'reversed': [[c['id'] for c in reversed(cases)]]}
@@ -71,7 +80,8 @@ def freeze(revision, mode='fixture', name='existing', created_at=None, pairs=Non
                         requests.append(dict(row, ids=ids))
                         trials.extend(dict(row, example_id=identity) for identity in ids)
     return json.loads(encoded(dict(evaluation_revision=revision, mode=mode, source_commit=legacy.subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=legacy.ROOT, text=True).strip(),
-        created_at=created_at, sets=[dict(name=SETS[name], role='calibration' if name == 'calibration' else 'regression' if name == 'regression' else 'acceptance', cases=entries, repeats=5)],
+        created_at=created_at, sets=[dict(name=SETS[name], role='calibration' if name == 'calibration' else 'regression' if name == 'regression' else 'acceptance', cases=entries, repeats=5,
+            population_hash=POPULATION_PINS[name][2] if name in POPULATION_PINS else None, owner_labels='pending', native_review='pending')],
         conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, comparison=COMPARISON, quality_accepted=False, human_review='required'),
         planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=1200, requests=720) if name == 'calibration' else None,
         references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'],

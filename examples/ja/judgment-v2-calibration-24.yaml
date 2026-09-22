@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-24"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "猫との面会には予約が必要です。面会した当日に引き取ることはできません。飼育環境を確認してから、引き取りの日を相談します。"
+good: "猫との面会には予約が必要です。面会した当日に引き取ることはできません。飼育環境を確認してから、引き取りの日を相談します。"
+reason: "Natural condition control: Keep the booking requirement, same-day prohibition and order of consultation; keep every character unchanged."
+lint: null
+must_change: false

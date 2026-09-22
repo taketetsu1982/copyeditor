@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-28"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "スペクトルの測定結果はCSVで保存できます。1列目は波長、2列目は強度です。波長の単位はnmで、強度の単位はヘッダーに記載します。"
+good: "スペクトルの測定結果はCSVで保存できます。1列目は波長、2列目は強度です。波長の単位はnmで、強度の単位はヘッダーに記載します。"
+reason: "Natural technical control: Keep file format, column order and unit locations; keep every character unchanged."
+lint: null
+must_change: false

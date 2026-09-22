@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-22"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "触知図は改札の外にあります。触知図の手前には案内係がいます。触知図の場所が分からないときは、案内係に声をかけてください。"
+good: "触知図は改札の外にあります。触知図の手前には案内係がいます。触知図の場所が分からないときは、案内係に声をかけてください。"
+reason: "Natural repetition control: Keep repeated map references, location and conditional assistance; keep every character unchanged."
+lint: null
+must_change: false
