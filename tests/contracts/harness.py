@@ -146,29 +146,31 @@ def assert_fixture(payload, case):
 
 
 async def invoke_generation4(case, root):
-    """Exercise the prepared pipeline; public input parsing switches in Task 164."""
+    """Exercise the complete prepared entry before the atomic public cutover."""
     import httpx
     from copyeditor.config_v4 import load_config
-    from copyeditor.edit_pipeline import polish
-    from copyeditor.judged_metrics import EditMetrics
+    from copyeditor.edit_service import EditService
+    from copyeditor.providers.base import Usage
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
     from copyeditor.judgment_v2 import POLICY_ID
-    from copyeditor.providers.base import Background
     from copyeditor.providers.typesafe import TypeSafe
-    from copyeditor.requests import Request
     from copyeditor.rules import load_rules
-    from copyeditor.service import Service
-    assert case["generation"] == 4 and case["tool"] == "polish_text"
+    assert case["generation"] == 4
+    editing = case["tool"] == "polish_text"
     enabled, arguments = case["judgment_enabled"], case["input"]
     env = {"GOOGLE_CLOUD_PROJECT": "fixture", "COPYEDITOR_MODEL": "test-model"}
     if enabled:
         env.update(COPYEDITOR_JUDGMENT_ENABLED="true", COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION="synthetic",
                    TYPESAFE_API_KEY="synthetic")
     config = load_config(root / "absent-config", env, thresholds=FIXTURE_THRESHOLDS, pairs={(POLICY_ID, "synthetic")})
-    queue, inputs, estimates, wires = ProviderQueue(case["provider"]), [], [], []
+    queue, inputs, estimates, wires, generated = ProviderQueue(case["provider"]), [], [], [], []
     class Provider:
         async def generate(self, value):
             inputs.append(value)
-            return generation_result(queue.take())
+            response = generation_result(queue.take())
+            generated.append(response)
+            return response
         async def estimate_input(self, value):
             estimates.append(value)
             return 0
@@ -179,20 +181,79 @@ async def invoke_generation4(case, root):
         return httpx.Response(200, json=dict(model="jev-1.13.0", answers={key: dict(type="Noul",
             noul=0.9 if not checking or key.endswith("meaning") else 0.3) for key in value["questions"]}))
     adapter = TypeSafe(config.secrets["TYPESAFE_API_KEY"], transport=httpx.MockTransport(handler)) if enabled else None
-    request = Request(source_items(case), arguments["language"], arguments.get("format", "text"),
-                      Background(*(arguments.get(key, "") for key in Background._fields)), arguments["degree"])
-    meter = EditMetrics(0, config["model"], config["pricing"], clock=lambda: 0,
-                        degree=request.degree, judgment_enabled=enabled)
-    service = Service(config, load_rules(root / "rules", None), Provider, adapter)
     try:
-        payload = await polish(service, request, adapter, meter, items_route="items" in arguments, registry=fixture_registry)
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            for source in (root / "rules").glob("*.md"):
+                raw = source.read_text()
+                if source.stem not in ("common", "README") and "Default style: " not in raw:
+                    raw = raw.replace("## Context weights\n", "## Context weights\nDefault style: Natural expression.\n")
+                (base / source.name).write_text(raw)
+            service = EditService(config, load_rules(base, None, generation4=True), Provider, adapter, registry=fixture_registry)
+            payload = await getattr(service, "polish" if editing else "lint")(arguments)
     finally:
         if adapter is not None:
             await adapter.aclose()
     queue.assert_exhausted()
     assert len(inputs) == len(case["provider"]), "Provider underflow must not be hidden by service errors"
     assert estimates == inputs
-    assert payload["providers"][0]["model_calls"] == len(inputs)
-    assert (payload["providers"][1]["model_calls"] if enabled else 0) == len(wires)
+    assert (payload["providers"][0]["model_calls"] if editing else payload["model_calls"]) == len(inputs)
+    assert (payload["providers"][1]["model_calls"] if enabled and editing else 0) == len(wires)
+    observations = [[response.usage for response in generated]]
+    if enabled and editing:
+        observations.append([Usage(None, None, None)] * len(wires))
+    for row, samples in zip(payload["providers"] if editing else [payload], observations, strict=True):
+        for key in Usage._fields:
+            values = [getattr(sample, key) for sample in samples]
+            assert row["usage"][key] == (None if None in values else sum(values)), "Provider usage differs from observations"
+        assert row["cost"] is None
+    assert payload["cost"] is None
     assert_fixture(payload, case)
     return payload, inputs
+
+
+def generation4_cases(path):
+    """Translate historical fixture material with explicit current-contract expectations."""
+    from copy import deepcopy
+    cases = deepcopy(load_cases(path, "contract-case"))
+    for case in cases:
+        name, arguments, responses, expected = case["name"], case["input"], case["provider"], case["expect"]
+        case.update(generation=4, judgment_enabled=False)
+        arguments.setdefault("language", "en")
+        expected["schema_version"] = 4
+        if case["tool"] == "lint_text":
+            continue
+        rewrite = arguments.get("degree") == "rewrite"
+        if rewrite:
+            diagnoses = responses[0]["diagnoses"]
+            descriptions = {item["id"]: item["reason"] or "No expression change needed." for item in diagnoses}
+            if len(responses) == 1:
+                responses = [dict(items=[dict(id=item["id"], text=arguments["text"], flag=None,
+                    diagnosis=descriptions[item["id"]]) for item in diagnoses])]
+            else:
+                responses = responses[1:]
+            for response in responses:
+                for item in response.get("items", []):
+                    item["diagnosis"] = descriptions.get(item["id"], "No expression change needed.")
+            if name == "rewrite_missing_diagnosis":
+                responses = [dict(items=[dict(id="text", text=arguments["text"], flag=None)])]
+            if "diagnosis" in expected:
+                expected["diagnosis"] = descriptions["text"]
+            for item in expected.get("items", []):
+                if "diagnosis" in item: item["diagnosis"] = descriptions[item["id"]]
+            if name == "rewrite_no_issue_changed":
+                expected = dict(status="ok", schema_version=4, text="Hi.", flag=None, regenerated=False)
+        else:
+            for response in responses:
+                for item in response.get("items", []): item["diagnosis"] = None
+        if name == "partial_rejection":
+            expected["items"][0]["text"] = "Pay 12."
+        if name == "shared_html_retry":
+            expected = dict(status="ok", schema_version=4, text="<div>Pay 10.</div>", flag=None, regenerated=True)
+        if name == "html_incomplete_candidate":
+            responses = responses[:1]
+            expected = dict(status="ok", schema_version=4, text='<p title="x', flag=None, regenerated=False)
+        expected.pop("model_calls", None)
+        expected["providers"] = [dict(role="editing", model_calls=len(responses), estimation_calls=len(responses))]
+        case.update(provider=responses, expect=expected)
+    return cases

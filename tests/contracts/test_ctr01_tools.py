@@ -221,3 +221,48 @@ async def test_generation4_fixture_rejects_queue_and_response_mismatches(fault):
         ValidationError = AssertionError
     with pytest.raises(ValidationError):
         assert_fixture(payload, case)
+
+
+from .harness import generation4_cases, invoke_generation4
+CURRENT_CASES = generation4_cases(ROOT / "contracts/tools.md")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", CURRENT_CASES, ids=lambda case: "generation4-" + case["name"])
+async def test_generation4_migrated_contract_guarantees(case):
+    payload, _ = await invoke_generation4(case, ROOT)
+    assert payload["schema_version"] == 4
+    if payload["status"] == "error":
+        assert "text" not in payload and "items" not in payload and "diagnosis" not in payload
+
+
+def test_generation4_migration_retains_every_historical_case():
+    assert len(CURRENT_CASES) == 31
+    assert {case["name"] for case in CURRENT_CASES} == {case["name"] for case in CASES}
+    assert all(case["generation"] == 4 for case in CURRENT_CASES)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["editing", "judgment"])
+async def test_generation4_fixture_rejects_fabricated_zero_usage(monkeypatch, role):
+    from copyeditor.edit_service import EditService
+    original = EditService.polish
+    async def fabricated(self, arguments):
+        payload = await original(self, arguments)
+        next(row for row in payload["providers"] if row["role"] == role)["usage"] = dict.fromkeys(Usage._fields, 0)
+        return payload
+    monkeypatch.setattr(EditService, "polish", fabricated)
+    case = dict(generation=4, judgment_enabled=True, tool="polish_text", input=dict(text="Original.", language="en"),
+                provider=[dict(items=[dict(id="text", text="Candidate.", flag=None, diagnosis=None)])], expect=dict(status="ok"))
+    with pytest.raises(AssertionError, match="Provider usage differs"):
+        await invoke_generation4(case, ROOT)
+
+
+@pytest.mark.asyncio
+async def test_generation4_fixture_aggregates_known_and_missing_usage_components():
+    responses = [GenerationResult(json.dumps(dict(items=[dict(id="text", text=text, flag=None, diagnosis=None)])), "stop", usage)
+                 for text, usage in [("Pay 11.", Usage(1, None, 3)), ("Pay 10.", Usage(2, 4, 6))]]
+    case = dict(generation=4, judgment_enabled=False, tool="polish_text", input=dict(text="Pay 10.", language="en"),
+                provider=responses, expect=dict(status="ok", regenerated=True,
+                    providers=[dict(usage=dict(input_tokens=3, output_tokens=None, total_tokens=9))]))
+    await invoke_generation4(case, ROOT)
