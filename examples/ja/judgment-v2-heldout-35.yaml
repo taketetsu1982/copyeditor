@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-35"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "宿題は教室の提出箱に入れてください。提出箱は朝の会が始まる前に片づけます。遅れて提出する場合は、提出箱を探さずに先生へ渡してください。"
+good: "宿題は教室の提出箱に入れてください。提出箱は朝の会が始まる前に片づけます。遅れて提出する場合は、提出箱を探さずに先生へ渡してください。"
+reason: "Natural repetition control: Keep ordinary and late-submission destinations and the collection time; keep every decoded character unchanged."
+lint: null
+must_change: false

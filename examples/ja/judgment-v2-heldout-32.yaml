@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-32"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "仕込みの記録票には、測定日と比重を書きます。比重計で読んだ値をそのまま記録し、補正した値は別の欄に書いてください。"
+good: "仕込みの記録票には、測定日と比重を書きます。比重計で読んだ値をそのまま記録し、補正した値は別の欄に書いてください。"
+reason: "Natural technical control: Keep raw and corrected readings in different fields; keep every decoded character unchanged."
+lint: null
+must_change: false
