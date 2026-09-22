@@ -87,8 +87,9 @@ JUDGMENT_MODULES = {
 
 
 GENERATION4_MODULES = {
+    'tests/integration/test_generation4_acceptance.py': (42, '469ddcab2fd931cd1017ad70c7d21905c447c18a7406a9cf5090ecb859d51b00'),
     'tests/integration/test_generation4_transport.py': (18, '0df07122487902cd37d0b819219521cf47a55137ae87cf2061fb57de2eb3e94a'),
-    'tests/integration/test_generation4_inventory.py': (7, 'd1b8d655a96ebc8fda5bab0334e8832f87e5b98b980d0620c1fde4f1a2c3e6ed'),
+    'tests/integration/test_generation4_inventory.py': (10, '66f156ae98dd3bbb3e07bd54c3e4c2dd360a1045a24532719fcfee2b43d328ed'),
 }
 
 
@@ -107,8 +108,10 @@ EVALUATION_SETS = {
 }
 US08_OWNER_EVIDENCE = {
     'live': 'owner-fixed labels, complete gate and verify calibration, blinded off/on comparisons and unused held-out evidence',
-    'native': 'Japanese naturalness, meaning, register and invariant review for the fixed inputs and candidates',
+    'native': 'Japanese built-in default style, naturalness, meaning, register and invariant review for the fixed inputs and candidates',
     'client': 'Claude and Codex explicit/implicit invocation, send permission, denial non-delivery and result reporting',
+    'deployment': 'current fresh environment, stock/derived images and actual Google authentication records',
+    'release': 'current provenance, native and publication/release evidence tied to source and image identities',
 }
 
 
