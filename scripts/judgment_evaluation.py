@@ -2,6 +2,8 @@
 import argparse
 import asyncio
 from collections import Counter
+from contextlib import contextmanager
+from unittest.mock import patch
 from datetime import datetime, timezone
 from decimal import Decimal, localcontext
 import json
@@ -9,7 +11,7 @@ from pathlib import Path
 from time import monotonic
 import benchmark_provider as adapter
 import rewrite_evaluation as legacy
-from copyeditor.judgment import definition_hash, _json_value
+from copyeditor.judgment import definition_hash, _json_value, _probability
 from copyeditor.judgment_v2 import POLICIES, REFERENCES, snapshot as judgment_snapshot
 from copyeditor.edit_protocol import validate_final
 from copyeditor.providers.base import SourceItem
@@ -73,14 +75,70 @@ def freeze(revision, mode='fixture', name='existing', created_at=None, pairs=Non
         conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, comparison=COMPARISON, quality_accepted=False, human_review='required'),
         planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=1200, requests=720) if name == 'calibration' else None,
         references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'],
-        config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
+        observation_version=2, config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
+
+
+@contextmanager
+def observe_request(plans, trace):
+    """Keep synthetic evaluation detail out of production responses and logs."""
+    from copyeditor import edit_pipeline
+    from copyeditor.providers.typesafe import TypeSafe
+    evaluate, parse, verify = TypeSafe.evaluate, edit_pipeline.parse_generation, edit_pipeline.classify_verification
+    check = edit_pipeline.preservation.check
+    rounds, checking, verifying = Counter(), [], []
+    async def judge(self, wire):
+        payload = json.loads(wire)
+        event = dict(kind='judgment', phase='verify' if 'originals' in payload['state'] else 'detect',
+                     candidate_round=plans[-1]['candidate_round'], state=payload['state'], result=None, error=None)
+        trace.append(event)
+        try:
+            result = await evaluate(self, wire)
+            event['result'] = dict(model=getattr(result, 'model', None), usage=result.usage._asdict(),
+                blocks=[dict(ordinal=b.ordinal, probabilities=dict(b.probabilities)) for b in getattr(result, 'blocks', ())])
+            event['error'] = getattr(result, 'code', None)
+            if event['phase'] == 'verify' and not event['error']:
+                verifying.extend(b.ordinal for b in result.blocks)
+            return result
+        except BaseException as error:
+            event['error'] = 'cancelled' if isinstance(error, asyncio.CancelledError) else 'evaluation_error'
+            raise
+    def generation(result, items, *, stage):
+        for item in items:
+            rounds[item.id] += 1
+        event = dict(kind='generation', degree=stage, rounds={i.id: rounds[i.id] for i in items},
+                     candidates=None, usage=result.usage._asdict(), finish=result.finish, error=None)
+        trace.append(event)
+        try:
+            candidates = parse(result, items, stage=stage)
+            event['candidates'] = [dict(c._asdict(), flag=_json_value(c.flag)) for c in candidates]
+            checking[:] = candidates
+            return candidates
+        except Exception as error:
+            event['error'] = getattr(error, 'code', 'evaluation_error')
+            raise
+    def preservation(source, candidate, *args, **kwargs):
+        result = check(source, candidate, *args, **kwargs)
+        item = checking.pop(0)
+        trace.append(dict(kind='preservation', id=item.id, candidate_round=rounds[item.id],
+                          source=source, candidate=candidate, checks=list(result.failed),
+                          retry_trigger=not item.flag and (bool(result.failed) or bool(plans) and source == candidate)))
+        return result
+    def verification(source, candidate, meaning, selected):
+        accepted = verify(source, candidate, meaning, selected)
+        trace.append(dict(kind='verification', ordinal=verifying.pop(0), source_gate=source, candidate_gate=candidate, meaning=meaning,
+                          candidate_round=plans[-1]['candidate_round'], retry_trigger=not accepted))
+        return accepted
+    with patch.object(TypeSafe, 'evaluate', judge), patch.object(edit_pipeline, 'parse_generation', generation), \
+            patch.object(edit_pipeline, 'classify_verification', verification), \
+            patch.object(edit_pipeline.preservation, 'check', preservation):
+        yield
 
 
 def check_plan(plan):
     if encoded(plan) != encoded(freeze(plan['evaluation_revision'], plan['mode'], plan['sets'][0]['name'], plan['created_at'], (plan.get('verification') or {}).get('pairs'))): raise ValueError('Comparison inputs changed')
 
 
-def audit(plan, artifact):
+def audit(plan, artifact, *, allow_unexecuted=False):
     check_plan(plan)
     if artifact['manifest_bytes'] != encoded(plan) or artifact['manifest_hash'] != legacy.digest(encoded(plan).encode()): raise ValueError('Manifest replaced')
     keys = tuple(plan['planned_trials'][0])
@@ -89,28 +147,131 @@ def audit(plan, artifact):
     requests = {}
     for trial in artifact['trials']:
         if trial['full_response'] is None and not trial['error_code']: raise ValueError('Unmarked missing response')
-        if trial['started_at'] is None or trial['latency_ms'] is None: raise ValueError('Unexecuted observation')
-        if trial['error_code'] == 'not_run': raise ValueError('Unexecuted trial')
+        if trial['error_code'] == 'not_run':
+            if not allow_unexecuted or any(trial[k] is not None for k in ('started_at', 'latency_ms', 'full_response', 'provider_measurements')) or trial['batch_plans'] or trial.get('trace'):
+                raise ValueError('Unexecuted trial')
+        elif trial['started_at'] is None or trial['latency_ms'] is None:
+            raise ValueError('Unexecuted observation')
         if trial['full_response'] is not None and trial['provider_measurements'] != trial['full_response'].get('providers'):
             raise ValueError('Provider measurements replaced')
         observation = {k: trial[k] for k in ('full_response', 'error_code', 'provider_measurements', 'latency_ms', 'batch_plans', 'started_at')}
+        observation['trace'] = trial.get('trace', [])
         previous = requests.setdefault(trial['request_id'], observation)
         if previous != observation: raise ValueError('Inconsistent request observation')
+    for request in plan['request_layouts']:
+        check_trace(request, requests[request['request_id']])
     return requests  # Aggregate calls and costs once per request, never once per block.
+
+
+def check_trace(request, observation):
+    trace = observation['trace']
+    if type(trace) is not list or any(type(e) is not dict or e.get('kind') not in
+            ('generation', 'judgment', 'verification', 'preservation') for e in trace):
+        raise ValueError('Invalid evaluation trace')
+    phases = [(p['phase'], p['candidate_round']) for p in observation['batch_plans']]
+    if phases != ([('detect', 0), ('verify', 1), ('verify', 2)][:len(phases)] if request['judgment_enabled'] else []):
+        raise ValueError('Invalid phase sequence')
+    identities = {'text'} if request['layout'] == 'text' else {f'b{i:04}' for i in range(1, len(request['ids']) + 1)}
+    planned = [(p['phase'], p['candidate_round']) for p in observation['batch_plans'] for _ in p['batches']]
+    judges = [e for e in trace if e['kind'] == 'judgment']
+    if [(e['phase'], e['candidate_round']) for e in judges] != planned[:len(judges)]:
+        raise ValueError('Judgment round trace changed')
+    response = observation['full_response'] or {}
+    calls = response.get('providers')
+    if response.get('status') == 'ok' and isinstance(calls, list) and len(calls) == (2 if request['judgment_enabled'] else 1):
+        if len(judges) != (calls[1]['model_calls'] if request['judgment_enabled'] else 0) or len(judges) != len(planned):
+            raise ValueError('Missing judgment observations')
+        if sum(e['kind'] == 'generation' for e in trace) != calls[0]['model_calls']:
+            raise ValueError('Missing generation observations')
+    seen = Counter()
+    candidates, originals, gates, preserved, expected_verification = {}, {}, {}, set(), {}
+    pending_preservation = []
+    for event in trace:
+        if event['kind'] == 'generation':
+            if pending_preservation or expected_verification:
+                raise ValueError('Incomplete previous round')
+            if not event['rounds'] or not set(event['rounds']) <= identities:
+                raise ValueError('Generation identity trace changed')
+            for identity, round_ in event['rounds'].items():
+                seen[identity] += 1
+                if type(round_) is not int or round_ != seen[identity] or round_ > 2:
+                    raise ValueError('Generation round trace changed')
+            if event['candidates'] is not None:
+                if [c['id'] for c in event['candidates']] != list(event['rounds']):
+                    raise ValueError('Candidate identity trace changed')
+                for candidate in event['candidates']:
+                    identity = candidate['id']
+                    candidates[identity] = candidate
+                    preserved.discard(identity)
+                    pending_preservation.append(identity)
+        elif event['kind'] == 'preservation':
+            identity = event['id']
+            if not pending_preservation or pending_preservation.pop(0) != identity:
+                raise ValueError('Preservation order changed')
+            candidate = candidates[identity]
+            if event['candidate_round'] != seen[identity] or event['candidate'] != candidate['text']:
+                raise ValueError('Preservation candidate changed')
+            if originals.setdefault(identity, event['source']) != event['source']:
+                raise ValueError('Preservation source changed')
+            trigger = not candidate['flag'] and (bool(event['checks']) or request['judgment_enabled'] and event['source'] == event['candidate'])
+            if event['retry_trigger'] != trigger:
+                raise ValueError('Preservation retry changed')
+            preserved.add(identity)
+        elif event['kind'] in ('judgment', 'verification'):
+            if type(event['candidate_round']) is not int or event['candidate_round'] not in (0, 1, 2):
+                raise ValueError('Invalid candidate round')
+            if event['kind'] == 'verification':
+                expected = expected_verification.pop(event['ordinal'], None)
+                if expected is None or expected != (event['candidate_round'], event['source_gate'], event['candidate_gate'], event['meaning']):
+                    raise ValueError('Verification observation changed')
+                for field in ('source_gate', 'candidate_gate', 'meaning'):
+                    _probability(event[field])
+            else:
+                if pending_preservation:
+                    raise ValueError('Judgment precedes round observations')
+                for key, value in event['state']['texts'].items():
+                    identity = 'text' if request['layout'] == 'text' else key
+                    if identity not in identities:
+                        raise ValueError('Judgment identity changed')
+                    if event['phase'] == 'detect':
+                        if seen or originals.setdefault(identity, value['text']) != value['text']:
+                            raise ValueError('Detection source changed')
+                    elif identity not in preserved or seen[identity] != event['candidate_round'] or candidates[identity]['text'] != value['text'] or originals[identity] != event['state']['originals'][key]:
+                        raise ValueError('Judgment candidate changed')
+                if event['result'] is None or event['error']:
+                    continue
+                blocks = event['result']['blocks']
+                if [b['ordinal'] for b in blocks] != [int(k[1:]) for k in event['state']['texts']]:
+                    raise ValueError('Judgment block trace changed')
+                for block in blocks:
+                    expected = {'gate'} if event['phase'] == 'detect' else {'gate', 'meaning'}
+                    if set(block['probabilities']) != expected:
+                        raise ValueError('Judgment probability trace changed')
+                    for value in block['probabilities'].values():
+                        _probability(value)
+                    ordinal, values = block['ordinal'], block['probabilities']
+                    if event['phase'] == 'detect':
+                        gates[ordinal] = values['gate']
+                    else:
+                        expected_verification[ordinal] = (event['candidate_round'], gates[ordinal], values['gate'], values['meaning'])
+    if response.get('status') == 'ok':
+        if pending_preservation or expected_verification:
+            raise ValueError('Missing round observations')
 
 
 async def run(plan, output, runner=adapter.compare_request):
     check_plan(plan)
     artifact = dict(manifest_bytes=encoded(plan), manifest_hash=legacy.digest(encoded(plan).encode()), trials=[dict(t,
-        started_at=None, full_response=None, error_code='not_run', provider_measurements=None, latency_ms=None, batch_plans=[],
+        started_at=None, full_response=None, error_code='not_run', provider_measurements=None, latency_ms=None, batch_plans=[], trace=[],
         decision=dict.fromkeys('abcd'), reasons=dict.fromkeys('abcd'), reviewer=None) for t in plan['planned_trials']])
     legacy.save(output, artifact)
     cases = {c['id']: c for c in population(plan['sets'][0]['name'])}
     for request in plan['request_layouts']:
-        plans, response, error, cancelled = [], None, None, False
+        plans, trace, response, error, cancelled = [], [], None, None, False
         started, clock = datetime.now(timezone.utc).isoformat(), monotonic()
         try:
-            response = await runner([cases[i] for i in request['ids']], request['degree'], request['judgment_enabled'], request['layout'], plan['mode'], plans)
+            with observe_request(plans, trace):
+                response = await runner([cases[i] for i in request['ids']], request['degree'], request['judgment_enabled'], request['layout'], plan['mode'], plans)
             if not isinstance(response, dict): raise ValueError('Missing response')
             error = response.get('error', {}).get('code')
         except (Exception, asyncio.CancelledError) as failure:
@@ -122,7 +283,7 @@ async def run(plan, output, runner=adapter.compare_request):
         for trial in artifact['trials']:
             if trial['request_id'] == request['request_id']:
                 trial.update(started_at=started, full_response=response, error_code=error, provider_measurements=measurements,
-                             latency_ms=elapsed, batch_plans=json.loads(encoded(plans)))
+                             latency_ms=elapsed, batch_plans=json.loads(encoded(plans)), trace=json.loads(encoded(trace)))
         legacy.save(output, artifact)
         if cancelled: raise asyncio.CancelledError
     audit(plan, artifact)
@@ -131,7 +292,7 @@ async def run(plan, output, runner=adapter.compare_request):
 
 def summarize(plan, artifact):
     try:
-        observations = audit(plan, artifact)
+        observations = audit(plan, artifact, allow_unexecuted=True)
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError('Invalid comparison inventory or manifest') from error
     cases = {c['id']: c for c in population(plan['sets'][0]['name'])}
@@ -180,7 +341,7 @@ def summarize(plan, artifact):
             protected = snapshot.languages['ja'].protected_terms + (tuple(case['protected_terms']) if plan['mode'] == 'fixture' else ())
             ratio = {k: plan['config']['length_ratio.' + k] for k in ('min', 'max')}
             if legacy.preservation.check(case['bad'], text, protected, ratio, 'text' if case['format'] == 'html' else case['format']).failed: failures.append('preservation')
-        counts = dict(planned=1, problem=int(problem), natural=int(not problem), pending=int(pending),
+        counts = dict(planned=1, not_run=int(trial['error_code'] == 'not_run'), missing_response=int(trial['full_response'] is None), problem=int(problem), natural=int(not problem), pending=int(pending),
             meaning_violations=int(decision['b'] is False), unnecessary_changes=int(decision['c'] is False),
             natural_changes=int(not problem and changed), natural_failures=int(not problem and (not healthy or changed or bool(block.get('flag')) or decision['d'] is False)),
             errors=int(bool(trial['error_code']) or response.get('status') != 'ok'), flags=int(bool(block.get('flag'))), integrity=len(failures),
@@ -209,7 +370,9 @@ def summarize(plan, artifact):
         if not group['criteria_met'] and not group['reasons']: group['reasons'].append('problem_rates')
         group['problem_rate'] = count['improved'] / count['problem'] if count['problem'] else None
         measured = [observations[i] for i in sorted(group.pop('request_ids'))]
-        group.update(requests=len(measured), latency_ms=sum(r['latency_ms'] for r in measured))
+        group.update(requests=len(measured), not_run_requests=sum(r['error_code'] == 'not_run' for r in measured),
+            latency_ms=sum(r['latency_ms'] for r in measured) if all(r['latency_ms'] is not None for r in measured) else None,
+            candidate_rounds=dict(Counter(str(p['candidate_round']) for r in measured for p in r['batch_plans'] if 'candidate_round' in p)))
         costs = [r['full_response'].get('cost') if r['full_response'] else None for r in measured]
         group['cost'] = (dict(amount=format(sum(Decimal(c['amount']) for c in costs), 'f'), currency=costs[0]['currency'])
             if costs and all(c is not None for c in costs) and len({c['currency'] for c in costs}) == 1 else None)

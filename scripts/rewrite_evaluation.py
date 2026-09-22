@@ -79,20 +79,23 @@ def batch_plan():
 async def run(plan, output):
     check_plan(plan)
     cases = fixtures()
-    artifact = dict(plan=json.loads(json.dumps(plan)), started_at=datetime.now(timezone.utc).isoformat(), trials=[], batch_plan=batch_plan())
+    artifact = dict(plan=json.loads(json.dumps(plan)), started_at=datetime.now(timezone.utc).isoformat(),
+        trials=[dict(group=e['group'], id=e['id'], repeat=r, response=None, error='not_run',
+                     judgment=dict(a=None, b=None, c=None, d=None, reason=None))
+                for e in plan['entries'] for r in range(1, e['repeats'] + 1)], batch_plan=batch_plan())
     save(output, artifact)
-    for entry in plan["entries"]:
-        for repeat in range(1, entry["repeats"] + 1):
-            response, error = None, None
-            try:
-                reply = await call_api("", {"config": {"mode": plan["mode"]}}, {"vars": cases[entry["id"]]})
-                response = json.loads(reply["output"])
-            except Exception:
-                error = "evaluation_error"
-            artifact["trials"].append(dict(group=entry["group"], id=entry["id"], repeat=repeat, response=response,
-                error=error or (response.get("error", {}).get("code") if response else "evaluation_error"),
-                judgment=dict(a=None, b=None, c=None, d=None, reason=None)))
-            save(output, artifact)
+    for trial in artifact['trials']:
+        response, error, cancelled = None, None, False
+        try:
+            reply = await call_api("", {"config": {"mode": plan["mode"]}}, {"vars": cases[trial["id"]]})
+            response = json.loads(reply["output"])
+        except (Exception, asyncio.CancelledError) as failure:
+            error = "evaluation_error"
+            cancelled = isinstance(failure, asyncio.CancelledError)
+        trial.update(response=response, error=error or (response.get("error", {}).get("code") if response else "evaluation_error"))
+        save(output, artifact)
+        if cancelled:
+            raise asyncio.CancelledError
     return artifact
 
 
@@ -151,7 +154,8 @@ def summarize(plan, artifact):
     rates = rates and all(sum(scores["acceptance", i, r] for i in problem) >= 15 for r in range(1, 6))
     passed = not failures and not pending and rates
     return dict(status="unreviewed" if pending else "criteria_met" if passed else "failed", groups=group_results,
-        must_failures=len(set(failures)), pending_judgments=len(pending), criteria_met=passed,
+        must_failures=len(set(failures)), pending_judgments=len(pending),
+        not_run=sum(t["error"] == "not_run" for t in trials), criteria_met=passed,
         quality_accepted=passed and plan["mode"] == "live")
 
 
