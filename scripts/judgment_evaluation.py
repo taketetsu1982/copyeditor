@@ -44,14 +44,21 @@ def population(name):
     return [cases[f'{prefix}-{i:02}'] for i in range(1, count + 1)]
 
 
-def freeze(revision, mode='fixture', name='calibration', created_at=None, pairs=None):
+def freeze(revision, mode='fixture', name='calibration', created_at=None, pairs=None, *, prepared=None):
     name = next((k for k, v in SETS.items() if v == name), name)
     if type(revision) is not int or revision < 1 or mode not in ('fixture', 'live') or name not in ('calibration', 'acceptance', 'existing', 'regression'): raise ValueError('Invalid comparison plan')
     if pairs is not None and name != 'calibration': raise ValueError('Calibration pairs required')
+    if prepared and (mode != 'fixture' or name in ('calibration', 'acceptance') or pairs is not None):
+        raise ValueError('Generation-four evaluation population and owner manifest are not complete')
     created_at = created_at or datetime.now(timezone.utc).isoformat()
     cases = population(name)
-    config, snapshot, _ = adapter.comparison_environment(cases[0], mode, False)
-    policy, threshold = POLICIES[config['judgment.policy_version']], THRESHOLDS[config['judgment.thresholds_version']]
+    if prepared:
+        config, snapshot, registry = prepared(cases[0], mode, True)
+        selected = registry(config['judgment.policy_version'], config['judgment.thresholds_version'])
+        config, policy, threshold = config.values, selected.policy, selected.threshold
+    else:
+        config, snapshot, _ = adapter.comparison_environment(cases[0], mode, False)
+        policy, threshold = POLICIES[config['judgment.policy_version']], THRESHOLDS[config['judgment.thresholds_version']]
     entries = [dict(id=c['id'], path=None if name == 'regression' else f"examples/ja/{c['id']}.yaml",
                     sha256=legacy.digest(encoded(c).encode() if name == 'regression' else (legacy.ROOT / f"examples/ja/{c['id']}.yaml").read_bytes()), input_hash=legacy.digest(encoded(c).encode()), kind='problem' if c['must_change'] else 'natural') for c in cases]
     layouts = {'text': [[c['id']] for c in cases]}
@@ -77,17 +84,17 @@ def freeze(revision, mode='fixture', name='calibration', created_at=None, pairs=
         created_at=created_at, sets=[dict(name=SETS[name], role='calibration' if name == 'calibration' else 'regression' if name == 'regression' else 'acceptance', cases=entries, repeats=5)],
         conditions=conditions, acceptance_criteria=dict(legacy=legacy.THRESHOLDS, comparison=COMPARISON, quality_accepted=False, human_review='required'),
         planned_trials=trials, request_layouts=requests, calibration_run_budget=dict(blocks=1200, requests=720) if name == 'calibration' else None,
-        references_hash=definition_hash(REFERENCES), packing_version=policy['packing_version'], risk_probe=RISK if name == 'calibration' else None,
+        references_hash=definition_hash(policy['references'] if prepared else REFERENCES), packing_version=policy['packing_version'], risk_probe=RISK if name == 'calibration' else None,
         verification=verification_plan(pairs, cases, policy) if pairs is not None and name == 'calibration' else None,
         config={k: v for k, v in config.items() if not k.startswith('auth.') and k != 'judgment.enabled'})))
 
 
-def check_plan(plan):
-    if encoded(plan) != encoded(freeze(plan['evaluation_revision'], plan['mode'], plan['sets'][0]['name'], plan['created_at'], (plan.get('verification') or {}).get('pairs'))): raise ValueError('Comparison inputs changed')
+def check_plan(plan, *, prepared=None):
+    if encoded(plan) != encoded(freeze(plan['evaluation_revision'], plan['mode'], plan['sets'][0]['name'], plan['created_at'], (plan.get('verification') or {}).get('pairs'), prepared=prepared)): raise ValueError('Comparison inputs changed')
 
 
-def audit(plan, artifact):
-    check_plan(plan)
+def audit(plan, artifact, *, prepared=None):
+    check_plan(plan, prepared=prepared)
     if artifact['manifest_bytes'] != encoded(plan) or artifact['manifest_hash'] != legacy.digest(encoded(plan).encode()): raise ValueError('Manifest replaced')
     keys = tuple(plan['planned_trials'][0])
     key = lambda t: encoded({k: t[k] for k in keys})
@@ -97,14 +104,16 @@ def audit(plan, artifact):
         if trial['full_response'] is None and not trial['error_code']: raise ValueError('Unmarked missing response')
         if trial['started_at'] is None or trial['latency_ms'] is None: raise ValueError('Unexecuted observation')
         if trial['error_code'] == 'not_run': raise ValueError('Unexecuted trial')
+        if prepared and trial['full_response'] is not None and trial['provider_measurements'] != trial['full_response'].get('providers'):
+            raise ValueError('Provider measurements replaced')
         observation = {k: trial[k] for k in ('full_response', 'error_code', 'provider_measurements', 'latency_ms', 'batch_plans', 'started_at')}
         previous = requests.setdefault(trial['request_id'], observation)
         if previous != observation: raise ValueError('Inconsistent request observation')
     return requests  # Aggregate calls and costs once per request, never once per block.
 
 
-async def run(plan, output, runner=adapter.compare_request):
-    check_plan(plan)
+async def run(plan, output, runner=adapter.compare_request, *, prepared=None):
+    check_plan(plan, prepared=prepared)
     artifact = dict(manifest_bytes=encoded(plan), manifest_hash=legacy.digest(encoded(plan).encode()), trials=[dict(t,
         started_at=None, full_response=None, error_code='not_run', provider_measurements=None, latency_ms=None, batch_plans=[],
         decision=dict.fromkeys('abcd'), reasons=dict.fromkeys('abcd'), reviewer=None, calibration=None) for t in plan['planned_trials']])
@@ -114,7 +123,7 @@ async def run(plan, output, runner=adapter.compare_request):
         plans, response, error, cancelled = [], None, None, False
         started, clock = datetime.now(timezone.utc).isoformat(), monotonic()
         try:
-            response = await runner([cases[i] for i in request['ids']], request['degree'], request['judgment_enabled'], request['layout'], plan['mode'], plans)
+            response = await runner([cases[i] for i in request['ids']], request['degree'], request['judgment_enabled'], request['layout'], plan['mode'], plans, **({'prepared': prepared} if prepared else {}))
             if not isinstance(response, dict): raise ValueError('Missing response')
             error = response.get('error', {}).get('code')
         except (Exception, asyncio.CancelledError) as failure:
@@ -135,7 +144,8 @@ async def run(plan, output, runner=adapter.compare_request):
                         risk_probability=None, risk_error=None, risk_not_run_reason=None, risk_measurement=None)
         legacy.save(output, artifact)
         if cancelled: raise asyncio.CancelledError
-    audit(plan, artifact)
+    audit(plan, artifact, prepared=prepared)
+    if prepared: return artifact
     await probe(plan, artifact, output)
     if plan['sets'][0]['name'] == SETS['calibration']:
         artifact.update(calibrate(plan, artifact)); legacy.save(output, artifact)
@@ -246,13 +256,13 @@ async def probe(plan, artifact, output, caller=risk_call):
     legacy.save(output, artifact)
 
 
-def summarize(plan, artifact):
+def summarize(plan, artifact, *, prepared=None):
     try:
-        observations = audit(plan, artifact)
+        observations = audit(plan, artifact, prepared=prepared)
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError('Invalid comparison inventory or manifest') from error
     cases = {c['id']: c for c in population(plan['sets'][0]['name'])}
-    _, snapshot, _ = adapter.comparison_environment(next(iter(cases.values())), plan['mode'], False)
+    _, snapshot, registry = (prepared or adapter.comparison_environment)(next(iter(cases.values())), plan['mode'], False)
     requests = {r['request_id']: r for r in plan['request_layouts']}
     conditions = {(c['degree'], c['judgment_enabled']): c for c in plan['conditions']}
     invalid, groups, rows = set(), {}, []
@@ -261,14 +271,19 @@ def summarize(plan, artifact):
         condition = conditions[request['degree'], request['judgment_enabled']]
         originals = tuple(SourceItem('text' if request['layout'] == 'text' else f'b{i:04}', cases[key]['bad'], '') for i, key in enumerate(request['ids'], 1))
         try:
-            if response is None or response.get('schema_version') != (3 if request['judgment_enabled'] else 2 if request['degree'] == 'rewrite' else 1): raise ValueError()
+            if response is None or response.get('schema_version') != (4 if prepared else 3 if request['judgment_enabled'] else 2 if request['degree'] == 'rewrite' else 1): raise ValueError()
             if any(response.get(k) != condition[k] for k in ('rules_version', 'common_version')): raise ValueError()
             if response.get('degree', 'polish') != request['degree'] or response.get('language') != 'ja': raise ValueError()
+            if prepared:
+                from copyeditor.edit_protocol import validate_final as validate_edit
+                validate_edit(response, originals, expected_enabled=request['judgment_enabled'], registry=registry,
+                              format=cases[request['ids'][0]]['format'])
+                if response['providers'][0]['model'] != condition['editing_model']: raise ValueError()
             if request['judgment_enabled']:
                 if any(response[k] != condition[k] for k in ('policy_version', 'thresholds_version', 'policy_hash', 'thresholds_hash')): raise ValueError()
                 if [r['model'] for r in response['providers']] != [condition['editing_model'], condition['judgment_model']]: raise ValueError()
-                validate_judged_final(response, originals, format=cases[request['ids'][0]]['format'])
-            else:
+                if not prepared: validate_judged_final(response, originals, format=cases[request['ids'][0]]['format'])
+            elif not prepared:
                 if response.get('model') != condition['editing_model']: raise ValueError()
                 if request['degree'] == 'rewrite': legacy.validate_rewrite_final(response, originals)
                 else: validate_final(response)
@@ -297,13 +312,13 @@ def summarize(plan, artifact):
         if healthy:
             protected = snapshot.languages['ja'].protected_terms + (tuple(case['protected_terms']) if plan['mode'] == 'fixture' else ())
             ratio = {k: plan['config']['length_ratio.' + k] for k in ('min', 'max')}
-            if legacy.preservation.check(case['bad'], text, protected, ratio, 'text' if case['format'] == 'html' else case['format']).failed or (case['format'] == 'html' and not legacy.html.same_structure(case['bad'], text)): failures.append('preservation')
+            if legacy.preservation.check(case['bad'], text, protected, ratio, 'text' if case['format'] == 'html' else case['format']).failed or (not prepared and case['format'] == 'html' and not legacy.html.same_structure(case['bad'], text)): failures.append('preservation')
         counts = dict(planned=1, problem=int(problem), natural=int(not problem), pending=int(pending),
             meaning_violations=int(decision['b'] is False), unnecessary_changes=int(decision['c'] is False),
             natural_changes=int(not problem and changed), natural_failures=int(not problem and (not healthy or changed or bool(block.get('flag')) or decision['d'] is False)),
             errors=int(bool(trial['error_code']) or response.get('status') != 'ok'), flags=int(bool(block.get('flag'))), integrity=len(failures),
-            detection_misses=int(problem and block.get('detection', {}).get('status') == 'insufficient'),
-            detection_false_positives=int(not problem and block.get('detection', {}).get('status') == 'eligible'),
+            detection_misses=int(problem and (block.get('detection') or {}).get('status') == 'insufficient'),
+            detection_false_positives=int(not problem and (block.get('detection') or {}).get('status') == 'eligible'),
             verification_failures=int(block.get('verification', {}).get('status') == 'fail'), verification_indeterminate=int(block.get('verification', {}).get('status') == 'indeterminate'))
         improved = bool(problem and healthy and changed and not block.get('flag') and not failures and all(decision[k] is True for k in required) and not pending)
         counts['improved'] = int(improved)
