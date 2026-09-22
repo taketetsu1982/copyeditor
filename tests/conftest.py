@@ -86,6 +86,12 @@ JUDGMENT_MODULES = {
 
 
 
+GENERATION4_MODULES = {
+    'tests/integration/test_generation4_transport.py': (18, '0df07122487902cd37d0b819219521cf47a55137ae87cf2061fb57de2eb3e94a'),
+    'tests/integration/test_generation4_inventory.py': (7, 'd1b8d655a96ebc8fda5bab0334e8832f87e5b98b980d0620c1fde4f1a2c3e6ed'),
+}
+
+
 # Evaluation ownership is separate from runtime consumers.
 EVALUATION_MODULES = {
     'tests/unit/test_generation4_evaluation.py': (22, '117f0a21c98e1baf8c5b8231a1e873eb4f564796e96e6a79fdff67adfd38bf6e'),
@@ -209,6 +215,8 @@ def phase1_inventory(root):
     groups["tests/integration/test_judgment_inventory.py::test_ac_08_1_2_3_4_5_6_7_8_9_10_11_12_15_16_17_18_ctr01_ctr04_fixed_consumers"] = {None: {}}
     groups.update(judgment_inventory())
     groups.update(evaluation_inventory(root))
+    groups.update({module + "::*": {digest: {"count": count}}
+                   for module, (count, digest) in GENERATION4_MODULES.items()})
     return groups
 
 
@@ -325,7 +333,7 @@ class Phase1Contracts:
             for entry, expected in self.groups.items():
                 if entry.endswith('::*'):
                     executed = sum(n.split('::')[0] == entry.removesuffix('::*') for n in complete)
-                    terminal.write_line(f"V3 {entry}: expected={next(iter(expected.values()))['count']} executed={executed}")
+                    terminal.write_line(f"CONSUMER {entry}: expected={next(iter(expected.values()))['count']} executed={executed}")
                     continue
                 executed = sum(n.split("[")[0] == entry for n in complete)
                 terminal.write_line(f"{entry}: expected={len(expected)} executed={executed}")
