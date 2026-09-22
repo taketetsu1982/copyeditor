@@ -65,7 +65,7 @@ REWRITE_TOOL_CASES = {
 JUDGMENT_MODULES = {
     'tests/unit/test_edit_service.py': (41, 'e6598872a26867f4fc28e63ed234d861d296e12c64ebba17d6b7f737abba37d3'),
     'tests/unit/test_lingua_dependency.py': (2, 'c5e57c5432750307aae49d0e9c0f9e9255517f4d6e58d4e6fa342d9db0ccfc68'),
-    'tests/contracts/test_ctr01_tools.py': (55, '702f79e841769ab743a362a3939bf7a19d3cbe9d9e32421fc6d2d339a9160cb1'),
+    'tests/contracts/test_ctr01_tools.py': (90, '91ee763db5b044b2d19b8626be72c17d96086d9be93913e4cd2c05090485b83f'),
     'tests/contracts/test_generation4_schema.py': (60, '258c68dc0207788b09bc887f2ed6cd42070031ac668e6b0e63d30fd5a860e0ca'),
     'tests/unit/test_language_detection.py': (36, '05bee600a14c289d26e9edf81e1de50f1c7e13d2b3671862a45858fdf727dca7'),
     'tests/unit/test_judgment_v2.py': (46, '75192a2714ef155dda73d0c890f17604a38c3cfbf5a9a5924c8965273ed1281b'),
