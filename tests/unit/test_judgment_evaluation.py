@@ -136,16 +136,17 @@ def reviewed(request):
         for degree in ('polish', 'rewrite'):
             for enabled in (False, True):
                 for case in cases.values():
-                    plans = []
-                    response = await evaluation.adapter.compare_request([case], degree, enabled, 'text', 'fixture', plans)
-                    responses[degree, enabled, case['id']] = response, plans
+                    plans, trace = [], []
+                    with evaluation.observe_request(plans, trace):
+                        response = await evaluation.adapter.compare_request([case], degree, enabled, 'text', 'fixture', plans)
+                    responses[degree, enabled, case['id']] = response, plans, trace
         return responses
     responses, trials = asyncio.run(collect()), []
     for row in plan['planned_trials']:
-        response, plans = deepcopy(responses[row['degree'], row['judgment_enabled'], row['example_id']])
+        response, plans, trace = deepcopy(responses[row['degree'], row['judgment_enabled'], row['example_id']])
         problem = cases[row['example_id']]['must_change']
         decision = dict(a=True if problem else None, b=True, c=True, d=None if problem else True)
-        trials.append(dict(row, full_response=response, batch_plans=plans, started_at='fixture', error_code=None,
+        trials.append(dict(row, full_response=response, batch_plans=plans, trace=trace, started_at='fixture', error_code=None,
             provider_measurements=response.get('providers'), latency_ms=1, calibration=None, decision=decision,
             reasons={k: 'Synthetic review, not owner evidence.' if v is not None else None for k, v in decision.items()}, reviewer='fixture-reviewer'))
     artifact = dict(manifest_bytes=evaluation.encoded(plan), manifest_hash=evaluation.legacy.digest(evaluation.encoded(plan).encode()), trials=trials)
@@ -274,3 +275,115 @@ def test_ac_08_14_frozen_conditions_and_review_identity_cannot_be_reused(reviewe
         assert not summary['criteria_met'] and not summary['complete']
     else:
         with pytest.raises(ValueError): evaluation.summarize(plan, artifact)
+
+
+@pytest.mark.asyncio
+async def test_interrupted_report_keeps_every_planned_request_and_unknown_totals(tmp_path):
+    async def cancelled(*args):
+        raise asyncio.CancelledError()
+    plan, path = evaluation.freeze(2), tmp_path / 'partial.json'
+    with pytest.raises(asyncio.CancelledError):
+        await evaluation.run(plan, path, cancelled)
+    artifact = json.loads(path.read_text())
+    with pytest.raises(ValueError):
+        evaluation.audit(plan, artifact)
+    summary = evaluation.summarize(plan, artifact)
+    assert sum(g['counts']['planned'] for g in summary['groups'].values()) == 480
+    assert sum(g['not_run_requests'] for g in summary['groups'].values()) == 479
+    assert all(g['cost'] is None and g['latency_ms'] is None for g in summary['groups'].values())
+    assert not summary['complete'] and not summary['criteria_met'] and not summary['quality_accepted']
+
+
+@pytest.mark.asyncio
+async def test_actual_two_round_values_and_retry_triggers_stay_in_private_trace(tmp_path, monkeypatch):
+    from copyeditor.providers.typesafe import TypeSafe
+    case = evaluation.population('existing')[0]
+    monkeypatch.setattr(evaluation, 'population', lambda name: [case])
+    original = TypeSafe.evaluate
+    async def high_gate(self, wire):
+        result = await original(self, wire)
+        return result._replace(blocks=tuple(b._replace(probabilities=tuple((k, 0.9) for k, _ in b.probabilities)) for b in result.blocks))
+    monkeypatch.setattr(TypeSafe, 'evaluate', high_gate)
+    plan = evaluation.freeze(3)
+    artifact = await evaluation.run(plan, tmp_path / 'rounds.json')
+    observed = evaluation.audit(plan, artifact)
+    for request in plan['request_layouts']:
+        row = observed[request['request_id']]
+        trace = row['trace']
+        assert 'trace' not in row['full_response']
+        judges = [e for e in trace if e['kind'] == 'judgment']
+        if request['judgment_enabled']:
+            assert [e['candidate_round'] for e in judges] == [0, 1, 2]
+            assert all('tone' not in e['state']['background'] for e in judges)
+            assert all(e['result']['blocks'] for e in judges)
+            assert [e['retry_trigger'] for e in trace if e['kind'] == 'verification'] == [True, True]
+            assert [next(iter(e['rounds'].values())) for e in trace if e['kind'] == 'generation'] == [1, 2]
+        else:
+            assert not judges
+        assert any(e['kind'] == 'preservation' for e in trace)
+    for mutation in ('missing_preservation', 'missing_verification', 'reordered', 'candidate'):
+        changed = deepcopy(artifact)
+        for trial in changed['trials']:
+            if not trial['judgment_enabled']:
+                continue
+            if mutation.startswith('missing_'):
+                trial['trace'] = [e for e in trial['trace'] if e['kind'] != mutation.removeprefix('missing_')]
+            elif mutation == 'reordered':
+                trial['trace'].sort(key=lambda e: e['kind'] != 'judgment')
+            else:
+                next(e for e in trial['trace'] if e['kind'] == 'generation')['candidates'][0]['text'] = 'unrelated candidate'
+        with pytest.raises(ValueError):
+            evaluation.audit(plan, changed)
+
+
+@pytest.mark.parametrize('mutation', ['missing_generation', 'missing_judgment', 'round', 'block_observation', 'probability', 'phase', 'identity', 'missing_preservation', 'candidate'])
+def test_round_trace_cannot_be_dropped_or_diverge_between_shared_blocks(completed, mutation):
+    plan, artifact, _ = deepcopy(completed)
+    row = next(t for t in artifact['trials'] if t['judgment_enabled'])
+    related = [t for t in artifact['trials'] if t['request_id'] == row['request_id']]
+    if mutation == 'block_observation':
+        row['trace'] = []
+    else:
+        for trial in related:
+            if mutation.startswith('missing'):
+                kind = mutation.removeprefix('missing_')
+                trial['trace'] = [e for e in trial['trace'] if e['kind'] != kind]
+            elif mutation == 'candidate':
+                next(e for e in trial['trace'] if e['kind'] == 'generation')['candidates'][0]['text'] = 'unrelated candidate'
+            elif mutation == 'probability':
+                next(e for e in trial['trace'] if e['kind'] == 'judgment')['result']['blocks'][0]['probabilities']['gate'] = True
+            elif mutation == 'phase':
+                trial['batch_plans'][0]['candidate_round'] = 2
+            else:
+                next(e for e in trial['trace'] if e['kind'] == 'generation')['rounds'] = {'unknown' if mutation == 'identity' else 'b0001': 1 if mutation == 'identity' else 3}
+    with pytest.raises(ValueError):
+        evaluation.audit(plan, artifact)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failed_round', [1, 2])
+async def test_partial_verification_failure_preserves_only_reached_observations(tmp_path, monkeypatch, failed_round):
+    from copyeditor.providers.typesafe import TypeSafe
+    case = evaluation.population('existing')[0]
+    monkeypatch.setattr(evaluation, 'population', lambda name: [case])
+    original = TypeSafe.evaluate
+    round_ = 0
+    async def failing_judge(self, wire):
+        nonlocal round_
+        state = json.loads(wire)['state']
+        round_ = round_ + 1 if 'originals' in state else 0
+        if round_ == failed_round:
+            raise RuntimeError('synthetic failure')
+        result = await original(self, wire)
+        return result._replace(blocks=tuple(b._replace(probabilities=tuple((k, 0.9) for k, _ in b.probabilities)) for b in result.blocks))
+    monkeypatch.setattr(TypeSafe, 'evaluate', failing_judge)
+    plan = evaluation.freeze(3)
+    artifact = await evaluation.run(plan, tmp_path / 'partial.json')
+    observed = evaluation.audit(plan, artifact)
+    for request in plan['request_layouts']:
+        row = observed[request['request_id']]
+        if request['judgment_enabled']:
+            assert row['full_response']['status'] == 'error'
+            assert row['trace'][-1]['kind'] == 'judgment'
+            assert row['trace'][-1]['error'] == 'evaluation_error'
+            assert sum(e['kind'] == 'verification' for e in row['trace']) == failed_round - 1

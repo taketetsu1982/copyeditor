@@ -101,3 +101,22 @@ def test_ac_07_13_regressions_never_change_acceptance_denominators(completed, tm
     artifact["trials"][-1]["judgment"]["b"] = False
     result = evaluation.summarize(frozen, artifact)
     assert not result["criteria_met"] and result["must_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_interruption_preserves_unexecuted_regression_trials_and_denominator(tmp_path, monkeypatch):
+    path = tmp_path / 'interrupted.json'
+    async def cancel(*args):
+        checkpoint = json.loads(path.read_text())
+        assert len(checkpoint['trials']) == 120
+        assert all(t['error'] == 'not_run' for t in checkpoint['trials'])
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(evaluation, 'call_api', cancel)
+    plan = evaluation.freeze(2)
+    with pytest.raises(asyncio.CancelledError):
+        await evaluation.run(plan, path)
+    artifact = json.loads(path.read_text())
+    assert len(artifact['trials']) == 120 and artifact['trials'][0]['error'] == 'evaluation_error'
+    result = evaluation.summarize(plan, artifact)
+    assert result['not_run'] == 119 and result['groups']['acceptance']['planned'] == 120
+    assert not result['criteria_met'] and not result['quality_accepted']

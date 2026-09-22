@@ -97,7 +97,7 @@ GENERATION4_MODULES = {
 EVALUATION_MODULES = {
     'tests/unit/test_generation4_evaluation.py': (22, '117f0a21c98e1baf8c5b8231a1e873eb4f564796e96e6a79fdff67adfd38bf6e'),
     'tests/unit/test_judgment_examples.py': (74, '27d1c498bb8639488edea49c84805e37a0410a22f97eac56aace713cceefb605'),
-    'tests/unit/test_judgment_evaluation.py': (41, 'baf2a088cdb9ce6326937a9782554fba8d6dd991fb8d4401c2ca885fae188ed1'),
+    'tests/unit/test_judgment_evaluation.py': (54, 'a272a2028c811f1ae5b312b02e0c98fd93569acb51aab7d057d5e75ed3381419'),
     'tests/unit/test_judgment_calibration.py': (6, 'd20913f8a4a0379f92750e9e4dcaccfc470cd45864dd9dc64c56c78d8ceea1a0'),
     'tests/integration/test_judgment_acceptance.py': (56, 'd9c74bc3621e761da85ebc21cc73d2e6092a409bfbb50c477f618b690cca0edb'),
 }
