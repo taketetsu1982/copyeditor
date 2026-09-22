@@ -70,9 +70,9 @@ def test_current_schema_and_correlations_reject_changed_results(completed, mutat
     assert not result['criteria_met'] and not result['quality_accepted']
 
 
-@pytest.mark.parametrize('name', ['calibration', 'acceptance'])
-def test_old_populations_are_not_new_calibration_or_acceptance(name):
-    with pytest.raises(ValueError, match='not complete'):
+@pytest.mark.parametrize('name, error', [('calibration-v3', 'Invalid comparison plan'), ('acceptance', 'not complete')])
+def test_old_populations_are_not_new_calibration_or_acceptance(name, error):
+    with pytest.raises(ValueError, match=error):
         evaluation.freeze(1, name=name)
 
 

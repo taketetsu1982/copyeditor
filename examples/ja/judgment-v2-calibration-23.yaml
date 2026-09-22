@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-23"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "この織り見本は、経糸に麻、緯糸に綿を使っています。経糸と緯糸の向きは、台紙の矢印で確認できます。"
+good: "この織り見本は、経糸に麻、緯糸に綿を使っています。経糸と緯糸の向きは、台紙の矢印で確認できます。"
+reason: "Natural technical control: Keep warp/weft materials and directional arrows; keep every character unchanged."
+lint: null
+must_change: false

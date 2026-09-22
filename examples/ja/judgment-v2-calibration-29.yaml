@@ -1,0 +1,10 @@
+id: "judgment-v2-calibration-29"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "展示を見終えたら、心に残った一場面をこの日記に書いてみませんか。作品の名前だけでも、帰り道に浮かんだ言葉だけでもかまいません。"
+good: "展示を見終えたら、心に残った一場面をこの日記に書いてみませんか。作品の名前だけでも、帰り道に浮かんだ言葉だけでもかまいません。"
+reason: "Natural style control: Keep the optional invitation and permissive tone; the concrete memory metaphor is not a removable defect."
+lint: null
+must_change: false
