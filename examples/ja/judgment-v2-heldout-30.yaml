@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-30"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "倉庫の鍵は、借りた人が受付へ返してください。また、返却時刻を台帳に記入してください。さらに、別の人へ直接渡さないでください。そして、受付が閉まっている場合は管理者に連絡してください。"
+good: "倉庫の鍵は、借りた人が受付へ返し、返却時刻を台帳に記入してください。別の人へ直接渡さないでください。受付が閉まっている場合は管理者に連絡してください。"
+reason: "Repetition: Keep borrower responsibility, logging, no direct handoff and the closed-desk exception."
+lint: null
+must_change: true

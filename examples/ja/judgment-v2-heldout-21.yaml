@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-21"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "街路樹の落ち葉は、市の回収袋に入れて出してください。枝や石は入れないでください。分別をしっかりと徹底することが非常に大切です。"
+good: "街路樹の落ち葉は、市の回収袋に入れて出してください。枝や石は入れないでください。"
+reason: "Stiffness: Keep the designated bag and excluded materials; add no collection schedule."
+lint: null
+must_change: true

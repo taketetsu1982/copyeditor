@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-23"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "靴の採寸票には、足長と足囲を左右別々に記録します。サイズ選びに寄り添い、一人ひとりの歩行体験を最適化する採寸票です。"
+good: "靴の採寸票には、足長と足囲を左右別々に記録します。靴のサイズを選ぶときに使います。"
+reason: "Abstraction: Keep both measurements and separate sides; add no fit or health guarantee."
+lint: null
+must_change: true
