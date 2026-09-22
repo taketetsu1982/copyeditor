@@ -1,11 +1,21 @@
 ---
 contract-id: CTR-04
 kind: schema
-derives-from: [AC-05-1, AC-05-2, AC-05-3, AC-05-4, AC-05-5, AC-05-6, AC-05-8, AC-05-9, AC-02-6, AC-02-10, AC-02-11, AC-08-1, AC-08-7, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-17, AC-08-18]
-revision: 7
+derives-from: [AC-05-1, AC-05-2, AC-05-3, AC-05-4, AC-05-5, AC-05-6, AC-05-8, AC-05-9, AC-02-6, AC-02-15, AC-02-16, AC-02-17, AC-02-18, AC-02-10, AC-02-11, AC-08-1, AC-08-7, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-18]
+revision: 9
 ---
 
 # Configuration and image layout
+
+## Revision 8 migration proposal
+
+Revision 9 refines this migration to one shared schema generation 4; the anchor is retained for existing references.
+
+This revision is a proposed contract for design r10, not a statement of current executable behavior. Deploy configuration, tools, language assets and their consumers together. All tools and judgment modes use contract generation schema_version=4, not legacy v1/v2/v3. Each tool has its own closed output family; editing judgment keys stay required and are null when disabled as specified in [CTR-01](tools.md#current-version-selection).
+
+The default_language field and COPYEDITOR_DEFAULT_LANGUAGE environment setting are removed. A config containing the old key fails as an unknown key at config. Presence of the removed environment variable fails invalid_config at config, without reading or printing its value. Remove both settings during migration; there is no replacement default. Each request resolves its explicit language or local body-language detection, including lint. Existing files without these removed fields and without old judgment registry IDs keep their other meanings.
+
+The new registry pair is reference-gate-v2 / gate-delta-v2. The latter is reserved until calibration registers concrete floor / gap / meaning_floor values in CTR-01. Disabled startup permits thresholds_version=null; enabled startup requires a registered compatible pair. No guessed threshold values or old-registry aliases are supplied.
 
 ## Resolution
 
@@ -19,18 +29,17 @@ A config scalar consisting exactly of `${NAME}` resolves that environment variab
 
 Preserve the resolution rules above for old and new nonsecret leaves. Add `judgment` as a closed mapping; unknown fields fail, including fields named key/token/secret/endpoint. Exact `${NAME}` placeholders work under the existing rules, but `TYPESAFE_API_KEY` joins the forbidden secret-placeholder name set: reject that reference before looking up its value. Do not expand or dump the whole environment to resolve judgment configuration. Secret retrieval happens only after judgment.enabled resolves to true. A disabled process never looks up, validates, stores or requires TYPESAFE_API_KEY and never constructs its TypeSafe adapter/HTTP client. Merely importing an adapter module or registry does not read credentials.
 
-Inactive nonsecret fields still undergo syntax/known-value validation, consistently with legacy auth configuration. Missing conditional secret values are checked only when enabled. Old config files remain accepted with judgment disabled, and no previously accepted file requires a new key. The existing editing provider remains vertex. Judgment uses TypeSafe Jev directly and has no provider-selection setting. The response provider identifier remains typesafe; the editing provider configuration and its error rules are unchanged.
+Inactive nonsecret fields still undergo syntax/known-value validation, consistently with legacy auth configuration. Missing conditional secret values are checked only when enabled. Existing unrelated config fields retain their behavior; removed language defaults and retired registry IDs require the migration above. The existing editing provider remains vertex. Judgment uses TypeSafe Jev directly and has no provider-selection setting. The response provider identifier remains typesafe; the editing provider configuration and its error rules are unchanged.
 
 ## Fields
 
-This table and the judgment fields table define the complete leaf schema. Strings are not trimmed or case-folded unless stated. No request may override these settings except `language` as specified in [CTR-01](tools.md#requests).
+This table and the judgment fields table define the complete leaf schema. Strings are not trimmed or case-folded unless stated. No request may override these settings except `language` as specified in [CTR-01](tools.md#current-requests-and-language).
 
 | Config key | Type / accepted values | Environment variable | Image default |
 |---|---|---|---|
 | `provider` | string, `vertex` only; other strings produce `unsupported_provider` | `COPYEDITOR_PROVIDER` | `vertex` |
 | `model` | string, 1–128 ASCII characters matching `[A-Za-z0-9._-]+` | `COPYEDITOR_MODEL` | `gemini-3.1-flash-lite` |
 | `thinking` | enum `minimal`, `low`, `medium`, `high` | `COPYEDITOR_THINKING` | `low` |
-| `default_language` | language identifier defined by CTR-03; must have loaded rules | `COPYEDITOR_DEFAULT_LANGUAGE` | `ja` |
 | `protected_terms` | array of distinct nonblank strings, each 1–128 code points; at most 1,024 | `COPYEDITOR_PROTECTED_TERMS` | `[]` |
 | `length_ratio.min` | finite number, `0 < value <= 1` | `COPYEDITOR_LENGTH_RATIO_MIN` | `0.5` |
 | `length_ratio.max` | finite number, `1 <= value <= 4` | `COPYEDITOR_LENGTH_RATIO_MAX` | `2.0` |
@@ -53,14 +62,16 @@ Domains are lowercase ASCII DNS names of at most 253 characters, with at least o
 
 ### Judgment fields
 
-The initial image provides exactly the policy/threshold registry IDs below as one compatible pair. Earlier expression-v1 / conservative-v1 and state-action-v1 / state-action-conservative-v1 definitions retain their historical meaning but are not accepted as aliases. The active policy includes six fixed synthetic references, gate/axis/verification questions, action vocabulary, Japanese instruction mapping and deterministic packing. gate-verify-v1 contains floor=0.53 and verification={pass_min: 0.70, fail_max: 0.30}; policy contains no numeric decision boundaries. The retired gate-floor-v1 is not accepted or aliased. No per-axis threshold, confidence threshold, new leaf or per-request action switch is introduced; confidence is observation only. Unknown registry IDs fail startup as invalid_config at the corresponding leaf; there is no fallback/latest registry selection. Updating a registry body requires a new immutable version ID and new evaluation records, except for the explicit policy ownership migration documented in CTR-01, which preserves the policy ID and recomputes its hash. The server computes hashes from the bundled definitions, not from caller-supplied hashes. The public classification rules for every registered threshold version are in [CTR-01](tools.md#registered-threshold-classification); new versions require updating that public contract. Operators select these registered versions; they cannot upload prompts or arbitrary threshold maps through configuration.
+The bundled policy is reference-gate-v2: one shared worst-single-spot gate, six ordered fixed references, one meaning question, state assembly and deterministic packing. It contains no numeric classification thresholds, axes, Choice, action instructions or tone. The threshold definition has exactly id and three finite values floor / gap / meaning_floor, with domains and compatibility rules in [CTR-01](tools.md#current-gate-registry-and-compatibility). Operators cannot supply arbitrary numeric maps or prompt text through config.
+
+This proposal does not register numerical values. gate-delta-v2 is reserved, not yet an accepted registry ID. A subsequent reviewed registration must fix its definition/hash and compatible policy/hash before enabling judgment. thresholds_version=null is valid only when disabled; when enabled it produces missing_required at judgment.thresholds_version. A non-null unknown, retired or reserved ID produces invalid_config at the corresponding leaf even when disabled. A known but incompatible pair fails at judgment.thresholds_version. Never substitute a latest registry, old cutoffs or guessed numbers. Compute hashes from immutable bundled definitions, not caller-supplied hashes; changing any definition requires a new ID and comparison evaluation.
 
 | Config leaf | Type / accepted values | Environment | Image default |
 |---|---|---|---|
 | judgment.enabled | boolean (not number or string in YAML; JSON true/false in environment) | COPYEDITOR_JUDGMENT_ENABLED | false |
 | judgment.model | string, jev-1.13.0 only for this implementation | COPYEDITOR_JUDGMENT_MODEL | jev-1.13.0 |
-| judgment.policy_version | registered string, reference-gate-action-v1 | COPYEDITOR_JUDGMENT_POLICY_VERSION | reference-gate-action-v1 |
-| judgment.thresholds_version | registered string, gate-verify-v1 | COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION | gate-verify-v1 |
+| judgment.policy_version | registered string, reference-gate-v2 | COPYEDITOR_JUDGMENT_POLICY_VERSION | reference-gate-v2 |
+| judgment.thresholds_version | null or registered compatible string; see registration gate above | COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION | null |
 | judgment.timeout_ms | integer, 1..60000 | COPYEDITOR_JUDGMENT_TIMEOUT_MS | 10000 |
 | judgment.polish_deadline_ms | integer, 1..120000 | COPYEDITOR_JUDGMENT_POLISH_DEADLINE_MS | 120000 |
 | judgment.rewrite_deadline_ms | integer, 1..240000 | COPYEDITOR_JUDGMENT_REWRITE_DEADLINE_MS | 240000 |
@@ -68,7 +79,7 @@ The initial image provides exactly the policy/threshold registry IDs below as on
 | judgment.input_budget | integer, 1..262144 estimated judgment input units per tool request | COPYEDITOR_JUDGMENT_INPUT_BUDGET | 262144 |
 | judgment.pricing | model-to-complete-price map with the same validation as pricing | COPYEDITOR_JUDGMENT_PRICING | {} |
 
-Integers exclude booleans, numeric strings, fractions, NaN and infinity. Environment numbers/booleans/maps use JSON, version/model strings are literal as with legacy fields. Explicit empty price map disables judgment cost estimation; no partial map merge. The runtime operation timeout is min(judgment.timeout_ms, remaining whole-request deadline), so a larger operation timeout than the degree-specific deadline is valid but cannot extend it. Limits are shrinkable engineering limits; no configuration increases legacy editing call/token budgets or the existing 120/240-second timing envelope. Protocol request/response caps and deterministic rejection are in CTR-01's judgment limits. The enabled polish deadline covers judgment plus editing; disabled processing is not changed.
+Integers exclude booleans, numeric strings, fractions, NaN and infinity. Environment numbers/booleans/maps use JSON, version/model strings are literal as with legacy fields; the literal null denotes null for thresholds_version. Explicit empty price map disables judgment cost estimation; no partial map merge. The runtime operation timeout is min(judgment.timeout_ms, remaining whole-request deadline), so a larger operation timeout than the degree-specific deadline is valid but cannot extend it. Limits are shrinkable engineering limits; no configuration increases legacy editing call/token budgets or the existing 120/240-second timing envelope. Protocol request/response caps and deterministic rejection are in [CTR-01's current limits](tools.md#current-limits-and-error-precedence). The enabled polish deadline covers judgment plus editing; disabled processing follows the new CTR-01 v4 contract and its editing preflight budget.
 
 The initial adapter deliberately pins jev-1.13.0 rather than accepting jev-latest/jev-preview aliases: a moving model would change a calibrated gate without a configuration or policy change. A future pinned-model addition requires adapter conformance and the same comparison evaluation, not an automatic alias resolution request at startup. There is no judgment provider protocol or selection factory: a one-value provider selector would add branches and tests without a choice. Adding another judgment service would require an adapter and contract revision, not an already-supported setting. This does not limit the editing provider abstraction.
 
@@ -91,6 +102,14 @@ WARNING: copyeditor judgment is enabled; body, permitted context/background and 
 ```
 
 Disabled mode emits no judgment warning. The initialization instructions and tool description required by CTR-01, and the English/Japanese README operator instructions, disclose the same destination. Disclosure is not per-request consent for direct MCP clients. New Skill clients include it in their existing permission check. Reconfiguration requires a process restart; no request-level switch, dynamic remote flag or persisted user preference is introduced.
+
+## Rule-backed default style
+
+Each built-in rules/<lang>.md must contain exactly one line beginning with the literal marker `Default style: ` in its existing Context weights section. The remainder is a nonblank, single-line style instruction of 1–1,000 Unicode code points; use the CTR-01 whitespace definition. Missing, duplicated, misplaced or empty markers fail startup as invalid_rules at rules. Do not introduce a new frontmatter field, H2 section or machine-rule JSON key. The raw rule bytes already participate in rules_version. CTR-03 and its loader/tests must incorporate this amendment in the implementation migration.
+
+The instruction must be short and reviewable. ja describes natural Japanese expression and requires the existing native review; en and zh describe their own language's natural expression and remain native-unverified. It may not weaken common preservation, require a register change or introduce facts. This contract fixes the extraction format, not an unmeasured quality claim for particular prose.
+
+Overlays remain additive and may not supply a Default style marker anywhere or replace the built-in default. This keeps one stable default per installed language while preserving existing additive lint/protected-term behavior. Request background.tone, when nonblank, overrides the built-in default only for that request; omission or whitespace selects the built-in value. Do not trim a nonblank supplied tone. Freeze the result for initial generation and retry, with no request cache across users. Send it only to the editing provider; neither desired_style nor background.tone may reach judgment. No config/env default-style leaf is added.
 
 ## Image layout
 
@@ -121,14 +140,14 @@ COPY rules/ja.md /etc/copyeditor/rules.d/ja.md
 The example configuration includes the following mapping and comments alongside the existing values. Do not include a secret value or a key placeholder in YAML.
 
 ```yaml
-# Optional judgment provider. Disabled keeps existing v1/v2 behavior.
+# Optional judgment provider. Disabled selects the new v4 contract.
 # Enabling sends body, permitted context/background and candidates to TypeSafe AI.
 # Supply TYPESAFE_API_KEY through the runtime secret environment, never this file.
 judgment:
   enabled: false
   model: jev-1.13.0
-  policy_version: reference-gate-action-v1
-  thresholds_version: gate-verify-v1
+  policy_version: reference-gate-v2
+  thresholds_version: null # Enabling requires a calibrated, registered version.
   timeout_ms: 10000
   polish_deadline_ms: 120000
   rewrite_deadline_ms: 240000

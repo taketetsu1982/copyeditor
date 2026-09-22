@@ -1,8 +1,8 @@
 ---
 contract-id: CTR-02
 kind: schema
-derives-from: [AC-01-3, AC-01-4, AC-01-5, AC-01-10, AC-01-12, AC-02-10, AC-02-11, AC-02-12, AC-04-1, AC-06-2, AC-07-3, AC-07-6, AC-07-13]
-revision: 3
+derives-from: [AC-01-3, AC-01-4, AC-01-5, AC-01-10, AC-02-10, AC-02-11, AC-04-1, AC-06-2, AC-07-3, AC-07-6, AC-07-13]
+revision: 4
 ---
 
 # Shared preservation conditions

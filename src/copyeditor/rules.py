@@ -100,7 +100,7 @@ def parse(raw, language, overlay):
         require((rule["id"], CATEGORIES.index(rule["section"])) in anchors and nonblank(rule["description"], 160))
         detector(rule["detector"])
     return prose, data["protected_terms"], data["rules"], anchors
-def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"), config_terms=(), *, generation4=False):
+def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"), config_terms=()):
     try:
         base, overlay = Path(base), Path(overlay) if overlay is not None else None
         require(not base.is_symlink() and (overlay is None or not overlay.is_symlink()))
@@ -123,10 +123,9 @@ def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"),
                 require(path.suffix == ".md" and matches(r"[a-z]{2,3}(-[a-z0-9]{2,8})*", language) and len(language) <= 35)
                 require(prefix == "base" or language in documents)
                 documents.setdefault(language, []).append(parse(raw, language, prefix == "overlay"))
-                if generation4:
-                    style = default_style(raw, language, overlay=prefix == "overlay")
-                    if prefix == "base":
-                        styles[language] = style
+                style = default_style(raw, language, overlay=prefix == "overlay")
+                if prefix == "base":
+                    styles[language] = style
         require(documents and array(list(config_terms), 1024, lambda s: nonblank(s, 128)))
         languages, ids, anchors_seen = {}, set(), set()
         for language, parts in documents.items():
@@ -141,7 +140,7 @@ def load_rules(base=Path("/app/rules"), overlay=Path("/etc/copyeditor/rules.d"),
             terms = tuple(sorted(set(terms) | set(config_terms)))
             require(len(terms) <= 2048)
             prose = "\n\n".join("## " + HEADINGS[i] + "\n" + "\n".join(p[i] for p, _, _, _ in parts) for i in range(5))
-            languages[language] = LanguageRules(prose, terms, tuple(freeze(compile_rule(r)) for r in rules), styles.get(language, ""))
+            languages[language] = LanguageRules(prose, terms, tuple(freeze(compile_rule(r)) for r in rules), styles[language])
         version = hashlib.sha256(json.dumps(sorted(manifest), ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
         return RuleSnapshot(common, "sha256:" + hashlib.sha256(common).hexdigest(), "sha256:" + version, MappingProxyType(languages))
     except Exception:

@@ -1,5 +1,6 @@
 """Default style extraction and request-local editing tone; no naturalness claim."""
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -13,13 +14,14 @@ from copyeditor.rules import default_style, effective_tone, load_rules
 
 
 def raw(style="Natural expression.", section="Context weights"):
-    source = Path("rules/ja.md").read_text()
+    source = re.sub(r"^Default style: .*\n", "", Path("rules/ja.md").read_text(), flags=re.M)
     return source.replace("## " + section + "\n", "## " + section + "\nDefault style: " + style + "\n").encode()
 
 
-def test_new_marker_is_optional_for_legacy_loader_but_required_by_v4():
+def test_default_style_is_required_by_public_loader():
     assert "ja" in load_rules(Path("rules"), None).languages
-    with pytest.raises(ConfigError): default_style(Path("rules/ja.md").read_bytes(), "ja")
+    assert default_style(Path("rules/ja.md").read_bytes(), "ja")
+    with pytest.raises(ConfigError): default_style(raw().replace(b"Default style: Natural expression.\n", b""), "ja")
     assert default_style(raw(), "ja") == "Natural expression."
     assert default_style(raw("\u8a9e" * 1000), "ja") == "\u8a9e" * 1000
 

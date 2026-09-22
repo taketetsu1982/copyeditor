@@ -86,7 +86,6 @@ SCHEMA = {
     "provider": ("COPYEDITOR_PROVIDER", "vertex", lambda v: v == "vertex"),
     "model": ("COPYEDITOR_MODEL", "gemini-3.1-flash-lite", lambda v: matches(MODEL, v)),
     "thinking": ("COPYEDITOR_THINKING", "low", lambda v: v in ("minimal", "low", "medium", "high")),
-    "default_language": ("COPYEDITOR_DEFAULT_LANGUAGE", "ja", lambda v: matches(r"[a-z]{2,3}(-[a-z0-9]{2,8})*", v) and len(v) <= 35),
     "protected_terms": ("COPYEDITOR_PROTECTED_TERMS", [], lambda v: array(v, 1024, lambda s: nonblank(s, 128))),
     "length_ratio.min": ("COPYEDITOR_LENGTH_RATIO_MIN", 0.5, lambda v: number(v, 0, 1) and v > 0),
     "length_ratio.max": ("COPYEDITOR_LENGTH_RATIO_MAX", 2.0, lambda v: number(v, 1, 4)),
@@ -108,7 +107,7 @@ def _judgment_valid(key, value):
 
 SCHEMA.update({"judgment." + key: ("COPYEDITOR_JUDGMENT_" + key.upper(), default,
     lambda value, key=key: _judgment_valid(key, value)) for key, default in dict(
-    enabled=False, model="jev-1.13.0", policy_version="reference-gate-action-v1", thresholds_version="gate-verify-v1",
+    enabled=False, model="jev-1.13.0", policy_version="reference-gate-v2", thresholds_version=None,
     timeout_ms=10000, polish_deadline_ms=120000, rewrite_deadline_ms=240000, max_calls=64,
     input_budget=262144, pricing={}).items()})
 
@@ -121,63 +120,8 @@ class ResolvedConfig:
     secrets: object = field(repr=False)
     def __getitem__(self, key):
         return self.values[key]
-    def require_language(self, languages):
-        if self["default_language"] not in languages:
-            raise ConfigError(field="default_language")
+    rules: object = field(default=None, repr=False)
 
-def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None):
-    env, explicit, resolved = os.environ if environ is None else environ, {}, {}
-    try:
-        raw = strict_yaml(Path(path).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raw = {}
-    except (OSError, UnicodeError):
-        raise ConfigError() from None
-    def flatten(value, parent=""):
-        if not isinstance(value, dict):
-            raise ConfigError(field=parent or "config")
-        for key, item in value.items():
-            if not isinstance(key, str) or "." in key:
-                raise ConfigError(field=parent or "config")
-            name = f"{parent}.{key}" if parent else key
-            if name in SCHEMA:
-                explicit[name] = item
-            elif isinstance(name, str) and any(k.startswith(name + ".") for k in SCHEMA):
-                flatten(item, name)
-            else:
-                raise ConfigError(field=parent or "config")
-    flatten(raw)
-    for name, (variable, default, valid) in SCHEMA.items():
-        if name.startswith("judgment."):
-            continue
-        try:
-            value, encoded = (explicit[name], False) if name in explicit else (env.get(variable, default), variable in env)
-            if isinstance(value, str) and not encoded and value.startswith("${") and value.endswith("}"):
-                variable = value[2:-1]
-                if not matches(r"[A-Z][A-Z0-9_]*", variable) or variable in (*SECRETS, "TYPESAFE_API_KEY") or not env.get(variable):
-                    raise ValueError()
-                value, encoded = env[variable], True
-            if encoded and (isinstance(default, (list, dict, float, int)) or (name in ("auth.client_id", "auth.base_url") and value == "null")):
-                value = json.loads(value, parse_float=Decimal, parse_constant=lambda _: None)
-            if name == "vertex.project" and name not in explicit and variable not in env:
-                raise ConfigError("missing_required", name)
-            if name == "provider" and isinstance(value, str) and value != "vertex":
-                raise ConfigError("unsupported_provider", name)
-            if not valid(value):
-                raise ValueError()
-            resolved[name] = value.rstrip("/") if name == "auth.base_url" and value else value
-        except ConfigError:
-            raise
-        except Exception:
-            raise ConfigError(field=name) from None
-    secrets = {key: env.get(key) for key in SECRETS}
-    if resolved["auth.mode"] == "google":
-        for name, present in [("auth.client_id", resolved["auth.client_id"]), ("auth.base_url", resolved["auth.base_url"]),
-                              ("auth.allowed_domains", resolved["auth.allowed_domains"] or resolved["auth.allowed_emails"]),
-                              ("auth", all(secrets.values()) and len(secrets[SECRETS[1]].encode("utf-8")) >= 32)]:
-            if not present:
-                raise ConfigError("missing_required", name)
-    from .judgment_config import resolve_judgment_config
-    judgment = resolve_judgment_config({name.removeprefix("judgment."): value for name, value in explicit.items()
-                                       if name.startswith("judgment.")}, env)
-    return ResolvedConfig(freeze({**resolved, **judgment.values}), freeze({**secrets, **judgment.secrets}))
+def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None, **options):
+    from .config_v4 import load_config as resolve
+    return resolve(path, environ, **options)

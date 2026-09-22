@@ -11,9 +11,9 @@ from copyeditor.config import load_config
 from copyeditor.providers.base import GenerationResult, Usage
 from copyeditor.rules import load_rules
 from copyeditor.service import Service
-from copyeditor.metrics import Metrics
-from copyeditor.requests import parse_edit_request
-from copyeditor.rewrite_service import rewrite
+from copyeditor.config import ResolvedConfig, freeze
+from copyeditor.judgment_config import JudgmentSecret
+from copyeditor.judgment_v2 import POLICY_ID, snapshot as judgment_snapshot
 
 
 def environment(case, mode):
@@ -38,27 +38,18 @@ class FixtureProvider:
         return 0
 
     async def generate(self, request):
-        if request.stage == "diagnose":
-            return GenerationResult(json.dumps({"diagnoses": [dict(id=item.id,
-                status="no_issue" if self.no_issue else "issue", expression=None if self.no_issue else item.text.strip()[:160],
-                reason=None if self.no_issue else "Clarify the source expression.") for item in request.items]}), "stop", Usage(0, 0, 0))
-        return GenerationResult(json.dumps({"items": [dict(id=item.id, text=self.text, flag=None) for item in request.items]}),
-                                "stop", Usage(0, 0, 0))
+        return GenerationResult(json.dumps({"items": [dict(id=item.id, text=self.text, flag=None,
+            diagnosis=None if request.stage == "polish" else "No expression change needed." if self.no_issue else "Clearer wording.")
+            for item in request.items]}), "stop", Usage(0, 0, 0))
 
 
-async def call_api(prompt, options, context, *, prepared=None):
+async def call_api(prompt, options, context):
     case, mode = context["vars"], options.get("config", {}).get("mode", "fixture")
-    if prepared:
-        result = await compare_request([case], case.get('degree', 'polish'), False, 'text', mode, [], prepared=prepared)
-        return {"output": json.dumps(result, ensure_ascii=False, allow_nan=False)}
     config, snapshot = environment(case, mode)
     arguments = dict(text=case["bad"], language=case["language"], format=case["format"],
                      **{key: value for key, value in case["background"].items() if key in ("audience", "purpose", "tone", "message")})
+    arguments["degree"] = case.get("degree", "polish")
     async def execute(factory):
-        if case.get("degree", "polish") == "rewrite":
-            meter = Metrics(monotonic(), config["model"], config["pricing"], degree="rewrite")
-            request = parse_edit_request("polish_text", dict(arguments, degree="rewrite"), config, snapshot)
-            return await rewrite(request, config, snapshot, factory, meter)
         return await Service(config, snapshot, factory).polish(arguments)
     if mode == "live":
         from copyeditor.providers.vertex import Vertex
@@ -73,75 +64,71 @@ async def call_api(prompt, options, context, *, prepared=None):
     return {"output": json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False)}
 
 
+# Offline fixtures explicitly inject their registry; production never registers these values.
+FIXTURE_THRESHOLDS = {"synthetic": dict(id="synthetic", floor=0.5, gap=0.2, meaning_floor=0.8)}
+
+
+def fixture_registry(policy, threshold):
+    return judgment_snapshot(policy, threshold, thresholds=FIXTURE_THRESHOLDS, pairs={(POLICY_ID, "synthetic")})
+
+
 def comparison_environment(case, mode, enabled):
-    from copyeditor.judgment_config import resolve_judgment_config
-    from copyeditor.judgment import _json_value
     base, snapshot = environment(case, mode)
-    judgment = resolve_judgment_config(_json_value({k[9:]: v for k, v in base.values.items() if k.startswith('judgment.')} | {'enabled': enabled}),
-                                      {'TYPESAFE_API_KEY': 'fixture-only'} if mode == 'fixture' else None)
-    return {**base.values, **judgment.values}, snapshot, judgment.secrets.get('TYPESAFE_API_KEY')
+    values = dict(base.values, **{"judgment.enabled": enabled})
+    if mode == "fixture":
+        values.update({"judgment.policy_version": POLICY_ID, "judgment.thresholds_version": "synthetic" if enabled else None})
+        secret = JudgmentSecret("fixture-only") if enabled else None
+    else:
+        if enabled:
+            judgment_snapshot(values["judgment.policy_version"], values["judgment.thresholds_version"])
+        secret = base.secrets.get("TYPESAFE_API_KEY") if enabled else None
+    return values, snapshot, secret
 
 
-# The temporary internal injection keeps legacy CLI consumers active until the atomic cutover.
-async def compare_request(cases, degree, enabled, layout, mode, plans, *, prepared=None):
+async def compare_request(cases, degree, enabled, layout, mode, plans):
     import httpx
     from contextlib import ExitStack
-    from copyeditor import judged_budget
-    from copyeditor.judgment import ACTION_CRITERIA
+    from copyeditor.judged_budget import EditBudget
     from copyeditor.providers.typesafe import TypeSafe
-    if prepared:
-        if mode != 'fixture': raise ValueError('Prepared evaluation is fixture-only until public cutover')
-        config, snapshot, registry = prepared(cases[0], mode, enabled)
-        secret = config.secrets.get('TYPESAFE_API_KEY')
-    else:
-        config, snapshot, secret = comparison_environment(cases[0], mode, enabled)
+    config, snapshot, secret = comparison_environment(cases[0], mode, enabled)
     arguments = dict(language='ja', degree=degree, format=cases[0]['format'], **cases[0]['background'])
     if layout == 'text': arguments['text'] = cases[0]['bad']
     else: arguments['items'] = [dict(id=f'b{i:04}', text=c['bad'], context='') for i, c in enumerate(cases, 1)]
     outputs = {c['bad']: c['good'] for c in cases}
     class Editor(FixtureProvider):
         async def generate(self, data):
-            if prepared:
-                return GenerationResult(json.dumps({'items': [dict(id=i.id, text=outputs[i.text], flag=None,
-                    diagnosis=None if degree == 'polish' else 'Clearer wording.') for i in data.items]}), 'stop', Usage(0, 0, 0))
-            if data.stage == 'diagnose': return await super().generate(data)
-            return GenerationResult(json.dumps({'items': [dict(id=i.id, text=outputs[i.text], flag=None) for i in data.items]}), 'stop', Usage(0, 0, 0))
+            return GenerationResult(json.dumps({'items': [dict(id=i.id, text=outputs[i.text], flag=None,
+                diagnosis=None if degree == 'polish' else 'Clearer wording.') for i in data.items]}), 'stop', Usage(0, 0, 0))
     def reply(wire):
         data = json.loads(wire.content)
-        answers = {k: (dict(type='noul', noul=.9) if q['type'] == 'noul' else
-                   dict(type='choice', choice='simplify_vocabulary', confidence=1,
-                        probabilities={a: int(a == 'simplify_vocabulary') for a in ACTION_CRITERIA})) for k, q in data['questions'].items()}
-        if prepared:
-            checking = 'originals' in data['state']
-            answers = {key: dict(type='Noul', noul=.9 if not checking or key.endswith('meaning') else .3)
-                       for key in data['questions']}
+        checking = 'originals' in data['state']
+        answers = {key: dict(type='Noul', noul=.9 if not checking or key.endswith('meaning') else .3)
+                   for key in data['questions']}
         return httpx.Response(200, json=dict(model='jev-1.13.0', answers=answers, usage=dict(input_tokens=0, output_tokens=0)))
-    prepare = judged_budget.EditBudget.plan if prepared else judged_budget.prepare_judgments
-    def observe(*args, **kwargs):
-        result = prepare(*args, **kwargs)
-        plans.append(dict(version=result.plan.version, phase=result.plan.phase,
-                          batches=[b._asdict() for b in result.plan.batches]))
-        if prepared: plans[-1]['candidate_round'] = kwargs['candidate_round']
-        return result
-    adapter = None
+    prepare = EditBudget.plan
+    def observe(self, data, **kwargs):
+        prepared = prepare(self, data, **kwargs)
+        plans.append(dict(version=prepared.plan.version, phase=prepared.plan.phase,
+                          candidate_round=kwargs['candidate_round'], batches=[b._asdict() for b in prepared.plan.batches]))
+        return prepared
+    adapter = provider = None
     with ExitStack() as stack:
-        stack.enter_context(patch.object(judged_budget.EditBudget if prepared else judged_budget,
-                                        'plan' if prepared else 'prepare_judgments', observe))
+        stack.enter_context(patch.object(EditBudget, 'plan', observe))
         if mode == 'fixture':
             network = stack.enter_context(patch('socket.socket', side_effect=RuntimeError('Fixture network denied')))
             dns = stack.enter_context(patch('socket.getaddrinfo', side_effect=RuntimeError('Fixture network denied')))
             factory = lambda: Editor('')
         else:
             from copyeditor.providers.vertex import Vertex
-            factory = lambda: Vertex(config)
+            provider = Vertex(config)
+            factory = lambda: provider
         try:
             if enabled: adapter = TypeSafe(secret, timeout_ms=config['judgment.timeout_ms'], transport=httpx.MockTransport(reply) if mode == 'fixture' else None)
-            if prepared:
-                from copyeditor.edit_service import EditService
-                response = await EditService(config, snapshot, factory, adapter, registry=registry).polish(arguments)
-            else:
-                response = await Service(config, snapshot, factory, adapter).polish(arguments)
+            config = ResolvedConfig(freeze(config), {})
+            response = await Service(config, snapshot, factory, adapter,
+                registry=fixture_registry if mode == 'fixture' else judgment_snapshot).polish(arguments)
             if mode == 'fixture' and (network.called or dns.called): raise RuntimeError('Fixture attempted network')
             return response
         finally:
             if adapter: await adapter.aclose()
+            if provider: await provider.aclose()

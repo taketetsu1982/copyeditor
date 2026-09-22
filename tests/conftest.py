@@ -16,13 +16,9 @@ REWRITE_MODULES = {
     'tests/integration/test_rewrite_acceptance.py',
     'tests/integration/test_rewrite_skill.py',
     'tests/integration/test_rewrite_transport.py',
-    'tests/unit/test_diagnosis.py',
     'tests/unit/test_rewrite_budget.py',
     'tests/unit/test_rewrite_evaluation.py',
-    'tests/unit/test_rewrite_failures.py',
     'tests/unit/test_rewrite_requests.py',
-    'tests/unit/test_rewrite_response.py',
-    'tests/unit/test_rewrite_service.py',
     'tests/unit/test_rewrite_vertex.py',
 }
 PHASE2_MODULES |= REWRITE_MODULES
@@ -63,48 +59,40 @@ REWRITE_TOOL_CASES = {
 
 # Consumer pins are reviewed explicitly; never regenerate on collection.
 JUDGMENT_MODULES = {
-    'tests/unit/test_edit_service.py': (41, 'e6598872a26867f4fc28e63ed234d861d296e12c64ebba17d6b7f737abba37d3'),
+    'tests/unit/test_edit_service.py': (41, 'b741582ecaa0441d614528fe372bac9ba05c3754e3480d14a84af73969393862'),
     'tests/unit/test_lingua_dependency.py': (2, 'c5e57c5432750307aae49d0e9c0f9e9255517f4d6e58d4e6fa342d9db0ccfc68'),
-    'tests/contracts/test_ctr01_tools.py': (90, '91ee763db5b044b2d19b8626be72c17d96086d9be93913e4cd2c05090485b83f'),
+    'tests/contracts/test_ctr01_tools.py': (48, 'c3160e4eb329ceaf1f5b08e562f55aa78655cf7d150f4a9a42524583924984aa'),
     'tests/contracts/test_generation4_schema.py': (60, '258c68dc0207788b09bc887f2ed6cd42070031ac668e6b0e63d30fd5a860e0ca'),
     'tests/unit/test_language_detection.py': (36, '05bee600a14c289d26e9edf81e1de50f1c7e13d2b3671862a45858fdf727dca7'),
-    'tests/unit/test_judgment_v2.py': (46, '75192a2714ef155dda73d0c890f17604a38c3cfbf5a9a5924c8965273ed1281b'),
+    'tests/unit/test_judgment_v2.py': (46, '99de15b7fa387fe4e1ad18f86285d87e53e3bcb78c5f66d51820a1cc073d419b'),
     'tests/unit/test_judgment_v2_batch.py': (28, '17eb5ae21ce0601bab8741966c5869c4eac20d4392c7cb0e06959fbd6560e6c6'),
     'tests/unit/test_edit_generation.py': (38, '75ae8ee49ba9bf43b3f98ef9f9d72f68d49cb7eef2d26e29c556754d1fcccdc9'),
-    'tests/unit/test_config_v4.py': (13, '1f1c5bcee6689fb3d4ddfa4f2e8ea60875ca885f3e4a4ca34fa671e2500f150b'),
-    'tests/unit/test_default_style.py': (10, 'adff79a91b9cd99ed34ea6b7aee59ccb7d16766de45a20cf089cf1060e8cdaf3'),
+    'tests/unit/test_config_v4.py': (13, 'b36a29912a4e4740abf5dc157085cae275c8540fe69c7a5af5777ed16430ec0a'),
+    'tests/unit/test_default_style.py': (10, 'ebeea396815567f0ddcce5da328b30347e42f2a920456b03a7d0b060954805d9'),
     'tests/unit/test_edit_pipeline.py': (19, '184463986af5190f8960699e452c2950994faedbfb69ffcaaf6fa209482785f7'),
-    'tests/unit/test_edit_rewrite_pipeline.py': (12, '85df62b095943d72bcc52784970bc6341bf915cd6f6baa2a208462e04f916dea'),
-    'tests/contracts/test_ctr04_config.py': (45, '1a9a09c49bb9c365c6c1ce7ff0809f5c1435f2d52c5452a6163944054b751749'),
-    'tests/contracts/test_judged_final.py': (33, 'fe2b547e8acc28bdc7dac218401586028fe6dfdef03e37caf3422685a910fe5e'),
-    'tests/contracts/test_judged_schema.py': (34, '2883974d560a6db31c50aa5afa72b705e4eacfe480c182cdf0b2c6a99165164f'),
-    'tests/contracts/test_judged_tools.py': (71, 'aea73b1b37de58fde7c8be9e912505e9447bdfd809b9d80695d1b42b8e8a6d8b'),
-    'tests/contracts/test_judgment_contract.py': (8, '2e3e96a41deb81e344207d151407ff2e5754d690e827cbfc8676073fab86f918'),
-    'tests/integration/test_documentation.py': (6, '0270530cf9cb60e258b9348751ffe509cca70fed58fe1f16269fe0e746c14c72'),
-    'tests/integration/test_images.py': (10, '5d1bdd5905278d652d12a665129f67886a21c23f4cd297cdf018c5bd1db1c633'),
-    'tests/integration/test_judgment_skill.py': (11, 'bd458524f771071d2f4d95f404c784c79056e0083770bf396b8ec1cb119bb851'),
-    'tests/integration/test_judgment_startup.py': (8, '47ee861e8905ce9f5155820d90dd318167fa12012e9464eacf4459b10caf0c9f'),
-    'tests/integration/test_judgment_transport.py': (98, 'd99fd49796ba6b77cab066d3b9e7fae00a558d3c1b30a7e567ae065f0a4a80d0'),
-    'tests/integration/test_rewrite_transport.py': (11, '478a6b36da4e00733b95b6435cb23313cd97a5404fa7e4c31528d37bfabbbc08'),
-    'tests/unit/test_judged_budget.py': (29, 'c8389467771199cc4f82755ba0e81d252b811469e9adcd2a354de8bf3e28ed63'),
+    'tests/unit/test_edit_rewrite_pipeline.py': (20, '1cabe8b769290515636da12d6678e276c34e30d39e797e3d71448ddfb4a12a4e'),
+    'tests/contracts/test_ctr04_config.py': (44, '0fd1ea66070f391dcbe20ab1a08e10c0c0e74ab8ae8b286b2e2e5f11a6fe7be0'),
+    'tests/integration/test_documentation.py': (6, '679503c36cd8dbd7adb12c3a008620dbe40c137300bae897524a9b34836316e8'),
+    'tests/integration/test_images.py': (10, 'a8106e784e042ae2fe999da7d8d5d21fa832169917914d767353738144e42ab9'),
+    'tests/integration/test_judgment_skill.py': (11, '83f89efb0d4bd0af7112e7672a137284acb830abaca1960ffb0cfea38bb860cc'),
+    'tests/integration/test_judgment_startup.py': (9, '9f489b1f68c232cf34da17508f203aa3356dedb18c2f6500421f7d7a428ec2ec'),
+    'tests/integration/test_judgment_transport.py': (98, '51987bf929bbf543b6f793aa92164ba635dbf63b51bf02dd6d63bb122f35c901'),
+    'tests/integration/test_rewrite_transport.py': (11, 'efe88e12cfa0c7f83ee00ba0951132b44965fdd1b8a0232c3be7f978d1cf8997'),
+    'tests/unit/test_judged_budget.py': (14, '251ba5559df25c04808b118e397f13a82ac7e0c7b92a94e13f475c1c5e5eb103'),
     'tests/unit/test_judged_metrics.py': (20, '93bfe6c13301952234c699e066654973e0229ea3eef5c04c4feec6352e25e2de'),
-    'tests/unit/test_judged_rewrite.py': (15, '1ec5eafe2665b6dc5727d5f617402e13662694b6ade87df5d8d68f11ac2e01d2'),
-    'tests/unit/test_judged_service.py': (10, '237b77b13d13809b9f423588c00a00370bd210f3ce9058385faf309c42240982'),
-    'tests/unit/test_judgment.py': (181, '1b9470aafce99bfa5bbd80fcc84c415a8b0c6d35a341e3195310520db89829e8'),
-    'tests/unit/test_judgment_batch.py': (14, '2faa53ba0b04f57d1532e48af62dc0ac5a025b9792e7c0efc590eecc621bb661'),
-    'tests/unit/test_judgment_config.py': (45, '61ffc824970ea055d787481ba18d6c888885cb244ae5b9cea4829f4066982147'),
-    'tests/unit/test_typesafe.py': (55, '902e9b58f919b6d39468dd56d0cbd158e6bebb4c5a894285b1330607204db3cf'),
+    'tests/unit/test_judgment_config.py': (45, '22a0d22f730b311550ca989a508fe057830252718af87539368897d1227e285b'),
+    'tests/unit/test_typesafe.py': (52, 'be2d9f1e7ad727fb78eb32dff370b55e0652972e27f9b95501df9809c0ec6418'),
 }
 
 
 
 # Evaluation ownership is separate from runtime consumers.
 EVALUATION_MODULES = {
-    'tests/unit/test_generation4_evaluation.py': (23, '643126d9e344ed7028f0f180953cb9ac990e7d868a34eb69bc00ad5a0b6807ce'),
-    'tests/unit/test_judgment_examples.py': (74, '00d3c90298c579b37acd0a6d44b0b7c9e293bbdf63e7a3fb36e0c1c55f0ab9a9'),
-    'tests/unit/test_judgment_evaluation.py': (66, 'df05969bf72742a1ad2920c4253cd232b8d9abb05c1ad89f5e215134d5acea88'),
-    'tests/unit/test_judgment_calibration.py': (55, '933c1229814671451f8d6a9120ba9e48d61f5df92f4dbdd66d066ba6b76736fb'),
-    'tests/integration/test_judgment_acceptance.py': (65, '283d046de3f56a77f4f7bd73c60d9db85b95aab510cf88499bd1ea15351b310f'),
+    'tests/unit/test_generation4_evaluation.py': (22, '117f0a21c98e1baf8c5b8231a1e873eb4f564796e96e6a79fdff67adfd38bf6e'),
+    'tests/unit/test_judgment_examples.py': (74, '27d1c498bb8639488edea49c84805e37a0410a22f97eac56aace713cceefb605'),
+    'tests/unit/test_judgment_evaluation.py': (41, 'baf2a088cdb9ce6326937a9782554fba8d6dd991fb8d4401c2ca885fae188ed1'),
+    'tests/unit/test_judgment_calibration.py': (6, 'd20913f8a4a0379f92750e9e4dcaccfc470cd45864dd9dc64c56c78d8ceea1a0'),
+    'tests/integration/test_judgment_acceptance.py': (56, 'd9c74bc3621e761da85ebc21cc73d2e6092a409bfbb50c477f618b690cca0edb'),
 }
 EVALUATION_SETS = {
     'judgment-calibration': (30, '1f5bd7410d0a73864a0576dfc5565ef6d7dc67ee80bb6d7d130e98288679ef53'),
@@ -158,9 +146,9 @@ def pytest_report_collectionfinish(items):
 def phase1_inventory(root):
     from copyeditor.config import SCHEMA
     from copyeditor.rules import load_rules
-    from tests.contracts.harness import load_cases
+    from tests.contracts.harness import load_cases, generation4_cases
 
-    tools = load_cases(root / "contracts/tools.md", "contract-case")
+    tools = generation4_cases(root / "contracts/tools.md")
     if len(tools) != 31 or {case["name"] for case in tools} != REWRITE_TOOL_CASES:
         raise ValueError("Missing or replaced tool contract cases")
     html = load_cases(root / "rules/common.md", "html-case")
@@ -180,14 +168,9 @@ def phase1_inventory(root):
             raise ValueError("Empty or duplicate fixture inventory")
         groups[f"tests/{module}.py::{function}"] = payloads
 
-    for module, function, selected in [
-        ("requests", "test_ctr01_real_contract_inputs", tools),
-        ("responses", "test_ctr01_real_contract_provider_batches", [c for c in tools if c["provider"]]),
-        ("responses", "test_ac_02_2_ctr01_complete_contract_output_shapes", tools),
-        ("responses", "test_ctr01_final_contract_fixtures", tools),
-        ("tools", "test_ac_02_2_ac_02_3_ac_02_4_ac_02_10_ac_02_11_ac_02_12_ctr01_contract_service", tools),
-    ]:
-        cases(f"contracts/test_ctr01_{module}", function, ((c["name"], c) for c in selected), "case")
+    cases("contracts/test_ctr01_requests", "test_ctr01_real_contract_inputs", ((c["name"], c) for c in tools), "case")
+    cases("contracts/test_ctr01_tools", "test_generation4_migrated_contract_guarantees",
+          (("generation4-" + c["name"], c) for c in tools), "case")
     cases("contracts/test_ctr02_html", "test_ctr02_html_contract", ((c["name"], c) for c in html), "case")
     cases("contracts/test_ctr04_config", "test_ac_05_2_leaf_validation_and_precedence", ((name, name) for name in SCHEMA), "name")
     cases("contracts/test_ctr05_examples", "test_ac04_3_ac04_4_ac04_5_ctr03_ctr05_real_examples_accepted",

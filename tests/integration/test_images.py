@@ -22,8 +22,9 @@ from copyeditor import __main__ as entry
 from copyeditor import providers
 from copyeditor.providers.base import GenerationResult, Usage
 class Provider:
+    async def estimate_input(self, request): return 0
     async def generate(self, request):
-        return GenerationResult(json.dumps({"items": [dict(id=i.id, text=i.text, flag=None) for i in request.items]}), "stop", Usage(0, 0, 0))
+        return GenerationResult(json.dumps({"items": [dict(id=i.id, text=i.text, flag=None, diagnosis=None) for i in request.items]}), "stop", Usage(0, 0, 0))
     async def aclose(self): pass
 providers.create_provider = lambda config: Provider()
 import os, time, httpx2
@@ -87,8 +88,7 @@ async def call():
         proxy.set_mcp_path("/mcp")
         token = proxy.jwt_issuer.issue_access_token(client_id="client", scopes=SCOPES, jti="fixture", expires_in=900)
     async with Client(origin + "/mcp", auth=token) as client:
-        arguments = {"text": "Overlay in order to act."}
-        if not Path("/etc/copyeditor/config.yaml").exists(): arguments["language"] = "en"
+        arguments = {"text": "Overlay in order to act.", "language": "en"}
         result = await client.call_tool("polish_text", arguments)
         assert not result.is_error
         value = result.structured_content
@@ -147,12 +147,13 @@ def test_ac_05_1_ac_05_4_ctr04_all_images_and_secrets(images, tmp_path):
     assert failure.stderr == "ERROR: missing_required at vertex.project.\n"
     original = (ROOT / "rules/en.md").read_text()
     overlay = original.replace("en-vocabulary-001", "en-vocabulary-901").replace('"protected_terms": []', '"protected_terms": ["Overlay"]')
+    overlay = "\n".join(line for line in overlay.splitlines() if not line.startswith("Default style: ")) + "\n"
     (tmp_path / "en.md").write_text(overlay)
-    (tmp_path / "config.yaml").write_text("default_language: en\n")
+    (tmp_path / "config.yaml").write_text("auth: {mode: none}\n")
     (tmp_path / "Dockerfile").write_text(f"FROM {image}\nCOPY config.yaml /etc/copyeditor/config.yaml\nCOPY en.md /etc/copyeditor/rules.d/en.md\n")
     derived = label + ":none"
     docker("build", "--network", "none", "--label", "copyeditor.test=" + label, "-t", derived, str(tmp_path))
-    (tmp_path / "config.yaml").write_text('default_language: en\nauth:\n  mode: google\n  client_id: client\n'
+    (tmp_path / "config.yaml").write_text('auth:\n  mode: google\n  client_id: client\n'
         '  base_url: https://service.example\n  allowed_domains: [example.com]\n')
     google = label + ":google"
     docker("build", "--network", "none", "--label", "copyeditor.test=" + label, "-t", google, str(tmp_path))

@@ -76,9 +76,9 @@ def test_ac_08_11_ac_08_18_version_020_matches_server_and_both_plugins():
     assert load_config(root / "config.example.yaml", {"GOOGLE_CLOUD_PROJECT": "fixture"})["judgment.enabled"] is False
     en, ja = (root / "README.md").read_text().split("## 日本語\n")
     for section in (en, ja):
-        for term in ("Version 0.2.0", "judgment.enabled=false", "v1", "v2", "schema_version=3"):
+        for term in ("Version 0.2.0", "judgment.enabled=false", "schema_version=4"):
             assert term in section
-    assert all(term in en for term in ("v3-compatible client", "calibration, native Japanese review, and real-client acceptance remain pending",
-                                       "Offline CI success does not establish these results", "tagging and publication are separate owner operations"))
-    assert all(term in ja for term in ("v3対応client", "実機でのgate・verify校正、日本語のnativeレビュー、実clientでの受入は未確認",
-                                       "offline CIの成功はこれらの確認を意味しません", "tagと公開は所有者が別途行います"))
+    assert all(term in en for term in ("matching Skill", "calibration, native review and real-client quality acceptance are pending",
+                                       "Offline CI does not establish quality", "Tagging/publication remain separate owner operations"))
+    assert all(term in ja for term in ("対応Skill", "校正・native確認・実client品質受入は未完了",
+                                       "offline CIは品質を証明しません", "tag・公開は所有者の別操作"))

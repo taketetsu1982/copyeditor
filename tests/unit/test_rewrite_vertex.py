@@ -5,17 +5,16 @@ import httpx
 import pytest
 from google.auth.credentials import AnonymousCredentials
 
-from copyeditor.diagnosis import Diagnosis, DiagnosticItem
-from copyeditor.prompt import system_instruction
+from copyeditor.prompt import edit_system_instruction as system_instruction
+from copyeditor.edit_generation import generation_schema
 from copyeditor.providers import vertex
-from copyeditor.providers.base import Background, GenerationInput, ProviderFailure, SourceItem, Usage
+from copyeditor.providers.base import Background, EditGenerationInput as GenerationInput, ProviderFailure, SourceItem, Usage
 
 
 def generation(stage):
-    diagnoses = (DiagnosticItem("text", Diagnosis("issue", "body", "DIAGNOSIS_SENTINEL")),) if stage == "rewrite" else ()
     return GenerationInput((SourceItem("text", "body INPUT_SENTINEL", "CONTEXT_SENTINEL"),), "ja", "text",
         Background("", "", "", "BACKGROUND_SENTINEL"),
-        system_instruction("COMMON", "LANGUAGE", (), stage), stage, diagnoses)
+        system_instruction("COMMON", "LANGUAGE", (), stage), stage)
 
 
 @pytest.fixture
@@ -42,7 +41,7 @@ def sdk(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage", ["polish", "diagnose", "rewrite"])
+@pytest.mark.parametrize("stage", ["polish", "rewrite"])
 async def test_ac_07_6_ac_07_7_ctr01_real_sdk_count_and_generate_share_complete_prompt(sdk, stage, capsys):
     provider, calls, _ = sdk
     try:
@@ -60,13 +59,11 @@ async def test_ac_07_6_ac_07_7_ctr01_real_sdk_count_and_generate_share_complete_
         assert config["maxOutputTokens"] == 8192 and config["temperature"] == 0
         assert config["thinkingConfig"]["thinking_level"] == "LOW"
         schema = config["responseJsonSchema"]
-        assert schema["required"] == (["diagnoses"] if stage == "diagnose" else ["items"])
+        assert schema == generation_schema(stage)
         payload = json.loads(generated["contents"][0]["parts"][0]["text"])
-        assert ("diagnoses" in payload) == (stage == "rewrite")
+        assert "diagnoses" not in payload
         instruction = json.dumps(generated["systemInstruction"])
         assert "SENTINEL" not in instruction
-        if stage == "rewrite":
-            assert payload["diagnoses"][0]["reason"] == "DIAGNOSIS_SENTINEL"
         assert capsys.readouterr() == ("", "")
     finally:
         await provider.aclose()
@@ -78,7 +75,7 @@ async def test_ctr01_invalid_rpc_estimates_are_not_coerced_or_retried(sdk, estim
     provider, calls, behavior = sdk
     behavior["count"] = {"totalTokens": estimate}
     try:
-        assert await provider.estimate_input(generation("diagnose")) == ProviderFailure("provider_error", Usage(None, None, None))
+        assert await provider.estimate_input(generation("polish")) == ProviderFailure("provider_error", Usage(None, None, None))
         assert len(calls) == 1
     finally:
         await provider.aclose()
@@ -92,7 +89,7 @@ async def test_ac_07_11_ctr01_sdk_failures_are_fixed_and_never_retried(sdk, oper
     provider, calls, behavior = sdk
     behavior["status" if type(failure) is int else "error"] = failure
     try:
-        result = await getattr(provider, operation)(generation("diagnose"))
+        result = await getattr(provider, operation)(generation("polish"))
         assert result == ProviderFailure(code, Usage(None, None, None))
         assert len(calls) == 1 and capsys.readouterr() == ("", "")
     finally:
@@ -107,7 +104,7 @@ async def test_ctr01_remaining_request_deadline_cancels_real_sdk_await(sdk, oper
     try:
         with pytest.raises(TimeoutError):
             async with asyncio.timeout(0.05):
-                await getattr(provider, operation)(generation("diagnose"))
+                await getattr(provider, operation)(generation("polish"))
         assert len(calls) == 1
     finally:
         await provider.aclose()
@@ -117,8 +114,7 @@ async def test_ctr01_remaining_request_deadline_cancels_real_sdk_await(sdk, oper
 async def test_inv9_stage_and_frozen_subset_validation_precede_rpc(sdk):
     provider, calls, _ = sdk
     try:
-        for data in (generation("diagnose")._replace(stage="other"), generation("rewrite")._replace(diagnoses=()),
-                     generation("polish")._replace(diagnoses=generation("rewrite").diagnoses)):
+        for data in (generation("polish")._replace(stage="other"), generation("rewrite")._replace(stage="diagnose")):
             assert (await provider.estimate_input(data)).code == "provider_error"
             assert (await provider.generate(data)).code == "provider_error"
         assert calls == []

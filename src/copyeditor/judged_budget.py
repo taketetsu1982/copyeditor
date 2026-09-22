@@ -2,7 +2,7 @@ import asyncio
 from contextlib import contextmanager
 from decimal import Decimal
 
-from .judgment_batch import JudgmentBudgetError, prepare_judgments
+from .judgment_batch import JudgmentBudgetError
 from .rewrite_budget import RewriteBudget
 
 
@@ -36,22 +36,6 @@ class JudgedBudget(RewriteBudget):
         ceiling = amount([(262144, 8192 * self.meter.max_calls)], prices[0])
         if amount(editing, prices[0]) + amount(judgment, prices[1]) > ceiling:
             self.checkpoint(validation_error="request_budget")
-
-    def plan(self, data):
-        self.checkpoint()
-        failed = False
-        try:
-            prepared = prepare_judgments(data, policy_id=self.config["judgment.policy_version"],
-                remaining_calls=self.config["judgment.max_calls"] - len(self.judgment_reservations),
-                remaining_input_units=self.config["judgment.input_budget"] - sum(r[0] for r in self.judgment_reservations))
-        except JudgmentBudgetError:
-            failed = True
-        if failed:
-            self.checkpoint(validation_error="request_budget")
-        added = [(batch.input_units, 65536) for batch in prepared.plan.batches]
-        self._money(self.reservations, self.judgment_reservations + added)
-        self.judgment_reservations.extend(added)
-        return prepared
 
     @contextmanager
     def call(self, role, *, estimated_input=None, estimation=False, is_regeneration=False):

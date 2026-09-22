@@ -34,6 +34,8 @@ Replace cumbersome descriptions of purpose with ordinary Japanese expressions wh
 Do not infer that an unfamiliar expression is a translation error without context.
 
 ## Context weights
+
+Default style: Use natural, direct Japanese. Prefer familiar, concrete words and omit formulaic padding while preserving meaning and register.
 Use audience, purpose, tone, and message to choose among equally accurate expressions. Retain suitable politeness and established terminology; never invent benefits to strengthen promotional copy.
 - bad: 申請内容をご確認のうえ、送信してください。
 - good: 申請内容をご確認のうえ、送信してください。

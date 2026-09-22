@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from copyeditor.config import ConfigError, load_config as legacy_load
+from copyeditor.config import ConfigError, load_config as public_load
 from copyeditor.config_v4 import load_config
 from copyeditor.judgment_v2 import POLICY_ID
 
@@ -26,7 +26,7 @@ def test_disabled_defaults_have_null_threshold_and_never_read_secrets(tmp_path):
     assert config["judgment.enabled"] is False and config["judgment.thresholds_version"] is None
     assert config["judgment.policy_version"] == POLICY_ID and "default_language" not in config.values
     assert not config.secrets
-    assert legacy_load(tmp_path / "config.yaml", {"GOOGLE_CLOUD_PROJECT": "synthetic-project"})["default_language"] == "ja"
+    assert public_load(tmp_path / "config.yaml", {"GOOGLE_CLOUD_PROJECT": "synthetic-project"}).values == config.values
 
 
 @pytest.mark.parametrize("text,code,field", [

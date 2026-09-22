@@ -22,12 +22,10 @@ async def run(config_path=Path("/etc/copyeditor/config.yaml"), rules_path=Path("
     provider = judgment = None
     failure = ("invalid_config", "config")
     try:
-        config = load_config(config_path)
-        failure = ("invalid_rules", "rules")
         from .rules import load_rules
-        snapshot = load_rules(rules_path, overlay_path, config["protected_terms"])
-        if config["default_language"] not in snapshot.languages:
-            raise ConfigError("invalid_config", "default_language")
+        config = load_config(config_path, rules_loader=lambda values: load_rules(
+            rules_path, overlay_path, values["protected_terms"]))
+        snapshot = config.rules
         failure = ("credentials_unavailable", "credentials")
         from .providers import create_provider
         provider = create_provider(config)

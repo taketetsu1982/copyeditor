@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_ac_08_1_2_3_4_5_6_7_8_9_10_11_12_15_16_17_18_ctr01_ctr04_fixed_consumers(collected_contracts):
-    assert len(JUDGMENT_MODULES) == 31
-    assert 'tests/unit/test_judgment_batch.py' in JUDGMENT_MODULES
+    assert len(JUDGMENT_MODULES) == 23
+    assert 'tests/unit/test_judgment_v2_batch.py' in JUDGMENT_MODULES
     assert all(judgment_fingerprint(ROOT, module, collected_contracts.items) == expected
                for module, expected in JUDGMENT_MODULES.items())
     assert len(judgment_inventory()) == len(JUDGMENT_MODULES)
@@ -35,7 +35,7 @@ def test_ac_08_1_7_12_16_ctr01_ctr04_missing_or_replaced_real_consumer_fails(col
 
 
 @pytest.mark.parametrize('change', ['ok', 'delete', 'case', 'replace', 'parameter', 'body', 'skip', 'xfail', 'xpass'])
-def test_ac_08_1_5_7_9_12_ctr01_ctr04_v3_gate_through_cli_without_keys(suite, monkeypatch, change):
+def test_ac_08_1_5_7_9_12_ctr01_ctr04_v4_gate_through_cli_without_keys(suite, monkeypatch, change):
     for key in ('TYPESAFE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_API_KEY'):
         monkeypatch.delenv(key, raising=False)
     module = 'tests/test_judgment.py'
@@ -66,7 +66,7 @@ def test_ac_08_1_5_7_9_12_ctr01_ctr04_v3_gate_through_cli_without_keys(suite, mo
 
 @pytest.mark.parametrize('outcome', ['passed', 'skipped', 'xfail', 'xpass', 'missing'])
 def test_ac_08_7_9_12_ctr01_ctr04_execution_gate_is_independent_of_source_pins(collected_contracts, outcome):
-    item = next(i for i in collected_contracts.items if i.nodeid.startswith('tests/unit/test_judgment_batch.py::'))
+    item = next(i for i in collected_contracts.items if i.nodeid.startswith('tests/unit/test_judgment_v2_batch.py::'))
     gate = Phase1Contracts(collected_contracts.config)
     gate.items = [item]
     for when in ('setup', 'call', 'teardown'):

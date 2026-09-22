@@ -5,7 +5,7 @@ import math
 import httpx
 
 from ..config import ConfigError
-from ..judgment import JudgmentBlockResult, JudgmentFailure, JudgmentResult, _probability, validate_choice
+from ..judgment import JudgmentBlockResult, JudgmentFailure, JudgmentResult, _probability
 from ..responses import reject_constant, unique_object, valid
 from .base import Usage
 
@@ -35,13 +35,8 @@ def _parse(data, request):
         probabilities, choice = blocks.setdefault(ordinal, ([], None))
         answer = answers[key]
         valid(type(answer) is dict and answer.get("type") == question["type"])
-        if question["type"] in ("noul", "Noul"):
-            valid(set(answer) == {"type", "noul"})
-            probabilities.append((predicate, _probability(answer["noul"])))
-        else:
-            valid(question["type"] == "choice")
-            valid(set(answer) == {"type", "choice", "probabilities", "confidence"})
-            choice = validate_choice(answer["choice"], answer["probabilities"], answer["confidence"])
+        valid(question["type"] == "Noul" and set(answer) == {"type", "noul"})
+        probabilities.append((predicate, _probability(answer["noul"])))
         blocks[ordinal] = (probabilities, choice)
     return tuple(JudgmentBlockResult(ordinal, tuple(probabilities), choice)
                  for ordinal, (probabilities, choice) in sorted(blocks.items()))

@@ -14,7 +14,8 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from copyeditor.config import load_config
 from copyeditor.providers.base import GenerationResult, Usage
 from copyeditor.requests import edit_input_schema
-from copyeditor.responses import tool_output_schema, validate_final
+from copyeditor.edit_protocol import output_schema as tool_output_schema, validate_final
+from copyeditor.providers.base import SourceItem
 from copyeditor.rules import load_rules
 from copyeditor.server import INSTRUCTIONS, build_server
 from copyeditor.service import Service
@@ -30,7 +31,7 @@ def setup(tmp_path, capsys, caplog):
     disabled = logging.root.manager.disable
     created, records = [], []
     def make(mode="none", flag=None, asynchronous=False, candidate=None):
-        env = {"GOOGLE_CLOUD_PROJECT": "test", "COPYEDITOR_DEFAULT_LANGUAGE": "en"}
+        env = {"GOOGLE_CLOUD_PROJECT": "test"}
         if mode == "google":
             env.update(COPYEDITOR_AUTH_MODE="google", GOOGLE_OAUTH_CLIENT_ID="client", BASE_URL="https://service.example",
                        COPYEDITOR_ALLOWED_DOMAINS='["example.com"]', GOOGLE_OAUTH_CLIENT_SECRET=secrets.token_urlsafe(32),
@@ -38,9 +39,10 @@ def setup(tmp_path, capsys, caplog):
         config = load_config(tmp_path / "absent", env)
         snapshot = load_rules(ROOT / "rules", None)
         class Provider:
+            async def estimate_input(self, value): return 0
             async def generate(self, value):
                 items = [dict(id=i.id, text=i.text if flag != "reject" else i.text.replace("10", "11"),
-                              flag=dict(kind="unfixable", reason="Cannot edit.") if flag == "unfixable" else None) for i in value.items]
+                              flag=dict(kind="unfixable", reason="Cannot edit.") if flag == "unfixable" else None, diagnosis=None) for i in value.items]
                 if candidate is not None:
                     items = [dict(item, text=candidate) for item in items]
                 return GenerationResult(json.dumps({"items": items}), "stop", Usage(1, 2, 3))
@@ -61,7 +63,7 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_discovery(setup):
     server, config, snapshot = make()
     async with Client(server) as client:
         assert client.instructions == INSTRUCTIONS
-        contract = (ROOT / "contracts/tools.md").read_text().split("## Initialization instructions")[1].split("```text\n")[1].split("\n```")[0]
+        contract = (ROOT / "contracts/tools.md").read_text().split("Initialization instructions (disabled:")[1].splitlines()[1].strip(chr(34)).replace(" and TypeSafe AI", "")
         assert INSTRUCTIONS == contract
         tools = await client.list_tools()
         assert {tool.name for tool in tools} == {"polish_text", "lint_text"}
@@ -81,11 +83,11 @@ async def test_ac_02_1_ac_02_5_ctr01_fixed_results_and_single_audit(setup, kind)
     make, created, records = setup
     server, _, _ = make(flag=kind, asynchronous=kind == "lint")
     tool = "lint_text" if kind == "lint" else "polish_text"
-    args = {"text": "Pay 10."} if kind != "invalid" else {"text": MARKER, "unknown": MARKER}
+    args = {"text": "Pay 10.", "language": "en"} if kind != "invalid" else {"text": MARKER, "unknown": MARKER}
     async with Client(server) as client:
         result = await client.call_tool(tool, args, raise_on_error=False)
     payload = result.structured_content
-    validate_final(payload)
+    validate_final(payload, (SourceItem("text", "Pay 10.", ""),), tool=tool)
     assert len(result.content) == 1
     assert result.content[0].text == json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     assert result.is_error == (kind == "invalid")
@@ -107,7 +109,7 @@ async def test_ctr04_ctr01_authenticated_audit_hmac(setup):
     context = auth_context_var.set(AuthenticatedUser(token))
     try:
         async with Client(server) as client:
-            result = await client.call_tool("lint_text", {"text": "Hello."})
+            result = await client.call_tool("lint_text", {"text": "Hello.", "language": "en"})
         assert not result.is_error
     finally:
         auth_context_var.reset(context)
@@ -172,17 +174,17 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_raw_asgi(setup, authe
             ping = b'{"jsonrpc":"2.0","id":1,"method":"ping"}'
             assert (await client.post("/mcp", content=ping + b" " * (262144 - len(ping)))).json()["result"] == {}
             assert (await client.post("/mcp", content=ping + b" " * (262145 - len(ping)))).status_code == 413
-            for arguments in ([], None, MARKER, 1, True, {"text": MARKER, "extra": MARKER}, {"text": "Hello."}):
+            for arguments in ([], None, MARKER, 1, True, {"text": MARKER, "extra": MARKER}, {"text": "Hello.", "language": "en"}):
                 response = await client.post("/mcp", json=call(arguments))
                 assert response.status_code == 200
                 result = response.json()["result"]
                 payload = result["structuredContent"]
-                validate_final(payload)
+                validate_final(payload, tool="lint_text")
                 assert json.loads(result["content"][0]["text"]) == payload
-                assert result["isError"] == (arguments != {"text": "Hello."})
+                assert result["isError"] == (arguments != {"text": "Hello.", "language": "en"})
                 assert MARKER not in response.text + str(response.headers)
             assert len(records) == 7 and not created and MARKER not in json.dumps(records)
-            polished = await client.post("/mcp", json=call({"text": "Hello."}) | {"params": {"name": "polish_text", "arguments": {"text": "Hello."}}})
+            polished = await client.post("/mcp", json=call({"text": "Hello.", "language": "en"}) | {"params": {"name": "polish_text", "arguments": {"text": "Hello.", "language": "en"}}})
             assert polished.json()["result"]["structuredContent"]["text"] == "Hello."
             assert len(records) == 8 and len(created) == 1
 
@@ -293,18 +295,18 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_tcp_acceptance(tcp_se
             assert tool["annotations"]["openWorldHint"] == (tool["name"] == "polish_text")
         assert not created and not records
         for tool in ("polish_text", "lint_text"):
-            for arguments in ([], None, 1, True, MARKER, {"text": MARKER, "extra": MARKER}, {"text": "Hello."}):
+            for arguments in ([], None, 1, True, MARKER, {"text": MARKER, "extra": MARKER}, {"text": "Hello.", "language": "en"}):
                 before = len(records)
                 response = await client.post("/mcp", json=rpc("tools/call", name=tool, arguments=arguments))
                 result = response.json()["result"]
                 payload = result["structuredContent"]
-                validate_final(payload)
+                validate_final(payload, (SourceItem("text", "Hello.", ""),), tool=tool)
                 assert response.status_code == 200 and len(result["content"]) == 1
                 assert result["content"][0]["text"] == json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-                failed = arguments != {"text": "Hello."}
+                failed = arguments != {"text": "Hello.", "language": "en"}
                 assert result["isError"] == failed and (payload["status"] == "error") == failed
                 if failed:
-                    assert payload["error"]["code"] == "invalid_input" and payload["model_calls"] == 0
+                    assert payload["error"]["code"] == "invalid_input" and payload.get("providers", [payload])[0]["model_calls"] == 0
                 assert len(records) == before + 1 and set(records[-1]) == FIELDS
                 assert records[-1]["tool"] == tool and records[-1]["status"] == ("error" if failed else "ok")
                 assert MARKER not in response.text + str(response.headers) + json.dumps(records)
@@ -340,14 +342,16 @@ def input_boundaries():
 @pytest.mark.consumer("CTR-01")
 @pytest.mark.parametrize("case,arguments,language,error", list(input_boundaries()), ids=lambda x: x if type(x) is str else None)
 async def test_ac_02_1_ac_02_5_ac_02_6_ctr01_tcp_input_boundaries(tcp_server, case, arguments, language, error):
+    arguments = {"language": "en", **arguments}
+    originals = tuple(SourceItem(i["id"], i["text"], i.get("context", "")) for i in arguments.get("items", [dict(id="text", text=arguments.get("text", ""))]))
     async with tcp_server(False) as (client, config, snapshot, created, records):
         response = await client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="polish_text", arguments=arguments)))
         result = response.json()["result"]
         payload = result["structuredContent"]
-        validate_final(payload)
+        validate_final(payload, originals)
         assert response.status_code == 200 and payload["language"] == language
         assert result["isError"] == bool(error) and payload.get("error", {}).get("code") == error
-        assert payload["model_calls"] == len(created) == (0 if error else 1)
+        assert payload["providers"][0]["model_calls"] == len(created) == (0 if error else 1)
         if error:
             assert payload["model_called"] is False
         else:
@@ -355,7 +359,7 @@ async def test_ac_02_1_ac_02_5_ac_02_6_ctr01_tcp_input_boundaries(tcp_server, ca
             if "items" in arguments:
                 assert [item["id"] for item in payload["items"]] == [item["id"] for item in arguments["items"]]
         assert len(records) == 1 and records[0]["language"] == language and records[0]["error_code"] == error
-        assert records[0]["model_calls"] == payload["model_calls"]
+        assert records[0]["model_calls"] == payload["providers"][0]["model_calls"]
 
 
 @pytest.mark.asyncio

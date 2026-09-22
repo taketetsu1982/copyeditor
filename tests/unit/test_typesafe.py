@@ -9,23 +9,20 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from copyeditor.judgment import ACTION_CRITERIA, JudgmentBlock, JudgmentInput, JudgmentFailure, classify_detection
-from copyeditor.judgment_batch import prepare_judgments
+from copyeditor.judgment import JudgmentBlock, JudgmentInput, JudgmentFailure
+from copyeditor.judgment_v2_batch import prepare_judgments
 from copyeditor.providers.base import Background, Usage
 from copyeditor.providers.typesafe import TypeSafe
 
 
 def prepared(phase="detect"):
     return prepare_judgments(JudgmentInput(phase, "ja", "text", Background("", "", "", ""), "",
-        tuple(JudgmentBlock(i, "synthetic body", "", "candidate", "simplify_phrasing") for i in (2, 4)))).requests[0]
+        tuple(JudgmentBlock(i, "synthetic body", "", "candidate", None) for i in (2, 4))),
+        candidate_round=0 if phase == "detect" else 1).requests[0]
 
 
 def answer(request):
-    payload = json.loads(request)
-    answers = {key: (dict(type="noul", noul=0.9) if question["type"] == "noul" else
-        dict(type="choice", choice="simplify_phrasing", confidence=0,
-             probabilities={action: int(action == "simplify_phrasing") for action in ACTION_CRITERIA}))
-        for key, question in payload["questions"].items()}
+    answers = {key: dict(type="Noul", noul=0.9) for key in json.loads(request)["questions"]}
     return dict(model="jev-1.13.0", answers=answers, usage=dict(input_tokens=20, output_tokens=30))
 
 
@@ -34,7 +31,7 @@ def adapter(handler):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase,count", [("detect", 14), ("verify", 8)])
+@pytest.mark.parametrize("phase,count", [("detect", 2), ("verify", 4)])
 async def test_exact_prepared_request_and_complete_results(phase, count):
     request, seen = prepared(phase), []
     def handler(wire):
@@ -48,11 +45,7 @@ async def test_exact_prepared_request_and_complete_results(phase, count):
     result = await client.evaluate(request)
     assert [block.ordinal for block in result.blocks] == [2, 4]
     assert result.usage == Usage(20, 30, None)
-    if phase == "detect":
-        assert classify_detection(result.blocks[0])["status"] == "eligible"
-        assert result.blocks[0].choice.confidence == 0
-    else:
-        assert all(block.choice is None and len(block.probabilities) == 4 for block in result.blocks)
+    assert all(block.choice is None and len(block.probabilities) == count // 2 for block in result.blocks)
     assert len(seen) == 1
     await client.aclose()
     assert (await client.evaluate(request)).code == "provider_error"
@@ -60,8 +53,7 @@ async def test_exact_prepared_request_and_complete_results(phase, count):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["model", "id", "extra_id", "type", "field", "missing", "distribution", "selected",
-                                   "confidence", "boolean", "duplicate", "nan", "overflow", "oversize", "output", "top", "json"])
+@pytest.mark.parametrize("kind", ["model", "id", "extra_id", "type", "field", "missing", "boolean", "duplicate", "nan", "overflow", "oversize", "output", "top", "json"])
 async def test_invalid_wire_fails_without_retry_or_private_details(kind, caplog, capsys):
     request, calls = prepared(), []
     data = answer(request)
@@ -71,10 +63,7 @@ async def test_invalid_wire_fails_without_retry_or_private_details(kind, caplog,
     if kind == "extra_id": data["answers"]["foreign"] = data["answers"][key]
     if kind == "type": data["answers"][key]["type"] = "choice"
     if kind == "field": data["answers"][key]["reason"] = "PRIVATE"
-    if kind == "missing": del data["answers"]["b0002.action"]["confidence"]
-    if kind == "distribution": data["answers"]["b0002.action"]["probabilities"]["preserve_as_is"] = 0.5
-    if kind == "selected": data["answers"]["b0002.action"]["choice"] = "preserve_as_is"
-    if kind == "confidence": data["answers"]["b0002.action"]["confidence"] = 1.1
+    if kind == "missing": del data["answers"][key]["noul"]
     if kind == "boolean": data["answers"][key]["noul"] = True
     if kind == "output": data["usage"]["output_tokens"] = 65537
     if kind == "top": data["PRIVATE"] = "PRIVATE"

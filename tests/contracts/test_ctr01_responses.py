@@ -1,3 +1,4 @@
+"""Shared schema primitives; public generation-four cases live in test_ctr01_tools."""
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -6,10 +7,9 @@ import pytest
 from jsonschema import Draft202012Validator
 from copyeditor.providers.base import GenerationResult, SourceItem, Usage
 from copyeditor.requests import MESSAGES, ValidationError
-from copyeditor.responses import output_schema, parse_generation, validate_final
+from copyeditor.responses import output_schema, validate_final
+from copyeditor.edit_generation import parse_generation
 from .harness import assert_subset, load_cases, source_items, is_rewrite, fixture_schema, validate_fixture, generation_result
-from .test_ctr01_tools import invoke
-from copyeditor.diagnosis import parse_diagnoses
 from copyeditor.rewrite_response import BUDGET_MESSAGE
 
 pytestmark = pytest.mark.consumer("CTR-01")
@@ -17,12 +17,12 @@ CASES = load_cases(Path(__file__).resolve().parents[2] / "contracts/tools.md", "
 
 
 def item(identity="a", text="Hello.", flag=None):
-    return {"id": identity, "text": text, "flag": flag}
+    return {"id": identity, "text": text, "flag": flag, "diagnosis": None}
 
 
 def parse(value, ids=("a",), finish="stop", raw=False):
     return parse_generation(GenerationResult(value if raw else json.dumps(value), finish, Usage(None, None, None)),
-                            tuple(SourceItem(identity, "original", "") for identity in ids))
+                            tuple(SourceItem(identity, "Hello.", "") for identity in ids), stage="polish")
 
 
 def rejected(value, code="invalid_response", **kwargs):
@@ -72,27 +72,14 @@ def test_ac_02_2_ac_02_4_ctr01_integrity_before_limits_and_source_order():
         for values in ([item(text="x"*16001), bad], [bad, item(text="x"*16001)]):
             rejected({"items": values}, ids=("a", "b"))
     rejected({"items": [item(text="x"*16001)]}, ids=("a", "b"))
-    result = parse({"items": [item("b", "\x1c"), item(text=" e\u0301 ", flag={"kind": "unfixable", "reason": "x"*160})]}, ("a", "b"))
-    assert tuple(v.id for v in result) == ("a", "b") and result[0].text == " e\u0301 " and result[1].text == "\x1c"
+    result = parse({"items": [item("b", "\x1c"), item(text="Hello.", flag={"kind": "unfixable", "reason": "x"*160})]}, ("a", "b"))
+    assert tuple(v.id for v in result) == ("a", "b") and result[0].text == "Hello." and result[1].text == "\x1c"
     assert result[0].flag == {"kind": "unfixable", "reason": "x"*160}
     with pytest.raises(TypeError): result[0].flag["reason"] = "changed"
     assert parse({"items": [item("b")]}, ("b",))[0].id == "b"
     rejected({"items": [item("b")]}, ids=("a", "b"))
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("case", [c for c in CASES if c["provider"]], ids=lambda c: c["name"])
-async def test_ctr01_real_contract_provider_batches(case, invoke):
-    _, inputs = await invoke(case["tool"], case["input"], case["provider"], prepared=True)
-    for data, batch in zip(inputs, case["provider"]):
-        generated = generation_result(batch)
-        try:
-            parsed = (parse_diagnoses(generated, data.items) if data.stage == "diagnose" else
-                      parse_generation(generated, data.items, data.diagnoses if data.stage == "rewrite" else None))
-        except ValidationError as error:
-            assert case["expect"]["status"] == "error" and error.code == case["expect"]["error"]["code"]
-        else:
-            assert [item.id for item in parsed] == [item.id for item in data.items]
 
 
 def test_ctr01_unicode_space_and_scalar_boundaries():
@@ -148,13 +135,6 @@ def public_fixture(case):
     return complete_subset(base, expect)
 
 
-@pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
-def test_ac_02_2_ctr01_complete_contract_output_shapes(case):
-    schema = fixture_schema(case)
-    Draft202012Validator.check_schema(schema)
-    payload = public_fixture(case)
-    assert_subset(payload, case["expect"])
-    Draft202012Validator(schema).validate(payload)
 
 
 @pytest.mark.parametrize("tool", ["polish_text", "lint_text"])
@@ -297,12 +277,6 @@ def final_rejected(payload, code="invalid_response"):
     assert str(caught.value) == MESSAGES[code]
 
 
-@pytest.mark.parametrize("case", CASES, ids=lambda c: c["name"])
-def test_ctr01_final_contract_fixtures(case):
-    payload = public_fixture(case)
-    before = deepcopy(payload)
-    validate_fixture(payload, case)
-    assert payload == before
 
 
 @pytest.mark.parametrize("route", ["text", "items"])
@@ -407,22 +381,3 @@ def test_ctr01_final_regeneration_matches_call_count(route, calls, attempted):
     else: (payload["items"][0] if route == "items" else payload)["regenerated"] = attempted
     if attempted == (calls == 2) and (route == "error" or calls > 0): validate_final(payload)
     else: final_rejected(payload)
-
-
-@pytest.mark.parametrize("route", ["text", "items", "error"])
-def test_ac_07_4_ctr01_complete_rewrite_fixture_and_version_mismatch(route):
-    from .harness import rewrite_case
-    case = rewrite_case()
-    if route == "items":
-        case["input"] = dict(items=[dict(id="a", text="Hello.")], degree="rewrite")
-        case["provider"][0]["diagnoses"][0]["id"] = "a"
-        case["expect"] = dict(status="ok", items=[dict(id="a", diagnosis=case["expect"]["diagnosis"])])
-    elif route == "error":
-        case["expect"] = dict(status="error", error=dict(code="invalid_response"), regeneration_attempted=False)
-    payload = public_fixture(case)
-    Draft202012Validator(fixture_schema(case)).validate(payload)
-    validate_fixture(payload, case)
-    assert payload["schema_version"] == 2 and payload["degree"] == "rewrite"
-    assert not Draft202012Validator(output_schema("polish_text")).is_valid(payload)
-    with pytest.raises(ValidationError): validate_fixture({**payload, "schema_version": 1}, case)
-    if route == "error": assert not payload["regeneration_attempted"] and payload["model_calls"] == 2

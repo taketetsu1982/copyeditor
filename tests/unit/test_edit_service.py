@@ -25,9 +25,9 @@ async def entry(tmp_path):
         if source.name == 'README.md': continue
         raw = source.read_text()
         if source.stem != 'common':
-            raw = raw.replace('## Context weights\n', f'## Context weights\nDefault style: Default {source.stem} style.\n')
+            raw = '\n'.join(f'Default style: Default {source.stem} style.' if line.startswith('Default style: ') else line for line in raw.split('\n'))
         (tmp_path / source.name).write_text(raw)
-    rules = load_rules(tmp_path, None, generation4=True)
+    rules = load_rules(tmp_path, None)
     adapters = []
     def make(enabled=False):
         inputs, wires, estimates = [], [], []
@@ -136,9 +136,12 @@ async def test_cancel_is_not_converted_to_an_application_error(entry, monkeypatc
         await entry()[0].polish(dict(text='Original.', language='en'))
 
 
-def test_generation4_loader_requires_style_without_changing_legacy_rules():
-    assert load_rules(Path('rules'), None).languages['en'].default_style == ''
-    with pytest.raises(ConfigError): load_rules(Path('rules'), None, generation4=True)
+def test_public_loader_requires_builtin_style(tmp_path):
+    assert load_rules(Path('rules'), None).languages['en'].default_style
+    for source in Path('rules').glob('*.md'):
+        raw = '\n'.join(line for line in source.read_text().split('\n') if not line.startswith('Default style: '))
+        (tmp_path / source.name).write_text(raw)
+    with pytest.raises(ConfigError): load_rules(tmp_path, None)
 
 
 @pytest.mark.asyncio

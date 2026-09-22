@@ -40,44 +40,6 @@ def reject_constant(_):
     raise ValueError()
 
 
-def parse_generation(result, expected_items, diagnoses=None):
-    if result.finish != "stop":
-        code = ("generation_truncated" if result.finish == "truncated" else
-                "provider_error" if result.finish == "blocked" else "invalid_response")
-        raise ValidationError(code, None)
-    data = None
-    if type(result.raw_json) is str:
-        try:
-            data = json.loads(result.raw_json, object_pairs_hook=unique_object, parse_constant=reject_constant)
-        except (ValueError, RecursionError):
-            pass
-    # Raising outside the handler avoids retaining JSONDecodeError.doc as context.
-    valid(type(data) is dict and set(data) == {"items"})
-    valid(type(data["items"]) is list and bool(data["items"]))
-    expected = [item.id for item in expected_items]
-    candidates = {}
-    for item in data["items"]:
-        valid(type(item) is dict and set(item) == {"id", "text", "flag"})
-        identity = item["id"]
-        valid(type(identity) is str and re.fullmatch(ID, identity) is not None)
-        valid(identity not in candidates)
-        valid(nonblank(item["text"]))
-        flag = item["flag"]
-        if flag is not None:
-            valid(type(flag) is dict and set(flag) == {"kind", "reason"})
-            valid(flag["kind"] == "unfixable" and nonblank(flag["reason"]))
-            valid(len(flag["reason"]) <= 160)
-            flag = MappingProxyType(flag)
-        candidates[identity] = Candidate(identity, item["text"], flag)
-    valid(len(expected) == len(set(expected)) and set(candidates) == set(expected))
-    if diagnoses is not None:
-        from .diagnosis import check_no_issue
-        check_no_issue(diagnoses, expected_items, tuple(candidates.values()))
-    if any(len(item.text) > 16000 for item in candidates.values()) or sum(len(item.text) for item in candidates.values()) > 16000:
-        raise ValidationError("output_limit", None)
-    return tuple(candidates[identity] for identity in expected)
-
-
 def output_schema(tool):
     from .requests import LANGUAGE, MESSAGES
 
@@ -210,11 +172,3 @@ def validate_final(payload, *, schema=None, rewrite=False, check_limits=True):
     valid(encoded is not None)
     if len(encoded) > 1048576:
         raise ValidationError("output_limit", None)
-
-
-def tool_output_schema(tool):
-    schema = output_schema(tool)
-    if tool == "polish_text":
-        from .rewrite_response import rewrite_output_schema
-        schema["oneOf"].extend(rewrite_output_schema()["oneOf"])
-    return schema

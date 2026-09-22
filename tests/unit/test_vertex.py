@@ -6,10 +6,11 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock
 import pytest
 from copyeditor.config import ConfigError, load_config
-from copyeditor.prompt import system_instruction
+from copyeditor.prompt import edit_system_instruction as system_instruction
+from copyeditor.edit_generation import generation_schema
 from copyeditor.providers import create_provider
 from copyeditor.providers import vertex
-from copyeditor.providers.base import Background, GenerationInput, ProviderFailure, SourceItem, Usage
+from copyeditor.providers.base import Background, EditGenerationInput as GenerationInput, ProviderFailure, SourceItem, Usage
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     client = NS(aio=NS(models=NS(generate_content=AsyncMock()), aclose=AsyncMock()), close=Mock())
@@ -39,7 +40,7 @@ async def test_ac_05_5_generation_boundary(setup, monkeypatch, capsys, finish, e
     assert sent["model"] == "gemini-3.1-flash-lite" and json.loads(sent["contents"])["items"][0]["text"] == data.items[0].text
     assert "secret" not in sent["config"].system_instruction and instruction.index("COMMON") < instruction.index("LANGUAGE") < instruction.index('"term"')
     assert (sent["config"].temperature, sent["config"].max_output_tokens, sent["config"].response_mime_type) == (0, 8192, "application/json")
-    assert sent["config"].thinking_config.thinking_level.value == thinking.upper() and sent["config"].response_json_schema == vertex.RESPONSE_SCHEMA
+    assert sent["config"].thinking_config.thinking_level.value == thinking.upper() and sent["config"].response_json_schema == generation_schema("polish")
     response.usage_metadata.thoughts_token_count = None
     assert (await provider.generate(data)).usage == Usage(2, None, 12)
     response.usage_metadata = None

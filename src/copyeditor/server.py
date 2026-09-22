@@ -12,30 +12,24 @@ from mcp.types import TextContent, ToolAnnotations
 
 from .auth import disable_library_logging
 from .requests import MESSAGES, edit_input_schema
-from .responses import tool_output_schema
-from .judged_response import judged_output_schema
-from .service import judged_error
+from .edit_protocol import output_schema
+from .edit_service import error_payload
 
 INSTRUCTIONS = (
-    'copyeditor sends polish_text body, context and background to this server and Vertex AI. This server does not '
-    'persist them or candidates. Compare meaning and preservation before applying local edits. Use either text or '
-    'items [{id,text,context?}], never both; html uses text only. Set language explicitly when known; otherwise the '
-    'server default applies. lint_text accepts text and language and calls no model. Keep originals on errors and '
-    'flags. Provider retention follows its own policy.'
+    'copyeditor sends polish_text body and context/background to Vertex AI. '
+    'This server does not persist body, candidates or judgments; providers govern retention. '
+    'Use text or items [{id,text,context?}], never both; html uses text only. '
+    'Set language when known; otherwise the server detects it without a default. lint_text calls no provider. '
+    'Compare results before applying them manually. Keep originals on errors and flags. '
+    'Judgment may cause one shared retry; it is not proof of correctness.'
 )
 
 
 def build_server(config, snapshot, service, auth, audit_sink):
     disable_library_logging()
     enabled = config["judgment.enabled"]
-    disclosure = ("Body, permitted context and background, and candidates may be sent to TypeSafe AI. "
-                  "Provider retention and processing region are governed by that provider. "
-                  "Judgment does not replace your meaning comparison or approval.")
-    instructions = ("copyeditor sends polish_text body, permitted context/background and candidates to Vertex AI and TypeSafe AI. "
-        "This server does not persist them or judgment results. Providers govern their own retention and processing regions. "
-        "Compare meaning before applying edits. Use text or items [{id,text,context?}], never both; html uses text only. "
-        "Set language when known. lint_text calls no model. Keep originals on errors and flags. "
-        "Judgment is not permission or proof of meaning preservation.")
+    disclosure = ("Body, permitted context/background and candidates may also be sent to TypeSafe AI. "
+                  "Provider retention and processing region follow its own policy.")
     marker = "copyeditor.judgment=" + ("on; destinations=Vertex AI, TypeSafe AI" if enabled else "off; destinations=Vertex AI")
 
     class PublicTool(Tool):
@@ -48,17 +42,10 @@ def build_server(config, snapshot, service, auth, audit_sink):
                     raise ToolError("Authentication failed.")
                 user = hmac.new(config.secrets["OAUTH_SIGNING_KEY"].encode(),
                                 ("copyeditor-audit:" + sub).encode(), hashlib.sha256).hexdigest()[:24]
-            language = arguments.get("language", config["default_language"])
-            payload = dict(status="error", schema_version=1, error=dict(code="internal_error", message=MESSAGES["internal_error"], field=None),
-                           language=language if type(language) is str and language in snapshot.languages else None,
-                           rules_version=snapshot.rules_version, common_version=snapshot.common_version,
-                           model=config["model"] if self.name == "polish_text" else None,
-                           usage=dict(input_tokens=0, output_tokens=0, total_tokens=0), cost=None, latency_ms=0,
-                           model_calls=0, model_called=False, regeneration_attempted=False)
-            if self.name == "polish_text" and arguments.get("degree") == "rewrite":
-                payload.update(schema_version=2, degree="rewrite")
-            if self.name == "polish_text" and enabled:
-                payload = judged_error(config, snapshot, arguments)
+            language = arguments.get("language")
+            payload = error_payload(self.name, config, snapshot, arguments,
+                language=language if type(language) is str and language in snapshot.languages else None,
+                registry=service.registry)
             try:
                 try:
                     payload = await getattr(service, "polish" if self.name == "polish_text" else "lint")(arguments)
@@ -72,22 +59,22 @@ def build_server(config, snapshot, service, auth, audit_sink):
                 items = [] if failed else payload.get("items", [payload] if "text" in payload else [])
                 kinds = [item["flag"]["kind"] for item in items if item["flag"]]
                 projected = payload
-                if payload["schema_version"] == 3:
+                if self.name == "polish_text":
                     projected = {**payload, **{key: payload["providers"][0][key] for key in ("model", "usage", "cost", "model_calls")}}
                 record = {key: projected[key] for key in ("language", "rules_version", "model", "usage", "cost", "latency_ms", "model_calls")}
                 record.update(timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), user=user,
                               tool=self.name, status="error" if failed else "flagged" if kinds else "ok",
                               error_code=payload["error"]["code"] if failed else None,
                               regenerated=payload["regeneration_attempted"] if failed else any(item["regenerated"] for item in items),
-                              rejected_count=kinds.count("rejected") + kinds.count("verification_rejected"), unfixable_count=kinds.count("unfixable"))
+                              rejected_count=kinds.count("rejected"), unfixable_count=kinds.count("unfixable"))
                 result = audit_sink(record)
                 if inspect.isawaitable(result):
                     await result
 
-    server = PublicServer("copyeditor", instructions=instructions if enabled else INSTRUCTIONS, auth=auth, mask_error_details=True)
+    server = PublicServer("copyeditor", instructions=INSTRUCTIONS.replace("Vertex AI.", "Vertex AI and TypeSafe AI.") if enabled else INSTRUCTIONS, auth=auth, mask_error_details=True)
     server.judgment_enabled = enabled
     for name in ("polish_text", "lint_text"):
-        server.add_tool(PublicTool(name=name, parameters=edit_input_schema(name, config, snapshot), output_schema=judged_output_schema() if enabled and name == "polish_text" else tool_output_schema(name),
+        server.add_tool(PublicTool(name=name, parameters=edit_input_schema(name, config, snapshot), output_schema=output_schema(name),
                                   description=marker + ("\n" + disclosure if enabled else "") if name == "polish_text" else None,
                                   annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=name == "polish_text")))
     @server.custom_route("/health", methods=["GET"])
@@ -155,7 +142,7 @@ class RawBoundary:
                     # The SDK rejects non-dicts before Tool.run; an invalid dict preserves service/audit handling.
                     if "arguments" in params and type(params["arguments"]) is not dict:
                         params["arguments"] = {"_invalid_arguments": True}
-                        if self.judgment_enabled: params["arguments"]["degree"] = None
+                        params["arguments"]["degree"] = None
                 code, message = -32602, "Invalid params"
                 TypeAdapter(types.ClientRequest).validate_python(data, strict=True)
             encoded = json.dumps(data, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode()

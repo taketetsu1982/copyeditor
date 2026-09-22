@@ -72,46 +72,45 @@ def test_ac_06_1_ac_06_6_ctr02_plugin_instructions_in_both_languages():
 def test_ac_07_1_ac_07_2_ac_07_7_ac_07_10_ac_07_12_rewrite_guidance_matches_both_languages():
     import json
     for section in (EN, JA):
-        for term in ("degree=polish", "degree=rewrite", "schema_version=2", "status=issue", "status=no_issue",
+        for term in ("degree=polish", "degree=rewrite", "schema_version=4", "320", "null",
                      "12,000", "1,000", "4,000", "16,000", "262,144", "6,000", "240",
                      "input_limit", "generation_truncated", "output_limit", "request_budget",
-                     "CountTokens", "model_called=false", "model_calls", "contracts/tools.md#rewrite-limits-and-accounting"):
+                     "CountTokens", "16", "contracts/tools.md#current-edit-payloads"):
             assert term in section
         request = json.loads(re.search(r"```json\n(.*?)\n```", section, re.S).group(1))
         assert request == dict(text="The team will carry out a review of the draft.", language="en", degree="rewrite")
         assert "diagnosis" not in request
-    for phrase in ("leave the text unsent", "never items or a partial document", "discards every candidate and diagnosis",
+    for phrase in ("leave the body unsent", "never items or partial recovery", "discard all candidates and diagnoses",
                    "No grandchild retries", "context plus background also total at most 4,000",
-                   "unknown usage stays unknown", "independent judgments", "remain pending",
+                   "missing components remain unknown", "independent judgments", "remain pending",
                    "English and Chinese rewrite quality is unverified"):
         assert phrase in EN
-    for phrase in ("\u672a\u9001\u4fe1\u30fb\u672a\u51e6\u7406", "\u5019\u88dc\u3068\u8a3a\u65ad\u3092\u3059\u3079\u3066\u7834\u68c4",
+    for phrase in ("未知schemaでは旧版へfallbackせず本文を送りません", "全候補・見立てを破棄",
                    "context\u3068\u80cc\u666f\u306e\u5408\u8a08\u30824,000", "\u672a\u691c\u8a3c", "\u672a\u5b8c\u4e86"):
         assert phrase in JA
     assert "minimal confirm" not in EN and "not implemented by this Skill yet" not in EN
 
 
 def test_optional_judgment_settings_and_disclosure_match_both_languages():
+    from copyeditor.judgment_v2 import THRESHOLDS, COMPATIBLE_PAIRS
     contract = (ROOT / "contracts/config.md").read_text()
+    assert not THRESHOLDS and not COMPATIBLE_PAIRS
     for section in (EN, JA):
-        for term in ("judgment.enabled", "COPYEDITOR_JUDGMENT_ENABLED=true",
-                     "judgment.enabled=false", "COPYEDITOR_JUDGMENT_ENABLED=false", "TYPESAFE_API_KEY",
-                     "jev-1.13.0", "reference-gate-action-v1", "gate-verify-v1", "Vertex ADC", "OAuth",
-                     "TypeSafe AI", "schema_version=3", "lint_text", "verification_rejected",
-                     "contracts/config.md#judgment-fields", "contracts/tools.md#registered-threshold-classification"):
+        for term in ("TYPESAFE_API_KEY", "jev-1.13.0", "reference-gate-v2", "null", "Vertex ADC", "OAuth",
+                     "TypeSafe AI", "schema_version=4", "lint", "rejected", "default_language",
+                     "contracts/config.md#judgment-fields", "contracts/tools.md#current-edit-payloads"):
             assert term in section
-        for identifier in ("jev-1.13.0", "reference-gate-action-v1", "gate-verify-v1", "TYPESAFE_API_KEY"):
+        for identifier in ("jev-1.13.0", "reference-gate-v2", "TYPESAFE_API_KEY"):
             assert identifier in contract
         assert not re.search(r"TYPESAFE_API_KEY\s*[:=]", section)
-    for phrase in ("Optional judgment", "Judgment defaults to off",
-                   "Disabled mode does not read or require this key", "and restarting",
-                   "no per-request switch", "runtime secret environment", "never config, placeholders",
-                   "direct MCP calls have no guaranteed per-request consent", "operators must inform",
-                   "Vertex-only permission does not cover", "neither adoption permission nor proof",
+    for phrase in ("Optional judgment", "disabled by default", "calibrated, registered values",
+                   "Disabled mode does not read or require", "runtime secret environment, never config, placeholders",
+                   "Direct MCP calls do not guarantee per-request consent", "inform users before enabling",
+                   "Permission must cover the actual destinations", "not permission or proof of meaning preservation",
                    "retention and processing region follow its own policy", "not added to audit logs"):
         assert phrase in EN
-    for phrase in ("任意の判定", "判定は既定でoff", "無効時はこのkeyを参照せず",
-                   "再起動", "依頼単位の切替", "実行時のsecret環境変数だけ", "config、placeholder",
-                   "依頼ごとの同意は保証しません", "運用者は有効化前", "Vertexだけへの許可は追加先を含みません",
-                   "意味を保持できた証明でもありません", "保持方針と処理地域", "監査ログに追加せず"):
+    for phrase in ("任意の判定", "既定でoff", "校正・登録済み", "無効時はTYPESAFE_API_KEYを参照せず",
+                   "実行時のsecret環境変数だけ", "config・placeholder・argv・ログ", "依頼ごとの同意は保証されない",
+                   "有効化前に利用者へ", "実際の送信先", "意味保持の証明ではありません", "保持方針と処理地域",
+                   "監査ログに追加せず"):
         assert phrase in JA
