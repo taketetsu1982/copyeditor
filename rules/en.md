@@ -33,6 +33,8 @@ Replace cumbersome purpose statements with ordinary verbs when meaning survives.
 - reason: The direct verb states the same function without the roundabout purpose phrase.
 
 ## Context weights
+
+Default style: Use clear, direct English. Prefer concrete words and concise sentences while preserving meaning and register.
 Match the audience, purpose, and tone without adding claims. Retain appropriate courtesy and established terms; clear wording does not need a change merely to look edited.
 - bad: Please check your application details before submitting.
 - good: Please check your application details before submitting.

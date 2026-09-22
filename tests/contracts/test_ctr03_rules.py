@@ -12,6 +12,7 @@ DETECTORS = [{"kind": "literal", "value": "bad"}, {"kind": "regex", "pattern": "
 def document(detector=None, number="001", term="Base", empty=False):
     rule = dict(id=f"ja-vocabulary-{number}", section="vocabulary", description="Prefer direct wording.", detector=detector or DETECTORS[0])
     prose = ["" if empty else "Change awkward words; retain meaning. bad: 冗長 good: 明快 reason: Be direct." for _ in range(5)]
+    if not empty: prose[4] += "\nDefault style: Natural expression."
     prose[0] += f'\n<a id="{rule["id"]}"></a>'
     data = dict(schema_version=1, protected_terms=[term], rules=[rule])
     return "---\nlanguage: ja\nrevision: 1\nnative_reviewed: true\n---\n# ja writing rules\n" + "\n".join(

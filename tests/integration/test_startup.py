@@ -44,9 +44,10 @@ entry.load_config = observe("config", entry.load_config)
 rules.load_rules = observe("rules", rules.load_rules)
 auth.make_auth = observe("auth", auth.make_auth)
 class Provider:
+    async def estimate_input(self, value): return 0
     async def generate(self, value):
         logging.critical(marker)
-        return GenerationResult(json.dumps({"items": [dict(id=i.id, text=i.text, flag=None) for i in value.items]}),
+        return GenerationResult(json.dumps({"items": [dict(id=i.id, text=i.text, flag=None, diagnosis=None) for i in value.items]}),
                                 "stop", Usage(1, 2, 3))
     async def aclose(self):
         events.append("close")
@@ -66,7 +67,7 @@ async def bind(self, **kwargs):
                           uvicorn_config={"log_config": None, "access_log": False})
     assert (self.auth is None) == (mode == "none")
     async with Client(self) as client:
-        for tool, arguments in [("lint_text", {"text": marker}), ("polish_text", {"text": marker}),
+        for tool, arguments in [("lint_text", {"text": marker, "language": "en"}), ("polish_text", {"text": marker, "language": "en"}),
                                 ("polish_text", {"text": marker, "unknown": marker})]:
             result = await client.call_tool(tool, arguments, raise_on_error=False)
             assert result.is_error == ("unknown" in arguments)
@@ -86,7 +87,7 @@ raise SystemExit(status)
     ("none", "invalid", "invalid_config at config", ["config"]),
     ("none", "unreadable", "invalid_config at config", ["config"]),
     ("none", "rules", "invalid_rules at rules", ["config", "rules"]),
-    ("none", "language", "invalid_config at default_language", ["config", "rules"]),
+    ("none", "language", "invalid_config at config", ["config"]),
     ("none", "adc", "credentials_unavailable at credentials", ["config", "rules", "provider"]),
     ("google", "auth", "invalid_config at auth", ["config", "rules", "provider", "auth", "close"]),
 ])
@@ -97,10 +98,11 @@ def test_ac_05_2_ac_05_8_ac_05_9_ctr01_ctr04_startup(tmp_path, mode, stage, erro
         (tmp_path / "config.yaml").mkdir()
     env = {key: value for key, value in os.environ.items() if key in {"PATH", "SYSTEMROOT"}}
     env.update(PYTHONPATH=str(ROOT / "src"), GOOGLE_CLOUD_PROJECT="test", COPYEDITOR_HOST="127.0.0.1",
-               COPYEDITOR_AUTH_MODE=mode, COPYEDITOR_DEFAULT_LANGUAGE="xx" if stage == "language" else "en",
+               COPYEDITOR_AUTH_MODE=mode,
                GOOGLE_OAUTH_CLIENT_ID="client", BASE_URL="https://service.example",
                COPYEDITOR_ALLOWED_DOMAINS='["example.com"]', GOOGLE_OAUTH_CLIENT_SECRET=MARKER,
                OAUTH_SIGNING_KEY=MARKER * 2)
+    if stage == "language": env["COPYEDITOR_DEFAULT_LANGUAGE"] = "en"
     result = subprocess.run([sys.executable, "-c", SCRIPT, mode, stage, str(tmp_path)], cwd=ROOT, env=env,
                             capture_output=True, text=True, timeout=30)
     assert MARKER not in result.stdout + result.stderr

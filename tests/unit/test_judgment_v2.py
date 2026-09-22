@@ -22,10 +22,9 @@ def synthetic(**changes):
                             pairs={(subject.POLICY_ID, definition['id'])})
 
 
-def test_production_remains_unregistered_and_legacy_is_unchanged():
+def test_production_remains_unregistered_and_old_registry_is_retired():
     assert not subject.THRESHOLDS and not subject.COMPATIBLE_PAIRS
-    assert judgment.POLICY_ID == "reference-gate-action-v1"
-    assert judgment.THRESHOLD_ID == "gate-verify-v1"
+    assert not hasattr(judgment, "POLICIES") and not hasattr(judgment, "THRESHOLDS")
     with pytest.raises(ValidationError):
         subject.snapshot(subject.POLICY_ID, subject.THRESHOLD_ID)
     with pytest.raises(TypeError):

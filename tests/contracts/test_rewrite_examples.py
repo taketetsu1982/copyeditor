@@ -24,7 +24,7 @@ def test_ac_07_8_ac_07_13_ctr05_first_fixed_subset_retains_its_problems_and_inva
 
 
 @pytest.mark.parametrize("identity,mutation,code", [
-    ("rewrite-02", "number", "rejected"), ("rewrite-03", "html", "html_structure"),
+    ("rewrite-02", "number", "rejected"), ("rewrite-03", "html", "changed_structure"),
     ("rewrite-07", "unchanged", "unchanged")])
 @pytest.mark.asyncio
 async def test_ac_07_3_ac_07_8_ctr05_synthetic_mutations_do_not_pass(identity, mutation, code):
@@ -38,11 +38,12 @@ async def test_ac_07_3_ac_07_8_ctr05_synthetic_mutations_do_not_pass(identity, m
     response = await adapter.call_api("", {}, {"vars": changed})
     result = json.loads(response["output"])
     assert not get_assert(response["output"], {"vars": case})
-    if code == "html_structure":
-        assert result["error"]["code"] == code and "diagnosis" not in result and "text" not in result
+    if code == "changed_structure":
+        assert result["status"] == "ok" and result["text"] == good
+        assert get_assert(response["output"], {"vars": changed})
     elif code == "rejected":
         assert result["flag"]["kind"] == code and result["flag"]["checks"] == ["numbers"]
-        assert result["text"] == case["bad"]
+        assert result["text"] == good
     else:
         assert result["status"] == "ok" and result["text"] == case["bad"]
 
@@ -69,8 +70,8 @@ async def test_ac_07_3_ctr05_natural_source_cannot_gain_even_trailing_whitespace
     case = next(case for case in SECOND if case["id"] == identity)
     response = await adapter.call_api("", {}, {"vars": case | dict(good=case["bad"] + " ")})
     result = json.loads(response["output"])
-    assert result["error"]["code"] == "invalid_response" and result["model_calls"] == 2
-    assert "text" not in result and "diagnosis" not in result
+    assert result["status"] == "ok" and result["providers"][0]["model_calls"] == 1
+    assert result["text"] == case["bad"] + " " and result["diagnosis"]
     assert not get_assert(response["output"], {"vars": case})
 
 
@@ -99,11 +100,10 @@ def test_ac_07_8_ac_07_13_ctr05_fixed_twenty_four_examples_cover_the_frozen_popu
 @pytest.mark.asyncio
 @pytest.mark.parametrize("format", ["text", "markdown"])
 async def test_ac_07_6_ac_07_13_ctr05_fixed_text_items_keep_order_and_frozen_diagnoses(format):
-    from copyeditor.metrics import Metrics
     from copyeditor.providers.base import GenerationResult, Usage
     from copyeditor.requests import parse_edit_request
-    from copyeditor.rewrite_response import validate_rewrite_final
-    from copyeditor.rewrite_service import rewrite
+    from copyeditor.edit_protocol import validate_final
+    from copyeditor.service import Service
     selected = [case for case in FIXED if case["format"] == format]
     by_id = {case["id"]: case for case in selected}
     config, snapshot = adapter.environment(selected[0], "fixture")
@@ -112,7 +112,7 @@ async def test_ac_07_6_ac_07_13_ctr05_fixed_text_items_keep_order_and_frozen_dia
     class Batch(adapter.FixtureProvider):
         async def generate(self, data):
             calls.append(data)
-            key = "diagnoses" if data.stage == "diagnose" else "items"
+            key = "items"
             values = []
             for item in reversed(data.items):
                 case = by_id[item.id]
@@ -120,14 +120,14 @@ async def test_ac_07_6_ac_07_13_ctr05_fixed_text_items_keep_order_and_frozen_dia
                 value = await single.generate(data._replace(items=(item,)))
                 values.extend(json.loads(value.raw_json)[key])
             return GenerationResult(json.dumps({key: values}), "stop", Usage(0, 0, 0))
-    request = parse_edit_request("polish_text", dict(items=[dict(id=case["id"], text=case["bad"]) for case in selected],
-        language="ja", degree="rewrite", format=format), config, snapshot)
-    meter = Metrics(0, config["model"], config["pricing"], lambda: 0, degree="rewrite")
-    result = await rewrite(request, config, snapshot, lambda: Batch(""), meter, items_route=True)
-    validate_rewrite_final(result, request.items)
+    arguments = dict(items=[dict(id=case["id"], text=case["bad"]) for case in selected],
+        language="ja", degree="rewrite", format=format)
+    request = parse_edit_request("polish_text", arguments, config, snapshot)
+    result = await Service(config, snapshot, lambda: Batch("")).polish(arguments)
+    validate_final(result, request.items)
     assert [item["id"] for item in result["items"]] == list(by_id)
     assert [item["text"] for item in result["items"]] == [case["good"] for case in selected]
     assert all(item["flag"] is None and not item["regenerated"] for item in result["items"])
-    assert [item["diagnosis"]["status"] for item in result["items"]] == ["issue" if case["must_change"] else "no_issue" for case in selected]
-    assert len(calls) == result["model_calls"] == 1 + (len(selected) + 3) // 4
-    assert all(len(value.items) <= 4 for value in calls[1:])
+    assert all(isinstance(item["diagnosis"], str) and item["diagnosis"] for item in result["items"])
+    assert len(calls) == result["providers"][0]["model_calls"] == (len(selected) + 3) // 4
+    assert all(len(value.items) <= 4 for value in calls)

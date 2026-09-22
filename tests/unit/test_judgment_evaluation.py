@@ -14,7 +14,7 @@ import judgment_evaluation as evaluation
 @pytest.fixture(scope='module')
 def completed(tmp_path_factory):
     path = tmp_path_factory.mktemp('judgment') / 'artifact.json'
-    plan = evaluation.freeze(1)
+    plan = evaluation.freeze(1, name='regression')
     # Repeated probes use fixed inputs; keep cache lifetime inside this fixture.
     population = lru_cache(maxsize=None)(evaluation.population)
     # Ledger assertions need every trial, but checkpoint I/O is covered separately.
@@ -29,21 +29,20 @@ def completed(tmp_path_factory):
 def test_ac_08_13_14_all_trials_requests_and_packing_are_retained(completed):
     plan, artifact, path = completed
     requests = evaluation.audit(plan, artifact)
-    assert len(artifact['trials']) == 1200 and len(requests) == 720
-    assert plan['calibration_run_budget'] == dict(blocks=1200, requests=720)
-    assert plan['risk_probe']['max_calls'] == 600 and plan['risk_probe']['input_budget'] == 38400000
+    assert len(artifact['trials']) == 200 and len(requests) == 40
+    assert plan['calibration_run_budget'] is None and 'risk_probe' not in plan
     assert all(t['full_response']['status'] == 'ok' and not t['error_code'] for t in artifact['trials'])
-    assert all(len(t['batch_plans']) == (2 if t['judgment_enabled'] else 0) for t in artifact['trials'])
+    assert all(len(t['batch_plans']) >= (2 if t['judgment_enabled'] else 0) for t in artifact['trials'])
     assert all(t['decision'] == dict.fromkeys('abcd') and t['reviewer'] is None for t in artifact['trials'])
-    assert all((t['calibration'] is not None) == t['judgment_enabled'] for t in artifact['trials'])
+    assert all('calibration' not in t for t in artifact['trials'])
     assert sum(r['provider_measurements'][0]['model_calls'] for r in requests.values()) < sum(t['provider_measurements'][0]['model_calls'] for t in artifact['trials'])
-    for name, blocks, calls in [('acceptance', 800, 800), ('existing', 480, 480), ('regression', 200, 40)]:
+    for name, blocks, calls in [('existing', 480, 480), ('regression', 200, 40)]:
         frozen = evaluation.freeze(1, name=name)
         assert len(frozen['planned_trials']) == blocks and len(frozen['request_layouts']) == calls
     frozen_path = path.with_name('plan.json'); evaluation.legacy.save(frozen_path, plan)
     command = [sys.executable, 'scripts/judgment_evaluation.py']
     result = subprocess.run(command + ['check', '--plan', str(frozen_path), '--artifact', str(path)], capture_output=True, text=True)
-    assert result.returncode == 0 and '720 request observations; quality unreviewed' in result.stdout
+    assert result.returncode == 0 and '40 request observations; quality unreviewed' in result.stdout
     help_text = subprocess.check_output(command + ['--help'], text=True)
     assert all(option in help_text for option in ('plan,run,check', '--mode', '--set', '--revision', '--artifact'))
 
@@ -76,14 +75,14 @@ async def test_ac_08_13_14_models_receive_no_evaluation_labels(monkeypatch):
     async def estimate(self, data): edits.append(data); return 0
     monkeypatch.setattr(TypeSafe, 'evaluate', inspect)
     monkeypatch.setattr(evaluation.adapter.FixtureProvider, 'estimate_input', estimate)
-    cases = [dict(c, reason='PRIVATE_EVALUATION_LABEL', kind='PRIVATE_EVALUATION_LABEL', invariants=['PRIVATE_EVALUATION_LABEL']) for c in evaluation.population('calibration')[:5]]
+    cases = [dict(c, reason='PRIVATE_EVALUATION_LABEL', kind='PRIVATE_EVALUATION_LABEL', invariants=['PRIVATE_EVALUATION_LABEL']) for c in evaluation.population('existing')[:5]]
     for degree in ('polish', 'rewrite'):
         for enabled in (False, True):
             assert (await evaluation.adapter.compare_request(cases, degree, enabled, 'items', 'fixture', []))['status'] == 'ok'
     assert edits and wires and 'PRIVATE_EVALUATION_LABEL' not in repr((edits, wires))
     assert 'judgment-calibration' not in repr((edits, wires))
     for wire in wires:
-        state = wire['state']; assert set(state) <= {'language', 'background', 'desired_style', 'references', 'texts', 'pairs'}
+        state = wire['state']; assert set(state) <= {'language', 'background', 'references', 'texts', 'originals'}
         if 'references' in state: assert state['references'] == evaluation._json_value(evaluation.REFERENCES)
     plans = []
     await evaluation.adapter.compare_request(evaluation.population('regression'), 'polish', True, 'items', 'fixture', plans)
@@ -97,7 +96,7 @@ async def test_ac_08_13_14_missing_responses_and_atomic_failures_remain_in_ledge
         return dict(status='error', error=dict(code='provider_error'), model_calls=1)
     plan = evaluation.freeze(1)
     artifact = await evaluation.run(plan, tmp_path / 'failures.json', fail)
-    assert len(evaluation.audit(plan, artifact)) == 720
+    assert len(evaluation.audit(plan, artifact)) == 480
     assert all(t['error_code'] == ('evaluation_error' if t['layout'] == 'text' else 'provider_error') for t in artifact['trials'])
     assert all(t['full_response'] is None for t in artifact['trials'] if t['layout'] == 'text')
     assert 'PRIVATE' not in evaluation.encoded(artifact)
@@ -128,7 +127,7 @@ async def test_ac_08_13_14_interruption_saves_observed_plan_and_rejects_unrun_tr
     with pytest.raises(ValueError): evaluation.audit(plan, artifact)
 
 
-@pytest.fixture(scope='module', params=['acceptance', 'existing'])
+@pytest.fixture(scope='module', params=['existing'])
 def reviewed(request):
     plan = evaluation.freeze(1, name=request.param)
     cases = {c['id']: c for c in evaluation.population(request.param)}
@@ -192,6 +191,7 @@ def test_ac_08_13_14_unacceptable_comparisons_cannot_pass(reviewed, mutation):
     elif mutation in ('meaning', 'unnecessary'): on['decision']['b' if mutation == 'meaning' else 'c'] = False
     elif mutation == 'natural':
         next(t for t in trials if t['judgment_enabled'] and not cases[t['example_id']]['must_change'])['full_response']['text'] += ' '
+    if mutation == 'old_version': on['provider_measurements'] = deepcopy(on['full_response']['providers'])
     if mutation in ('missing', 'duplicate', 'condition', 'boolean', 'old_artifact'):
         with pytest.raises(ValueError): evaluation.summarize(plan, artifact)
     else:
@@ -238,7 +238,7 @@ def test_ac_08_13_report_entry_point_retains_reason_and_rejects_unreviewed(compl
     result = subprocess.run([sys.executable, 'scripts/judgment_evaluation.py', 'report', '--plan', str(frozen), '--artifact', str(path)], capture_output=True, text=True)
     assert result.returncode == 1 and 'unreviewed_or_invalid' in result.stdout
     summary = json.loads(path.read_text())['summary']
-    assert not summary['criteria_met'] and sum(g['counts']['planned'] for g in summary['groups'].values()) == 1200
+    assert not summary['criteria_met'] and sum(g['counts']['planned'] for g in summary['groups'].values()) == 200
     assert 'reviewer' in path.with_suffix('.md').read_text()
     artifact['summary'] = dict(criteria_met=True); artifact['trials'].pop()
     evaluation.legacy.save(path, artifact)
@@ -255,9 +255,9 @@ def test_ac_08_14_report_costs_count_each_request_once_and_exclude_risk(complete
         for provider in response.get('providers', []): provider['cost'] = dict(amount='0.005000', currency='USD')
     summary = evaluation.summarize(plan, artifact)
     for key, group in summary['groups'].items():
-        assert group['counts']['planned'] == 150
-        assert group['requests'] == (30 if key.endswith('/items') else 150)
-        assert group['cost'] == dict(amount='0.300000' if key.endswith('/items') else '1.500000', currency='USD')
+        assert group['counts']['planned'] == 25
+        assert group['requests'] == 5
+        assert group['cost'] == dict(amount='0.050000', currency='USD')
     assert summary['status'] == 'unreviewed_or_invalid' and not summary['quality_accepted']
 
 

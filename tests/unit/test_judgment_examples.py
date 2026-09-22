@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from copyeditor.judgment import REFERENCES
+from copyeditor.judgment_v2 import REFERENCES
 from copyeditor.preservation import check
 from tests.contracts.test_ctr05_examples import CASES, ROOT, adapter, get_assert
 

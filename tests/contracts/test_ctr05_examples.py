@@ -75,7 +75,7 @@ async def test_ac04_3_ac04_4_ac04_5_ctr03_ctr05_real_examples_accepted(case, mon
     monkeypatch.setattr("copyeditor.providers.vertex.Vertex", forbidden)
     response = await adapter.call_api(case["bad"], {}, {"vars": case})
     result = json.loads(response["output"])
-    assert result["text"] == case["good"] and result["flag"] is None and result["model_calls"] == (2 if case.get("degree") == "rewrite" else 1)
+    assert result["text"] == case["good"] and result["flag"] is None and result["providers"][0]["model_calls"] == 1
     assert get_assert(response["output"], {"vars": case})
 
 
@@ -102,11 +102,11 @@ async def test_ac04_3_ctr05_html_and_final_schema():
     response = await adapter.call_api("", {}, {"vars": case})
     assert get_assert(response["output"], {"vars": case})
     output = json.loads(response["output"])
-    for changed in (output | {"text": output["text"].replace("<p>", "<div>").replace("</p>", "</div>")},
-                    output | {"extra": True}, output | {"flag": {"kind": "unfixable", "reason": "Cannot edit", "checks": []}}):
+    for changed in (output | {"extra": True}, output | {"flag": {"kind": "unfixable", "reason": "Cannot edit", "checks": []}}):
         assert not get_assert(json.dumps(changed), {"vars": case})
     response = await adapter.call_api("", {}, {"vars": case | {"good": "<div>Product offers 10 items.</div>"}})
-    assert json.loads(response["output"])["error"]["code"] == "html_structure"
+    assert json.loads(response["output"])["status"] == "ok"
+    assert get_assert(response["output"], {"vars": case | {"good": "<div>Product offers 10 items.</div>"}})
 
 
 @pytest.mark.asyncio
@@ -128,6 +128,7 @@ async def test_ac04_4_ctr05_live_input_isolation_and_no_fallback(monkeypatch, tm
     class Live:
         def __init__(self, supplied):
             assert supplied is config
+        async def estimate_input(self, request): return 0
         async def generate(self, request):
             seen.append(request)
             return await adapter.FixtureProvider(case["good"] + " Today.").generate(request)
@@ -229,9 +230,9 @@ async def test_ac_07_8_ac_07_13_ctr05_fixture_uses_real_diagnosis_and_candidate_
     monkeypatch.setattr(adapter.FixtureProvider, "generate", record)
     response = await adapter.call_api("IGNORED_PROMPT", {}, {"vars": case})
     result = json.loads(response["output"])
-    assert result["schema_version"] == 2 and result["degree"] == "rewrite" and result["model_calls"] == 2
-    assert result["text"] == case["good"] and result["diagnosis"]["status"] == ("issue" if change else "no_issue")
-    assert [value.stage for value in seen] == ["diagnose", "rewrite"]
+    assert result["schema_version"] == 4 and result["degree"] == "rewrite" and result["providers"][0]["model_calls"] == 1
+    assert result["text"] == case["good"] and isinstance(result["diagnosis"], str) and result["diagnosis"]
+    assert len(seen) == 1
     assert get_assert(response["output"], {"vars": case})
     assert not get_assert(response["output"], {"vars": case | {"degree": "polish"}})
 
@@ -255,7 +256,7 @@ async def test_ac_07_9_ctr05_rewrite_live_input_never_contains_evaluation_metada
             return await adapter.FixtureProvider(case["good"]).generate(data)
     monkeypatch.setattr("copyeditor.providers.vertex.Vertex", Live)
     response = await adapter.call_api("EVALUATOR_PROMPT", {"config": {"mode": "live"}}, {"vars": case})
-    assert [value.stage for value in seen] == ["diagnose", "rewrite"] and counts == seen
+    assert len(seen) == 1 and counts == seen
     assert all("EVALUATOR" not in repr(value) and case["good"] not in repr(value) for value in seen)
     assert all(value.items[0].text == case["bad"] for value in seen)
     assert get_assert(response["output"], {"vars": case, "config": {"mode": "live"}})

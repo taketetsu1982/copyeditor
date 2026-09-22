@@ -7,7 +7,7 @@ from copyeditor.providers.base import Background, SourceItem
 from copyeditor.requests import ValidationError, input_schema, parse_request, parse_edit_request, edit_input_schema
 from copyeditor.rewrite_response import BUDGET_MESSAGE
 from copyeditor.rules import load_rules
-from .harness import load_cases
+from .harness import generation4_cases
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.consumer("CTR-01")
@@ -29,7 +29,7 @@ def fail(settings, value, code="invalid_input", field=None, tool="polish_text"):
     assert "PRIVATE" not in str(error.value) and "PRIVATE" not in repr(vars(error.value))
 
 
-@pytest.mark.parametrize("case", load_cases(ROOT / "contracts/tools.md", "contract-case"), ids=lambda c: c["name"])
+@pytest.mark.parametrize("case", generation4_cases(ROOT / "contracts/tools.md"), ids=lambda c: c["name"])
 def test_ctr01_real_contract_inputs(settings, case):
     try:
         result = parse_edit_request(case["tool"], case["input"], *settings)
@@ -37,7 +37,7 @@ def test_ctr01_real_contract_inputs(settings, case):
         assert not case["provider"] and case["expect"]["status"] == "error"
         assert error.code == case["expect"]["error"]["code"]
         return
-    assert result.language == case["input"].get("language", "ja")
+    assert result.language == case["input"].get("language", "en")
     assert [i.text for i in result.items] == ([case["input"]["text"]] if "text" in case["input"] else [i["text"] for i in case["input"]["items"]])
     Draft202012Validator(edit_input_schema(case["tool"], *settings)).validate(case["input"])
 
@@ -76,14 +76,15 @@ def test_ac_02_2_ac_02_5_ctr01_budget_edges(settings, delta, kind, limit, field)
         if kind == "combined":
             value.update(audience="a"*1000, purpose="b"*1000, tone="c"*1000)
             value["items"][0]["context"], value["items"][1]["context"] = "x"*999, "x"*(n-3999)
+    value["language"] = "en"
     if delta > 0: fail(settings, value, "input_limit", field)
     else: assert parse(settings, value).items
 
 
 def test_ac_02_1_ac_02_2_ac_02_5_ac_02_6_ctr01_defaults_order_and_schema(settings):
-    result = parse(settings, {"text": " e\u0301\x1c\u200b ", "audience": ""})
-    assert result.items == (SourceItem("text", " e\u0301\x1c\u200b ", ""),) and result.background == Background("", "", "", "")
-    assert result.language == "ja" and result.format == "text"
+    result = parse(settings, {"text": " e\u0301\x1c\u200b ", "audience": "", "language": "en"})
+    assert result.items == (SourceItem("text", " e\u0301\x1c\u200b ", ""),) and result.background == Background("", "", settings[1].languages["en"].default_style, "")
+    assert result.language == "en" and result.format == "text"
     with pytest.raises(AttributeError): result.language = "en"
     for language in ("ja", "en", "zh"):
         assert parse(settings, {"text": "x", "language": language}).language == language
@@ -95,10 +96,10 @@ def test_ac_02_1_ac_02_2_ac_02_5_ac_02_6_ctr01_defaults_order_and_schema(setting
         schema = input_schema(tool, *settings)
         Draft202012Validator.check_schema(schema)
         assert schema["properties"]["language"]["enum"] == sorted(settings[1].languages)
-        assert schema["properties"]["language"]["default"] == "ja"
-    assert parse(settings, {"text": "x"*12000, **dict.fromkeys(Background._fields, "a"*1000)}).items
-    for size in (0, 65): fail(settings, {"items": [{"id": "a"*size, "text": "x"}]}, field="items[0].id")
-    assert parse(settings, {"items": [{"id": "a"*64, "text": "x"}]}).items
+        assert "default" not in schema["properties"]["language"]
+    assert parse(settings, {"text": "x"*12000, "language": "en", **dict.fromkeys(Background._fields, "a"*1000)}).items
+    for size in (0, 65): fail(settings, {"items": [{"id": "a"*size, "text": "x"}], "language": "en"}, field="items[0].id")
+    assert parse(settings, {"items": [{"id": "a"*64, "text": "x"}], "language": "en"}).items
     fail(settings, {"items": []}, "input_limit", "items")
 
 
@@ -111,15 +112,14 @@ def test_ctr01_unicode_optional_fields_and_resolved_default(settings):
             item = {"id": "a", "text": "x", "context": ""}
             item[field] = value
             fail(settings, {"items": [item]}, field="items[0]." + field)
-    for size in (1, 63, 64): assert parse(settings, {"items": [{"id": "a"*size, "text": "x"}]}).items
-    config = load_config(ROOT / "absent-config", {"GOOGLE_CLOUD_PROJECT": "test", "COPYEDITOR_DEFAULT_LANGUAGE": "en"})
-    assert parse_request("lint_text", {"text": "x"}, config, settings[1]).language == "en"
-    assert input_schema("lint_text", config, settings[1])["properties"]["language"]["default"] == "en"
+    for size in (1, 63, 64): assert parse(settings, {"items": [{"id": "a"*size, "text": "x"}], "language": "en"}).items
+    assert parse_request("lint_text", {"text": "This sentence is written in clear English for the reader."}, *settings).language == "en"
+    assert "default" not in input_schema("lint_text", *settings)["properties"]["language"]
 
 
 @pytest.mark.parametrize("delta", [-1, 0, 1])
 def test_ctr01_total_budget_and_size_precedence(settings, delta):
-    value = {"text": "x"*(12000+delta), **dict.fromkeys(Background._fields, "a"*1000)}
+    value = {"text": "x"*(12000+delta), "language": "en", **dict.fromkeys(Background._fields, "a"*1000)}
     if delta > 0: fail(settings, value, "input_limit", "text")
     else: assert parse(settings, value).items
     fail(settings, {"items": [{"id": "a", "text": "x"*6001, "context": "x"*1001},
@@ -140,7 +140,7 @@ def test_ctr01_all_fixed_errors_match_contract():
 
 @pytest.mark.parametrize("degree", ["polish", "rewrite", "invalid"])
 def test_ac_07_1_ctr01_contract_input_consumer_checks_degree(settings, degree):
-    case = dict(tool="polish_text", input=dict(text="Hello.", degree=degree), provider=[],
+    case = dict(tool="polish_text", input=dict(text="Hello.", degree=degree, language="en"), provider=[],
                 expect=dict(status="error", error=dict(code="invalid_input")) if degree == "invalid" else dict(status="ok"))
     test_ctr01_real_contract_inputs(settings, case)
     if degree == "invalid":

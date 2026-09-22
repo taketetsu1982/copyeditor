@@ -1,6 +1,6 @@
 """Static instruction consistency, not proof of real client compliance.
 AC-08-1, AC-08-3: disabled procedure and distinct non-change reports.
-AC-08-5, AC-08-6: no verification regeneration or substitute for human comparison.
+AC-08-5, AC-08-6: internal retry signals never grant adoption permission.
 AC-08-10, AC-08-17, AC-08-18: accounting, per-request permission and consent limits."""
 import re
 import sys
@@ -20,36 +20,37 @@ def skill(request):
 
 
 def test_discovery_and_permission_cover_unknown_and_refused_destinations(skill):
-    for clause in ("Before each request", "judgment marker and output schema without a body probe",
-                   "Enabled, missing, contradictory, or unknown", "TypeSafe AI as well as MCP and Vertex AI",
-                   "body, permitted context/background, and candidates", "Do not extend Vertex-only permission",
-                   "single confirmation and client approval", "Refusal means no submission or alternate route",
-                   "Confirmed disabled keeps the v1/v2 procedure", "unsupported schemas remain unsent even with consent"):
+    for clause in ("Fetch the connected tool definition for every request without a body probe",
+                   "single judgment destination marker", "unknown discovery leaves the body unsent",
+                   "withdrawal or \"do not send\" overrides earlier permission", "normal approval flow",
+                   "do not retry through another tool, provider, route, or relaxed approval setting",
+                   "Do not add a separate per-request TypeSafe confirmation", "Unknown schemas remain unsent",
+                   "reauthentication alone is not a refresh", "matching legacy Skill, not a fallback"):
         assert clause in skill
 
 
 def test_public_contract_is_referenced_without_repeating_classification_rules(skill):
-    refs = re.findall(r"<https://github.com/taketetsu1982/copyeditor/blob/main/contracts/tools.md#([^>]+)>", skill)
+    refs = re.findall(r"https://github.com/taketetsu1982/copyeditor/blob/main/contracts/tools.md#([a-z-]+)", skill)
     contract = (ROOT / "contracts/tools.md").read_text()
     headings = {re.sub(r"[^a-z0-9 -]", "", heading.lower()).replace(" ", "-")
                 for heading in re.findall(r"^#+ (.+)$", contract, re.M)}
-    assert set(refs) == {"judgment-payloads-and-validation", "registered-threshold-classification"}
+    assert set(refs) == {"current-version-selection", "current-edit-payloads"}
     assert set(refs) <= headings
-    section = skill.split("## Optional judgment", 1)[1].split("## Apply only permitted local edits", 1)[0]
+    section = skill.split("## Validate the complete result", 1)[1].split("## Apply only permitted local edits", 1)[0]
     assert not any(value in section for value in ("0.53", "0.30", "0.70", "|", "Fixed reporting examples"))
-    assert "validation fails, leave the response unprocessed" in section
-    assert "never downgrade broken v3 to legacy" in section
+    assert "mode mismatch is unprocessed, never a legacy fallback or partial success" in section
+    assert "all original IDs exactly once in original order" in section
 
 
 def test_judgment_preserves_comparison_consent_and_distinct_outcomes(skill):
-    for clause in ("neither adoption permission nor proof of preservation", "your own meaning comparison",
-                   "the user's confirmation", "Server disclosure is not consent",
-                   "users calling MCP without this Skill", "successful unchanged originals, not rejections",
-                   "not diagnosed (diagnosis=null)", "editor found no issue (no_issue)", "insufficient grounds for change",
-                   "rejection of the discarded candidate", "related-group rule without losing specific reasons",
-                   "Do not regenerate after verification rejection", "judgment enabled/disabled/unknown",
-                   "TypeSafe AI permission scope", "both providers' calls", "including failures",
-                   "model_called=false does not prove no transmission"):
+    for clause in ("does not grant editing permission", "server disclosure creates permission",
+                   "enabled TypeSafe AI processing", "successful unchanged original, not a rejection",
+                   "detection-exempt items have null diagnosis", "final generated candidate can remain",
+                   "at most one server retry per item", "Verification results are internal retry signals",
+                   "Do not add a separate semantic comparison", "related-item cascade",
+                   "A returned `rejected` flag leaves the original unchanged",
+                   "provider-specific", "including failures and unknown amounts",
+                   "Zero model calls does not prove zero transmission", "CountTokens may already have sent data"):
         assert clause in skill
 
 

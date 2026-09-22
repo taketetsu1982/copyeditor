@@ -47,7 +47,7 @@ def test_ctr01_lint_never_accepts_degree(settings, degree):
 @pytest.mark.parametrize("delta", [0, 1])
 @pytest.mark.parametrize("kind", ["body", "count", "context", "context_total", "context_background", "background"])
 def test_ac_07_7_ctr01_decoded_budget_is_checked_before_any_batch_split(settings, delta, kind):
-    arguments = {"items": [{"id": str(i), "text": "x"} for i in range(5)], "degree": "rewrite"}
+    arguments = {"items": [{"id": str(i), "text": "x"} for i in range(5)], "degree": "rewrite", "language": "en"}
     if kind == "body":
         for item in arguments["items"]: item["text"] = "😀" * 2400
         arguments["items"][-1]["text"] += "x" * delta

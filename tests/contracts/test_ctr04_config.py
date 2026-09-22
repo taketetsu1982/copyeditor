@@ -22,7 +22,6 @@ CASES = [
     ("provider", "vertex", [None, True, "other"]),
     ("model", "model_1-2.3", ["", "é", "a" * 129]),
     ("thinking", "high", ["LOW", 1, None]),
-    ("default_language", "en-us", ["JA", "e", "a" * 36]),
     ("protected_terms", [" term "], [[" "], ["x", "x"], ["a" * 129], [str(i) for i in range(1025)]]),
     ("length_ratio.min", 1, [0, 1.01, True, float("inf")]),
     ("length_ratio.max", 4, [0.99, 4.01, False, float("nan")]),
@@ -38,8 +37,8 @@ CASES = [
     ("server.port", 65535, [0, 65536, True, 1.5]),
     ("judgment.enabled", False, [None, 1, "yes"]),
     ("judgment.model", "jev-1.13.0", ["jev-latest", "jev-preview", None]),
-    ("judgment.policy_version", "reference-gate-action-v1", ["unknown", None]),
-    ("judgment.thresholds_version", "gate-verify-v1", ["gate-floor-v1", "unknown", None]),
+    ("judgment.policy_version", "reference-gate-v2", ["reference-gate-action-v1", "unknown", None]),
+    ("judgment.thresholds_version", None, ["gate-verify-v1", "gate-floor-v1", "unknown", True]),
     *[("judgment." + key, maximum, [0, maximum + 1, True, 1.5]) for key, maximum in
       (("timeout_ms", 60000), ("polish_deadline_ms", 120000), ("rewrite_deadline_ms", 240000),
        ("max_calls", 64), ("input_budget", 262144))],
@@ -55,7 +54,7 @@ def write_config(tmp_path, name, value):
 @pytest.mark.parametrize("name,good,bad", CASES, ids=[case[0] for case in CASES])
 def test_ac_05_2_leaf_validation_and_precedence(tmp_path, name, good, bad):
     variable = SCHEMA[name][0]
-    env = {"GOOGLE_CLOUD_PROJECT": "project", variable: json.dumps(good) if isinstance(good, (list, dict, int, float)) else good}
+    env = {"GOOGLE_CLOUD_PROJECT": "project", variable: json.dumps(good) if good is None or isinstance(good, (list, dict, int, float)) else good}
     assert load_config(tmp_path / "absent", env)[name] == (tuple(good) if isinstance(good, list) else good)
     path = write_config(tmp_path, name, good)
     assert load_config(path, dict(env, **{variable: "INVALID"}))[name] == load_config(path, env)[name]
@@ -77,7 +76,8 @@ def test_ctr04_strict_errors_are_sanitized(tmp_path, text):
 def test_ac_05_9_absence_example_and_read_failures(tmp_path, monkeypatch):
     env = {"GOOGLE_CLOUD_PROJECT": "project"}
     config = load_config(tmp_path / "absent", env)
-    assert (config["model"], config["thinking"], config["default_language"]) == ("gemini-3.1-flash-lite", "low", "ja")
+    assert (config["model"], config["thinking"]) == ("gemini-3.1-flash-lite", "low")
+    assert "default_language" not in config.values and config["judgment.thresholds_version"] is None
     assert load_config(Path(__file__).resolve().parents[2] / "config.example.yaml", env).values == config.values
     with pytest.raises(ConfigError):
         load_config(tmp_path / "absent", {})
@@ -107,9 +107,6 @@ def test_ctr04_placeholders_empty_overrides_and_secrets(tmp_path):
             load_config(path, dict(env, **{key: ""}))
     with pytest.raises(ConfigError):
         load_config(path, dict(env, OAUTH_SIGNING_KEY="a" * 31))
-    config.require_language({"ja"})
-    with pytest.raises(ConfigError):
-        config.require_language({"en"})
     with pytest.raises(TypeError):
         config.values["model"] = "changed"
     assert strict_yaml("value: yes")["value"] == "yes"

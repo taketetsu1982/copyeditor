@@ -1,6 +1,4 @@
-from typing import TYPE_CHECKING, Literal, NamedTuple, Protocol
-if TYPE_CHECKING:
-    from ..diagnosis import DiagnosticItem
+from typing import Literal, NamedTuple, Protocol
 class SourceItem(NamedTuple):
     id: str
     text: str
@@ -10,14 +8,6 @@ class Background(NamedTuple):
     purpose: str
     tone: str
     message: str
-class GenerationInput(NamedTuple):
-    items: tuple[SourceItem, ...]
-    language: str
-    format: str
-    background: Background
-    system_instruction: str
-    stage: str = "polish"
-    diagnoses: tuple["DiagnosticItem", ...] = ()
 class EditGenerationInput(NamedTuple):
     items: tuple[SourceItem, ...]
     language: str
@@ -37,5 +27,5 @@ class ProviderFailure(NamedTuple):
     code: str
     usage: Usage
 class Provider(Protocol):
-    async def estimate_input(self, input: GenerationInput) -> int | ProviderFailure: ...
-    async def generate(self, input: GenerationInput) -> GenerationResult | ProviderFailure: ...
+    async def estimate_input(self, input: EditGenerationInput) -> int | ProviderFailure: ...
+    async def generate(self, input: EditGenerationInput) -> GenerationResult | ProviderFailure: ...

@@ -14,11 +14,11 @@ import pytest_asyncio
 from jsonschema import Draft202012Validator
 
 from copyeditor.config import load_config
-from copyeditor.judged_response import judged_output_schema
-from copyeditor.judgment import ACTION_CRITERIA
+from copyeditor.edit_protocol import output_schema
+from copyeditor.judgment_v2 import POLICY_ID
+from tests.contracts.harness import FIXTURE_THRESHOLDS, fixture_registry
 from copyeditor.providers.base import GenerationResult, Usage
 from copyeditor.providers.typesafe import TypeSafe
-from copyeditor.responses import tool_output_schema
 from copyeditor.rules import load_rules
 from copyeditor.server import build_server
 from copyeditor.service import Service
@@ -35,8 +35,9 @@ async def setup(tmp_path, capsys, caplog):
     state = dict(enabled=True, scenario='pass', axis='scope', wires=[])
     def make(mode='none', candidate=None):
         config = load_config(tmp_path / 'absent', {'GOOGLE_CLOUD_PROJECT': 'fixture',
-            'COPYEDITOR_DEFAULT_LANGUAGE': 'en', 'COPYEDITOR_MODEL': 'test-model',
-            'COPYEDITOR_JUDGMENT_ENABLED': str(state['enabled']).lower(), 'TYPESAFE_API_KEY': MARKER})
+            'COPYEDITOR_MODEL': 'test-model',
+            'COPYEDITOR_JUDGMENT_ENABLED': str(state['enabled']).lower(), 'TYPESAFE_API_KEY': MARKER, 'COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION': 'synthetic'},
+            thresholds=FIXTURE_THRESHOLDS, pairs={(POLICY_ID, 'synthetic')})
         snapshot = load_rules(ROOT / 'rules', None)
         class Editor:
             async def estimate_input(self, value): return 0
@@ -45,35 +46,21 @@ async def setup(tmp_path, capsys, caplog):
                 if 'queue' in state: return generation_result(state['queue'].take())
                 scenario = state['scenario']
                 if scenario == 'cancel': raise asyncio.CancelledError()
-                if value.stage == 'diagnose':
-                    body = dict(diagnoses=[dict(id=i.id, status='no_issue' if scenario == 'no_issue' else 'issue',
-                        expression=None if scenario == 'no_issue' else i.text,
-                        reason=None if scenario == 'no_issue' else MARKER) for i in value.items])
-                else:
-                    body = dict(items=[dict(id=i.id,
-                        text=i.text + ' 99' if scenario == 'rejected' or scenario == 'retry' and len(calls) == 1 else i.text.replace('Example', 'Sample') if scenario == 'changed' else i.text,
-                        flag=dict(kind='unfixable', reason=MARKER) if scenario == 'unfixable' else None) for i in value.items])
+                body = dict(items=[dict(id=i.id, text=i.text.replace('Example', 'Sample'), flag=None,
+                    diagnosis=MARKER if value.stage == 'rewrite' else None) for i in value.items])
                 return GenerationResult(json.dumps(body), 'stop', Usage(1, 1, 2))
         def handler(request):
             data = json.loads(request.content)
             state['wires'].append(data)
-            verifying = 'pairs' in data['state']
+            verifying = 'originals' in data['state']
             if verifying and state['scenario'] == 'error':
                 return httpx.Response(500, content=MARKER.encode())
-            answers = {}
-            for key, question in data['questions'].items():
-                score = 0.9
-                if not verifying and key.endswith('.gate') and (state['scenario'] == 'keep' or state['scenario'] == 'mixed' and key.startswith('b0002')): score = 0.1
-                if verifying and key.endswith('.' + state['axis']):
-                    score = 0.30 if state['scenario'] == 'fail' else 0.5 if state['scenario'] == 'middle' else 0.70
-                answers[key] = (dict(type='choice', choice='preserve_as_is', confidence=0,
-                    probabilities={a: int(a == 'preserve_as_is') for a in ACTION_CRITERIA})
-                    if question['type'] == 'choice' else dict(type='noul', noul=score))
-            if verifying and state['scenario'] == 'invalid': answers.pop(next(reversed(answers)))
+            answers = {key: dict(type='Noul', noul=0.3 if verifying and key.endswith('.gate') else 0.9)
+                       for key in data['questions']}
             return httpx.Response(200, json=dict(model='jev-1.13.0', answers=answers, usage=dict(input_tokens=1, output_tokens=1)))
         adapter = TypeSafe(config.secrets['TYPESAFE_API_KEY'], transport=httpx.MockTransport(handler)) if state['enabled'] else None
         if adapter: adapters.append(adapter)
-        server = build_server(config, snapshot, Service(config, snapshot, Editor, adapter), None, records.append)
+        server = build_server(config, snapshot, Service(config, snapshot, Editor, adapter, registry=fixture_registry), None, records.append)
         return server, config, snapshot
     make.state = state
     yield make, calls, records
@@ -120,13 +107,13 @@ async def test_public_route_matrix(setup, tcp_server, transport, language, degre
     async with connection(setup, tcp_server, transport) as client:
         payload = await call(client, args)
         lint = await call(client, dict(text=BODY, language=language), 'lint_text')
-    Draft202012Validator(judged_output_schema() if enabled else tool_output_schema('polish_text')).validate(payload)
-    assert payload['status'] == 'ok' and payload['schema_version'] == (3 if enabled else 2 if degree == 'rewrite' else 1)
-    assert lint['schema_version'] == 1 and payload['language'] == language
+    Draft202012Validator(output_schema('polish_text')).validate(payload)
+    assert payload['status'] == 'ok' and payload['schema_version'] == 4
+    assert lint['schema_version'] == 4 and payload['language'] == language
     entries = payload['items'] if route == 'items' else [payload]
-    assert all(item['text'] == text and item['flag'] is None for item in entries)
+    assert all(item['text'] == text.replace('Example', 'Sample') and item['flag'] is None for item in entries)
     if route == 'items': assert [i['id'] for i in entries] == ['first', 'second']
-    assert len(calls) == (2 if degree == 'rewrite' else 1)
+    assert len(calls) == 1
     assert len(make.state['wires']) == (2 if enabled else 0)
     assert len(records) == 2 and all(set(record) == FIELDS for record in records)
 
@@ -139,13 +126,13 @@ async def test_raw_failures_discard_content_and_stop_sending(setup, tcp_server, 
     async with connection(setup, tcp_server, transport) as client:
         for arguments in (None, [], True, {'text': BODY, 'degree': 'invalid'}):
             payload = await call(client, arguments)
-            assert payload['schema_version'] == 3 and payload['degree'] is None
+            assert payload['schema_version'] == 4 and payload['degree'] is None
             assert payload['error']['code'] == 'invalid_input' and not payload['model_called']
             assert not calls and not make.state['wires']
         payload = await call(client, dict(items=[dict(id='a', text=BODY), dict(id='b', text=BODY)], degree='rewrite'))
         assert payload['error']['code'] == 'provider_error' and payload['degree'] == 'rewrite'
         assert payload['model_called'] and not {'text', 'items'} & payload.keys()
-        assert len(calls) == len(make.state['wires']) == 2
+        assert len(calls) == 1 and len(make.state['wires']) == 2
         assert MARKER not in json.dumps(payload)
         response = await client.post('/mcp', content=b'{')
         assert response.status_code == 400 and response.json()['error']['code'] == -32700

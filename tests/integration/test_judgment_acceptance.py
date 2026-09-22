@@ -10,7 +10,7 @@ import pytest
 from tests.conftest import (EVALUATION_MODULES, EVALUATION_SETS, US08_OWNER_EVIDENCE,
                            Phase1Contracts, evaluation_inventory, judgment_fingerprint)
 from tests.integration.test_phase1 import collected_contracts, run, suite
-from tests.unit.test_judgment_calibration import evaluation, ledger, verification
+from tests.unit.test_judgment_calibration import evaluation
 from tests.unit.test_judgment_evaluation import reviewed
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +26,7 @@ def test_ac_08_13_14_fixed_evaluation_modules_and_populations(collected_contract
     assert len(evaluation_inventory(ROOT)) == 5
     for module, expected in EVALUATION_MODULES.items():
         assert judgment_fingerprint(ROOT, module, collected_contracts.items) == expected
-    for name, size in [('calibration', 1200), ('acceptance', 800), ('existing', 480), ('regression', 200)]:
+    for name, size in [('existing', 480), ('regression', 200)]:
         plan = evaluation.freeze(1, name=name)
         assert len(plan['planned_trials']) == size
         assert {t['degree'] for t in plan['planned_trials']} == {'polish', 'rewrite'}
@@ -77,26 +77,6 @@ def test_ac_08_13_14_strict_green_without_owner_records_is_not_quality_pass(suit
     assert 'QUALITY PASS' not in result.stdout and 'ACCEPTANCE PASS' not in result.stdout
 
 
-@pytest.mark.parametrize('missing', ['gate', 'verify', 'neither'])
-def test_ac_08_13_14_gate_and_verify_completion_are_independent(verification, missing):
-    plan, artifact = deepcopy(verification[:2])
-    if missing == 'gate': next(t for t in artifact['trials'] if t['judgment_enabled'])['calibration']['gate_probability'] = None
-    if missing == 'verify': artifact['verification_trials'][0]['probabilities'] = None
-    gate = evaluation.calibrate(plan, artifact)
-    verify = evaluation.verification_summary(plan, artifact)
-    assert gate['calibration_summary']['complete'] is (missing != 'gate')
-    assert verify['complete'] is (missing != 'verify')
-    assert (gate['calibration_decision']['derived_floor'] is None) is (missing == 'gate')
-    assert (verify['fail_max'] is None and verify['pass_min'] is None) is (missing == 'verify')
-    if missing == 'neither':
-        summary, decision = gate['calibration_summary'], gate['calibration_decision']
-        assert (summary['natural_max'], summary['unnatural_min'], summary['gap'], decision['derived_floor']) == ('0.6', '0.8', '0.2', '0.7')
-        assert summary['per_case_variation'] and summary['by_degree_layout_repeat']
-        assert decision['edit_risk']['recommendation'] == 'keep_disabled_false_veto'
-        assert verify['per_pair_variation'] and verify['confusion'] and verify['items']
-        assert decision['reason'] == 'new_threshold_id_contract_hash_and_remeasurement_required'
-        assert verify['reason'] == 'new_threshold_id_contract_hash_and_recalibration_before_unused_held_out'
-    assert not verify['quality_accepted'] and set(US08_OWNER_EVIDENCE) == {'live', 'native', 'client'}
 
 
 def test_ac_08_13_14_synthetic_reviews_and_native_or_client_claims_cannot_accept_live_quality(reviewed):
@@ -109,20 +89,6 @@ def test_ac_08_13_14_synthetic_reviews_and_native_or_client_claims_cannot_accept
     assert not result['complete'] and not result['criteria_met'] and not result['quality_accepted']
 
 
-@pytest.mark.parametrize('field', ['questions', 'action_instructions', 'references', 'floor', 'verification'])
-def test_ac_08_13_14_changed_policy_or_threshold_cannot_reuse_frozen_calibration(verification, monkeypatch, field):
-    plan = verification[0]
-    thresholds = field in ('floor', 'verification')
-    registry = evaluation.THRESHOLDS if thresholds else evaluation.POLICIES
-    identity = plan['config']['judgment.thresholds_version' if thresholds else 'judgment.policy_version']
-    changed = json.loads(evaluation.encoded(registry[identity]))
-    if field == 'floor': changed[field] = .54
-    elif field == 'verification': changed[field]['pass_min'] = .71
-    elif field == 'questions': changed[field]['verify'][0]['instructions'] += ' Changed wording.'
-    elif field == 'references': changed[field][0]['text'] += ' Changed reference.'
-    else: changed[field]['simplify_vocabulary'] += ' Changed action vocabulary or instruction.'
-    monkeypatch.setattr(evaluation, 'THRESHOLDS' if thresholds else 'POLICIES', {**registry, identity: changed})
-    with pytest.raises(ValueError, match='Comparison inputs changed'): evaluation.check_plan(plan)
 
 
 @pytest.mark.parametrize('module', sorted(EVALUATION_MODULES))

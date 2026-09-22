@@ -1,11 +1,156 @@
 ---
 contract-id: CTR-01
 kind: api
-derives-from: [AC-01-6, AC-01-8, AC-01-9, AC-01-14, AC-02-1, AC-02-2, AC-02-3, AC-02-4, AC-02-5, AC-02-6, AC-02-7, AC-02-8, AC-02-9, AC-02-10, AC-02-11, AC-02-12, AC-02-13, AC-03-1, AC-03-2, AC-03-4, AC-07-1, AC-07-2, AC-07-3, AC-07-4, AC-07-6, AC-07-7, AC-07-10, AC-07-11, AC-07-12, AC-07-13, AC-08-1, AC-08-2, AC-08-3, AC-08-4, AC-08-5, AC-08-6, AC-08-7, AC-08-8, AC-08-9, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-15, AC-08-16, AC-08-17, AC-08-18]
-revision: 9
+derives-from: [AC-01-6, AC-01-8, AC-01-9, AC-02-1, AC-02-2, AC-02-3, AC-02-4, AC-02-5, AC-02-6, AC-02-7, AC-02-8, AC-02-9, AC-02-10, AC-02-11, AC-02-14, AC-02-15, AC-02-16, AC-02-17, AC-02-18, AC-03-1, AC-03-2, AC-03-4, AC-07-1, AC-07-2, AC-07-3, AC-07-4, AC-07-6, AC-07-7, AC-07-10, AC-07-11, AC-07-12, AC-07-13, AC-08-1, AC-08-2, AC-08-3, AC-08-5, AC-08-6, AC-08-7, AC-08-8, AC-08-9, AC-08-10, AC-08-11, AC-08-12, AC-08-14, AC-08-15, AC-08-16, AC-08-18]
+revision: 11
 ---
 
 # MCP tool contract
+
+## Revision 11 proposal and applicability
+
+This is a **proposed replacement contract**, not a claim that the current executable implements it. The normative rules in the sections prefixed "Current" below apply to the next implementation. The later "Legacy revisions 1–9" material describes only schema versions 1–3 and their existing regression fixtures; it does not override this proposal. Activate the new contract, implementation, discovery, clients and tests together. Do not relabel old payloads with a new number.
+
+### Current version selection
+
+schema_version is a **contract generation**, shared by the two tool names, not a separate ID for each configuration or result variant. Generation 4 replaces versions 1–3 for the design r10 contract family (first proposed in CTR-01 r10 and refined here). Document revision and schema_version are distinct counters.
+
+| Tool | schema_version | Closed output family |
+|---|---|---|
+| polish_text, either degree and judgment mode | 4 | EditText / EditItems / EditError below |
+| lint_text, any server judgment mode | 4 | CurrentLint / CurrentLintError below |
+
+Versions 1/2/3 remain historical protocols. Turning judgment off never selects them. Every entered tool call, including framework argument errors, uses integer schema_version=4. Authentication, raw HTTP and JSON-RPC failures remain outside application payloads. Degree omission still selects polish.
+
+For a given tool, discovery advertises the **same complete closed schema in both configurations**. status and the exclusive text/items form select the result variant; a required judgment_enabled boolean constrains editing field values, never field presence. Do not remove nullable keys or narrow the advertised schema to a configured mode. No new request switch is added.
+
+Clients select a schema by (invoked tool name, schema_version), not by the number alone. A client that does not know both the tool family and generation rejects discovery before submitting body text. Validate the complete response, its status/route, and the mode dependencies below. Refresh discovery or reconnect after deployment; reauthentication alone does not prove refresh. A version or mode mismatch is invalid_response, never fallback to another degree or legacy protocol.
+
+Discovery retains the loaded-language enum without a default, the explicit degree enum, tool annotations, structuredContent/content equality and isError/status rules from Transport and discovery. Keep exactly one fixed destination marker from that section. The marker determines the expected judgment_enabled value for polish_text; missing, contradictory or unknown markers prevent submission. The surrounding description states that verification may cause one shared regeneration and does not certify a candidate or confer permission. lint_text never uses judgment even when the server marker is enabled.
+
+### Current requests and language
+
+Reuse the legacy Requests fields, Unicode/blank rules, ID identity, exclusive text/items rules and all input/raw-byte limits, except the language default. Explicit language must exactly name loaded rules. With language omitted, resolve once from the whole request's body in original order (one result for all items), excluding context and background. No config/environment/image default or region/alias fallback exists. Failure to determine a language is invalid_input at language, fixed message "Invalid tool arguments."; a determined but uninstalled language is unsupported_language at language. Both occur before any editing or judgment call, with zero provider counters. Report language=null unless a supported language was resolved. The same rule applies to lint_text, which never contacts either provider. An explicit installed language bypasses detection, including for a numbers-only body.
+
+Input error precedence is shape/type/blank/IDs, explicit language validity, size limits, then omitted-language detection. This prevents running inference on over-limit input. The public contract guarantees one resolved language, not perfect language identification for arbitrary short or mixed-language strings.
+
+Background remains optional. Tone omitted or composed only of the contract's whitespace uses the installed language's default style from CTR-04; an explicit nonblank tone is preserved verbatim. Effective tone is fixed for the request and used only by the editing provider. No default style or user tone, including a duplicate background.tone, is sent to judgment.
+
+### Current edit payloads
+
+All fields below are required; additional fields, duplicate keys, invalid Unicode, booleans as integers, nonfinite numbers and omission in place of null are invalid. Reuse legacy Usage, Cost, Finding, matched-term/ratio semantics and limits. schema_version is always integer 4.
+
+```text
+EditMetadata = {
+ schema_version: 4, judgment_enabled: boolean, degree: "polish"|"rewrite", language: string,
+ rules_version: string, common_version: string,
+ providers: ProviderMeasurement[], cost: Cost|null, latency_ms: integer,
+ protected_terms_checked: integer,
+ preservation: {length_ratio: {min: number, max: number}}
+}
+ProviderMeasurement = {
+ role: "editing"|"judgment", provider: string, model: string,
+ model_calls: integer, estimation_calls: integer,
+ usage: Usage, cost: Cost|null, latency_ms: integer
+}
+EditResult = {
+ text: string, flag: CurrentFlag|null, regenerated: boolean,
+ protected_terms: string[], findings: Finding[], findings_truncated: boolean,
+ diagnosis: string|null, detection: Detection|null
+}
+CurrentFlag = {kind: "unfixable"|"rejected", reason: string, checks: string[]}
+Detection = {
+ status: "eligible"|"insufficient"|"not_run",
+ reason: "evaluated"|"no_editable_prose", probability: number|null
+}
+JudgmentVersions = {
+ policy_version: string|null, policy_hash: string|null,
+ thresholds_version: string|null, thresholds_hash: string|null
+}
+EditText = EditMetadata + JudgmentVersions + {status:"ok"} + EditResult
+EditItems = EditMetadata + JudgmentVersions + {status:"ok", items:[{id:string} + EditResult]}
+EditError = JudgmentVersions + {
+ status:"error", schema_version:4, judgment_enabled:boolean, degree:"polish"|"rewrite"|null,
+ error:{code:CurrentCode, message:string, field:string|null},
+ language:string|null, rules_version:string, common_version:string,
+ providers:ProviderMeasurement[], cost:Cost|null, latency_ms:integer,
+ model_called:boolean, regeneration_attempted:boolean
+}
+```
+
+JudgmentVersions means the four **flat required keys** shown above, not a nested object. With judgment_enabled=false all four are null, every successful item's detection is null, and providers contains exactly one editing row. With judgment_enabled=true all four are non-null registered strings/hashes, every successful item's detection is a Detection object, and providers contains exactly two rows. Mixed null/string versions, null enabled detection, non-null disabled detection, missing keys and inconsistent provider rows are invalid. These rules apply to both degrees and text/items; application errors retain the boolean and four keys even before language resolution, but never contain item-level detection. Freeze mode at request entry along with registry identity.
+
+The disabled shape and behavior are the generation-4 US-01–07 baseline itself (AC-08-1); null keys are not a call, a judgment result or a requirement to load a threshold registry. Disabled clients validate nulls without registry lookup. Only enabled clients validate the registered pair. All error paths use the same mode as the connection's discovery marker.
+
+No current response contains a verification object, candidate score, gate delta, meaning score, axes, action, confidence or verification-based flag. Metadata must not leak those values through messages.
+
+Provider rows are ordered: editing/vertex/configured editing model first, followed only when enabled by judgment/typesafe/configured pinned model. Required rows remain present at zero calls. Latencies/counts are nonnegative integers. Errors contain no result body, diagnosis, detection, partial items or findings. Error degree is polish if absent in an object or exactly polish, rewrite if exactly rewrite, otherwise null. All editing errors use model_called == any(row.model_calls > 0 for row in providers). Estimation alone is false; false does not prove no body was sent. Preserve the legacy five-case model_called boundary table, applying the current generation.
+
+Items return exactly all original IDs in original order; text has no public synthetic ID. diagnosis is null for polish and for an item not sent to the editing provider. For rewrite items processed by the editor, diagnosis is one nonblank line, at most 320 Unicode code points, with no CR/LF, from the **same generation response as the returned candidate** (including an unfixable response). No status/expression/no_issue object and no separate diagnostic call exist. The aggregate diagnosis length over the final request is at most 8,192 code points. Invalid shape/line/ID is invalid_response; valid-shaped length excess is output_limit. A regenerated item uses the replacement response's diagnosis, not the first diagnosis.
+
+Unfixable means no candidate could be produced: the model must return exact original text and a nonblank reason of at most 160 code points, checks=[]; a different text is invalid_response, not silently repaired. A rejected flag is server-only, reason "Preservation checks failed.", checks the ordered nonempty deterministic failures. Its text is the final **candidate**, never restored to the original. Absence of a flag is represented by literal null. Findings refer to the text actually returned. A client keeps its original for either flag; an unflagged candidate is applied subject to the user's no-write instruction and the separately specified Markdown structural exception. Verification failure is not a refusal or a flag.
+
+### Current lint payloads
+
+CurrentLint is exactly the legacy Lint + Metadata closed shape from Success payloads, changing schema_version to literal 4 and language resolution to Current requests and language. CurrentLintError is exactly the legacy Error shape from Errors and retry boundary, changing schema_version to literal 4. Its error codes are restricted to invalid_input, unsupported_language, input_limit, output_limit and internal_error; use the corresponding fixed messages and safe fields from the error table. Deadline-independent local failures use internal_error. There are no degree, judgment_enabled, registry, detection, providers or diagnosis keys in either lint shape. Tool identity is supplied by the invocation and discovery schema; do not guess it from a payload's version alone.
+
+Lint success and errors have model=null, usage={input_tokens:0,output_tokens:0,total_tokens:0}, model_calls=0 and cost=null; errors additionally have model_called=false and regeneration_attempted=false. Success preservation=null and protected_terms_checked=0. Missing keys, extra editing keys or nonzero provider metrics are invalid. Lint uses the same raw/input/body/whole-payload limits and local input-error precedence; a valid-shaped result exceeding a returned-body/payload limit is output_limit. Error responses never include findings or body.
+
+### Current gate registry and compatibility
+
+Proposed policy ID: reference-gate-v2. Proposed threshold ID: gate-delta-v2. Neither is an alias for reference-gate-action-v1, gate-floor-v1 or gate-verify-v1. The threshold definition has exactly id, floor, gap, meaning_floor, with finite JSON numbers: 0<=floor<=1, 0<gap<=1, 0<=meaning_floor<=1; no boolean. Policy owns no cutoffs. This revision intentionally assigns **no numerical values** to these three fields.
+
+Before enabling a release, calibration must publish the concrete immutable definition, its canonical SHA-256, the compatible policy ID/hash and the registered pair in this section in a subsequent reviewed contract revision. Until that registration, gate-delta-v2 is reserved but not an accepted runtime registry; enabling it fails startup. Do not use old values, zeros or guessed defaults. Disabled operation needs no active judgment registry. Schema/algorithm implementation and offline calibration can proceed using explicitly synthetic test thresholds; those are not registered production values.
+
+When a pair is registered, detection p>=floor means eligible; p<floor means insufficient. Compare exact rational values of JSON decimal representations; no rounding or epsilon. Evaluated detection (eligible or insufficient) requires reason=evaluated and a finite [0,1] probability. These are the only valid status/reason combinations besides not_run/no_editable_prose. not_run requires probability=null and no_editable_prose, solely for an HTML body with no non-whitespace editable prose. It never represents a timeout, budget refusal or invalid response. Insufficient/not_run return exact original, flag=null, regenerated=false, diagnosis=null, and cause no editing calls.
+
+Clients reject an unknown policy, unknown threshold, both unknown, incompatible known pair, or either mismatching hash; accept only a pair and hashes explicitly supported by their contract implementation. Hashes are lowercase 64-character SHA-256. Enabled success and application error carry the same request-frozen pair; disabled responses carry the required four nulls instead. Hash equality alone does not authorize unknown semantics. Independent clients do not need private question text to validate Detection: the registered floor and definition/hash identity are public. Internal verification values are not public and must not be reconstructed by clients.
+
+### Current generation and shared retry
+
+Every initial candidate is generated together with its rewrite diagnosis when applicable. Shape, finish, Unicode, complete ID set, nonblank and size checks happen before item checks; a failure invalidates the whole request without regeneration.
+
+For judgment-enabled items, retain the original gate value from detection by original ordinal. A first candidate exactly equal to its original skips verification and requests the shared retry. Other generated candidates are verified using the same gate definition and references as detection, plus meaning preservation. The internal condition is source_gate-candidate_gate>=gap AND meaning>=meaning_floor. Either false requests the same shared retry as deterministic preservation failures. No verification uncertainty band exists.
+
+Evaluate deterministic checks on each valid candidate. One item has at most two candidate generations total across deterministic and judgment triggers. Retry uses the original text/context/background, language, effective tone and editing rules; do not send the failed candidate, scores or failure hints back to the editor. Retry only failing items, keeping successful ones. Reevaluate a non-identical second candidate with the same two judgment questions, but return it even if their valid values fail the condition. A second identical candidate skips judgment, is returned, and never starts a third generation. API failure, missing scores or malformed responses on either attempt are whole-request errors, not valid failed conditions.
+
+Unfixable receives no verification/retry. A candidate that still fails deterministic checks after its one retry is returned with rejected; otherwise flag=null even if verification failed. If a valid second candidate fails both, deterministic annotation is retained. Original HTML input acceptance and prose extraction retain the fixed CTR-02 parser and its source-coverage rules; input rejection is invalid_input and unexpected analyzer exceptions are internal_error. These rules do not authorize a comparison with a generated candidate. No HTML structural comparison, HTML-specific retry or html_structure error remains in current versions; HTML stays a single whole document, subject to ordinary input/output validation, preservation and body limits. Do not split or repair a generated document.
+
+### Current limits and error precedence
+
+Retain all legacy decoded input, output-body, diagnosis aggregate and success-byte limits. Generation output is 8,192 tokens per batch. Polish uses one initial batch and at most one retry subset, maximum 2 calls. Rewrite uses contiguous batches of at most 4 original editing items, each with at most one retry subset, maximum 2*ceil(N/4)<=16 calls, no diagnostic call. Whole-request deadlines are 120 seconds polish / 240 seconds rewrite; each editing await <=60 seconds and remaining time.
+
+Use count preflight for both degrees and both judgment modes in this new protocol. Editing input reservation cap remains 262,144; output reservation is 16,384 polish / 131,072 rewrite (16 generation slots). Retain the legacy count margin formula and reserve before generation. Disabled new polish is intentionally not legacy v1 accounting. Metrics include attempted generations, retries, estimation counts/time, failed calls and missing usage without fabrication.
+
+Normal judgment uses one detection batch and one verification batch per candidate round; deterministic packing can split each. A maximum of N detection and 2*N verification calls is possible in principle, but the existing configurable hard total maximum of 64 is retained: reject any phase exceeding remaining call/input budget before its first send. Do not increase the cap to 96 or skip second verification to fit. Judgment input units remain <=262,144; U=canonical request bytes+4096 <=64000 and S=canonical state bytes+longest canonical question bytes+4096 <=32000. Canonical means sorted JSON keys, compact separators, unescaped Unicode, finite numbers. Response bytes and actual reported output tokens each remain capped at 65,536 per judgment call. Byte units are engineering admission estimates, not proven tokenizer counts.
+
+Pack complete blocks/pairs greedily in original ordinal order. Repeat the full ordered six references in **both** detection and every verification batch. Precompute the complete phase partition and reservation/call admission before sending. A singleton that cannot fit is request_budget. Never split inside a body, omit references, summarize or repartition after an upstream error. Complete all initial editing batches before first verification; complete all retry subsets, retaining original batch boundaries, before second verification. This gives at most three judgment phases for the complete request. Check deadline and monetary admission before each send. Retain separate provider ledgers, no refunds of started slots, and the existing combined known-same-currency reservation ceiling using the current degree's editing output cap. Unknown/different-currency prices do not create a fictional combined price.
+
+CurrentCode is the legacy code set including request_budget but excluding html_structure. Add no score-specific error. At an unresolved decision point use: deadline, transport/failure, generation finish, malformed shape/IDs/Unicode, valid-shape size limits, reservation/call overrun. Preserve available usage before choosing the code. Freeze terminal code before cleanup. No future call may be made merely to discover a higher-priority error. Local validation cannot let measured overrun hide malformed output.
+
+For generation 4, these Current sections supersede CTR-02's historical caller semantic comparison, local recheck/related-group adoption, original restoration and HTML structural retry/terminal rules. Only the deterministic comparison algorithms, token extraction, order, matched-term accounting, original-input HTML parser/prose extraction and meaning-preservation obligations are incorporated. Phrases about semantic comparison in those token tables describe limitations, not a new Skill comparison step. Markdown's structural exception follows AC-01-10. CTR-02 body/copies must be migrated before runtime activation; a client must not claim compliance by combining old adoption rules with this generation.
+
+Messages and safe field rules retain the legacy error table except the removed code. input_limit and generation_truncated permit the existing one-generation client split for text/markdown; output_limit does so for rewrite only. HTML, request_budget, invalid_response, language and provider failures have no automatic retry. No partial success escapes on failure or cancellation.
+
+### Current accounting, audit and instructions
+
+Use the legacy provider-row component-wise usage, zero/null, per-model price lookup, six-place decimal rounding, total cost and per-provider elapsed-time rules for generation 4 editing. A disabled one-row response has the same cost as its editing row; no model calls means null cost. Lint v4 remains zero model usage/calls and null model/cost.
+
+Keep the exact legacy audit whitelist. model/usage/cost/model_calls are editing-row projections; no scores, pairs, retry triggers, diagnostics, references, per-provider rows or registry hashes enter logs. rejected_count counts deterministic rejected flags only, unfixable_count unfixable only; errors have both zero. No removed verification_rejected count survives. No exception chain, parser snippet, credentials or body reaches any sink.
+
+Initialization instructions (disabled: remove " and TypeSafe AI" from the following text):
+"copyeditor sends polish_text body and context/background to Vertex AI and TypeSafe AI. This server does not persist body, candidates or judgments; providers govern retention. Use text or items [{id,text,context?}], never both; html uses text only. Set language when known; otherwise the server detects it without a default. lint_text calls no provider. Compare results before applying them manually. Keep originals on errors and flags. Judgment may cause one shared retry; it is not proof of correctness."
+The resulting string must fit 512 Unicode code points. This manual-client advice does not reintroduce Skill semantic comparison.
+
+### Current consumer cases and legacy retirement
+
+The implementation PR must replace old expectations, not retain mutually incompatible oracles. Require identical discovered schemas across enabled/disabled modes, required-null versus absent-key negatives, mixed-null registries, marker/mode mismatches, lint/edit tool-family confusion, and current full-shape successes/errors for both degrees and modes, lint4, absent/explicit language, all-zero provider validation failures, unknown/mixed/hash-mismatched registry pairs, exact floor/gap/meaning boundaries, shared retry truth table, identical first/second candidates, deterministic failure on second candidate retaining its body, second verification failure returning candidate, second verification API failure discarding all content, and diagnosis/candidate same-response identity.
+
+Prove tone/desired_style and removed action/axis/Choice fields absent from actual judgment bytes, both phases using identical gate/reference definitions, original gate never re-requested, phase preflight before any send, maximum counts and after-cancel zero calls. Include hidden verification-data negative payloads and all-sink sentinels. Keep unchanged authentication, raw limits, lint determinism, error atomicity and privacy regressions. Legacy contract-case fences below remain historical v1–v3 cases only; their current-version replacements and strict inventory migration must land atomically with the new consumer. Passing legacy fixtures is not evidence for this proposal.
+
+## Legacy revisions 1–9
+
+The following describes historical schema versions 1–3 only. Only unchanged rules explicitly incorporated by the Current sections remain applicable to the proposal. In a conflict, the Current sections take precedence. Historical executable cases are not current-version acceptance evidence.
 
 ## Transport and discovery
 

@@ -1,23 +1,23 @@
-"""Unconnected generation-4 configuration; no default language or guessed thresholds."""
+"""Generation-4 configuration; no default language or guessed thresholds."""
 import json
 import os
 from decimal import Decimal
 from pathlib import Path
 
-from .config import ConfigError, ResolvedConfig, SCHEMA as LEGACY, SECRETS, freeze, matches, strict_yaml
+from .config import ConfigError, ResolvedConfig, SCHEMA, SECRETS, freeze, matches, strict_yaml
 from .judgment_config import JudgmentSecret
 from .judgment_v2 import COMPATIBLE_PAIRS, POLICY_ID, POLICIES, THRESHOLDS
 
 
-def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None, *, thresholds=THRESHOLDS, pairs=COMPATIBLE_PAIRS):
+def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None, *, thresholds=THRESHOLDS, pairs=COMPATIBLE_PAIRS, rules_loader=None):
     env = os.environ if environ is None else environ
     if "COPYEDITOR_DEFAULT_LANGUAGE" in env:
         raise ConfigError()
-    schema = {key: value for key, value in LEGACY.items() if key != "default_language"}
+    schema = dict(SCHEMA)
     schema["judgment.policy_version"] = ("COPYEDITOR_JUDGMENT_POLICY_VERSION", POLICY_ID,
-                                       lambda v: type(v) is str and v in POLICIES)
+                                       lambda v: type(v) is str and bool(v))
     schema["judgment.thresholds_version"] = ("COPYEDITOR_JUDGMENT_THRESHOLDS_VERSION", None,
-                                           lambda v: v is None or type(v) is str and v in thresholds)
+                                           lambda v: v is None or type(v) is str and bool(v))
     try:
         raw = strict_yaml(Path(path).read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -65,10 +65,13 @@ def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None, *, thres
             failed = True
         if failed:
             raise ConfigError(field=name)
+    rules = rules_loader(resolved) if rules_loader is not None else None
+    if resolved["judgment.policy_version"] not in POLICIES:
+        raise ConfigError(field="judgment.policy_version")
     threshold = resolved["judgment.thresholds_version"]
     if threshold is None and resolved["judgment.enabled"]:
         raise ConfigError("missing_required", "judgment.thresholds_version")
-    if threshold is not None and (resolved["judgment.policy_version"], threshold) not in pairs:
+    if threshold is not None and (threshold not in thresholds or (resolved["judgment.policy_version"], threshold) not in pairs):
         raise ConfigError(field="judgment.thresholds_version")
     secrets = {}
     if resolved["auth.mode"] == "google":
@@ -91,4 +94,4 @@ def load_config(path=Path("/etc/copyeditor/config.yaml"), environ=None, *, thres
         if not matches(r"[\x21-\x7e]{1,4096}", key):
             raise ConfigError(field="judgment.credentials")
         secrets["TYPESAFE_API_KEY"] = JudgmentSecret(key)
-    return ResolvedConfig(freeze(resolved), freeze(secrets))
+    return ResolvedConfig(freeze(resolved), freeze(secrets), rules)

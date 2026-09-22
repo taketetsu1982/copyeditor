@@ -4,7 +4,6 @@
 provider: vertex
 model: gemini-3.1-flash-lite
 thinking: low
-default_language: ja
 protected_terms: []
 length_ratio:
   min: 0.5
@@ -33,8 +32,8 @@ server:
 judgment:
   enabled: false
   model: jev-1.13.0
-  policy_version: reference-gate-action-v1
-  thresholds_version: gate-verify-v1
+  policy_version: reference-gate-v2
+  thresholds_version: null # Enabling requires a calibrated, registered version.
   timeout_ms: 10000
   polish_deadline_ms: 120000
   rewrite_deadline_ms: 240000

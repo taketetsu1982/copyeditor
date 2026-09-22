@@ -1,4 +1,4 @@
-"""Prepared generation-four entry; public dispatch switches atomically later."""
+"""Generation-four public editing and lint entry."""
 from time import monotonic
 
 from .edit_pipeline import polish
@@ -60,7 +60,7 @@ class EditService:
             explicit = arguments.get("language") if type(arguments) is dict else None
             if type(explicit) is str and explicit in self.snapshot.languages:
                 language = explicit
-            request = parse_edit_request(tool, arguments, config, self.snapshot, generation4=True)
+            request = parse_edit_request(tool, arguments, config, self.snapshot)
             language = request.language
             if editing:
                 return await polish(self, request, self.judgment, meter, items_route="items" in arguments, registry=self.registry)

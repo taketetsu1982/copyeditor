@@ -30,8 +30,8 @@ def test_ac_07_9_ac_07_13_inv13_fixture_records_all_trials_without_quality_accep
     assert result["criteria_met"] and not result["quality_accepted"]
     assert result["groups"]["acceptance"] == dict(planned=120, passed=120, rate=1)
     assert result["groups"]["regression"] == dict(planned=0, passed=0, rate=None)
-    assert all(t["response"]["model_calls"] == 2 and not t["error"] for t in artifact["trials"])
-    assert all(e["instruction_hashes"].keys() == {"diagnose", "rewrite"} for e in plan["entries"])
+    assert all(t["response"]["providers"][0]["model_calls"] == 1 and not t["error"] for t in artifact["trials"])
+    assert all(e["instruction_hashes"].keys() == {"rewrite"} for e in plan["entries"])
 
 
 @pytest.mark.parametrize("change", ["missing", "duplicate", "moved", "plan", "hash", "boolean"])

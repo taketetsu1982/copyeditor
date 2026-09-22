@@ -5,17 +5,9 @@ from google import genai
 from google.auth.transport.requests import Request
 from google.genai import types
 from copyeditor.config import ConfigError
-from copyeditor.prompt import contents
+from copyeditor.prompt import edit_contents as contents
+from copyeditor.edit_generation import generation_schema
 from .base import GenerationResult, ProviderFailure, Usage
-RESPONSE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["items"], "properties": {"items": {
-    "type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["id", "text", "flag"], "properties": {
-        "id": {"type": "string"}, "text": {"type": "string"}, "flag": {"anyOf": [{"type": "null"}, {"type": "object",
-        "additionalProperties": False, "required": ["kind", "reason"], "properties": {"kind": {"const": "unfixable"}, "reason": {"type": "string"}}}]}}}}}}
-DIAGNOSIS_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["diagnoses"], "properties": {
-    "diagnoses": {"type": "array", "items": {"type": "object", "additionalProperties": False,
-        "required": ["id", "status", "expression", "reason"], "properties": {
-            "id": {"type": "string"}, "status": {"enum": ["issue", "no_issue"]},
-            "expression": {"type": ["string", "null"]}, "reason": {"type": ["string", "null"]}}}}}}
 def usage(response):
     metadata = getattr(response, "usage_metadata", None)
     values = [getattr(metadata, key, None) for key in ("prompt_token_count", "candidates_token_count", "thoughts_token_count", "total_token_count")]
@@ -45,15 +37,8 @@ class Vertex:
         except Exception:
             raise ConfigError("credentials_unavailable", "credentials") from None
     def options(self, input):
-        if input.stage not in ("polish", "diagnose", "rewrite"):
-            raise ValueError()
-        if input.stage == "rewrite":
-            if [item.id for item in input.diagnoses] != [item.id for item in input.items]:
-                raise ValueError()
-        elif input.diagnoses:
-            raise ValueError()
         return types.GenerateContentConfig(system_instruction=input.system_instruction, temperature=0, max_output_tokens=8192,
-            response_mime_type="application/json", response_json_schema=DIAGNOSIS_SCHEMA if input.stage == "diagnose" else RESPONSE_SCHEMA,
+            response_mime_type="application/json", response_json_schema=generation_schema(input.stage),
             thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel(self.config["thinking"].upper())))
     async def estimate_input(self, input):
         try:

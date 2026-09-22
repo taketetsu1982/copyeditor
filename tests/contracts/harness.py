@@ -90,27 +90,16 @@ def is_rewrite(case):
 
 
 def fixture_schema(case):
-    if case.get("generation") == 4:
-        from copyeditor.edit_protocol import output_schema
-        return output_schema(case["tool"])
-    from copyeditor.responses import output_schema
-    from copyeditor.rewrite_response import rewrite_output_schema
-    return rewrite_output_schema() if is_rewrite(case) else output_schema(case["tool"])
+    from copyeditor.edit_protocol import output_schema
+    assert case["generation"] == 4
+    return output_schema(case["tool"])
 
 
 def validate_fixture(payload, case):
-    if case.get("generation") == 4:
-        from copyeditor.edit_protocol import validate_final
-        validate_final(payload, source_items(case), tool=case["tool"],
-                       expected_enabled=case["judgment_enabled"], registry=fixture_registry,
-                       format=case["input"].get("format", "text"))
-        return
-    from copyeditor.responses import validate_final
-    from copyeditor.rewrite_response import validate_rewrite_final
-    if is_rewrite(case):
-        validate_rewrite_final(payload, source_items(case))
-    else:
-        validate_final(payload)
+    from copyeditor.edit_protocol import validate_final
+    validate_final(payload, source_items(case), tool=case["tool"],
+                   expected_enabled=case["judgment_enabled"], registry=fixture_registry,
+                   format=case["input"].get("format", "text"))
 
 
 def generation_result(response):
@@ -119,14 +108,6 @@ def generation_result(response):
         return response
     return GenerationResult(json.dumps({key: value for key, value in response.items() if key != "finish"}),
                             response.get("finish", "stop"), Usage(None, None, None))
-
-
-def rewrite_case():
-    return dict(name="rewrite-fixture", tool="polish_text", input=dict(text="Hello.", language="en", degree="rewrite"),
-        provider=[dict(diagnoses=[dict(id="text", status="no_issue", expression=None, reason=None)]),
-                  dict(items=[dict(id="text", text="Hello.", flag=None)])],
-        expect=dict(status="ok", schema_version=2, text="Hello.", model_calls=2, regenerated=False,
-                    diagnosis=dict(status="no_issue", expression=None, reason=None)))
 
 
 # Synthetic thresholds are explicit test inputs, never production registration.
@@ -189,7 +170,7 @@ async def invoke_generation4(case, root):
                 if source.stem not in ("common", "README") and "Default style: " not in raw:
                     raw = raw.replace("## Context weights\n", "## Context weights\nDefault style: Natural expression.\n")
                 (base / source.name).write_text(raw)
-            service = EditService(config, load_rules(base, None, generation4=True), Provider, adapter, registry=fixture_registry)
+            service = EditService(config, load_rules(base, None), Provider, adapter, registry=fixture_registry)
             payload = await getattr(service, "polish" if editing else "lint")(arguments)
     finally:
         if adapter is not None:

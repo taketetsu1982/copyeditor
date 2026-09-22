@@ -65,6 +65,8 @@ Sentence segmentation scans until any configured terminator or LF, includes that
 
 Collect all detector matches, deduplicate identical `(rule_id,start,end)` tuples, and sort by `(start,end,rule_id)` using numeric offsets and ASCII ID order. Findings carry `matched = text[start:end]` and the rule description. Return the first 100 per item, with `findings_truncated: true` iff additional matches exist. Truncation is deterministic. This cap affects findings only, never whether a candidate is adopted.
 
+Each built-in language requires one `Default style: ` instruction in Context weights; overlays cannot define it. See [the default-style contract](../contracts/config.md#rule-backed-default-style).
+
 ## Overlays
 
 An additive file in `/etc/copyeditor/rules.d/<lang>.md` has the same frontmatter, headings and JSON shape. It requires an existing built-in language and uses new lint IDs. Each prose section is appended to its built-in section, built-in first; no overwrite directive exists. Protected terms are unioned exactly and sorted. The combined rules/terms must meet the effective limits above. Empty prose sections and empty rules arrays are allowed in overlays, but not empty required prose sections in built-ins. `common.md` and `README.md` are not overlay language names. Unknown files, symlinks, unreadable files, mismatched language metadata, duplicate anchors/IDs, or malformed JSON stop startup. Adding a new language requires a built-in file and examples through a normal release.

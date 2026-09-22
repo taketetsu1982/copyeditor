@@ -33,6 +33,8 @@ Use idiomatic Simplified Chinese constructions instead of cumbersome translated 
 - reason: The concise purpose statement preserves intention rather than promising a result.
 
 ## Context weights
+
+Default style: Use natural, direct Chinese. Prefer familiar, concrete wording and omit formulaic padding while preserving meaning and register.
 Choose wording for the audience and setting. Retain suitable courtesy and field-specific terms, and do not invent benefits for promotional text.
 - bad: 请核对申请信息后再提交。
 - good: 请核对申请信息后再提交。
