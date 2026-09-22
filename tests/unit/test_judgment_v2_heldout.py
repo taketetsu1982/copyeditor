@@ -41,16 +41,26 @@ MANIFEST = {
     'judgment-v2-heldout-28': {'axis': 'roundabout', 'topic': 'concert-seat-change-request', 'origin': 'synthetic-v2-heldout/concert-seat-change-request', 'anchors': ['空席がある場合のみ', '希望する席を必ず用意できるわけでは'], 'witness': 'お伝えしておきたいと思います', 'trap': ['空席がある場合のみ受け付けます', '空席がない場合も受け付けます'], 'invariant': 'Keep vacancy as a condition and the lack of a preferred-seat guarantee.'},
     'judgment-v2-heldout-29': {'axis': 'repetition', 'topic': 'circuit-board-revision-parts', 'origin': 'synthetic-v2-heldout/circuit-board-revision-parts', 'anchors': ['版番号', '組み立てる前', '版番号が違う部品表は使わない'], 'witness': 'そして、', 'trap': ['版番号が違う部品表は使わないでください', '版番号が違う部品表でも使ってください'], 'invariant': 'Keep matching revisions, the before-assembly check and mismatched-list prohibition; add no electrical instructions.'},
     'judgment-v2-heldout-30': {'axis': 'repetition', 'topic': 'warehouse-key-return-log', 'origin': 'synthetic-v2-heldout/warehouse-key-return-log', 'anchors': ['借りた人が受付へ', '返却時刻を台帳に', '別の人へ直接渡さない'], 'witness': 'さらに、', 'trap': ['別の人へ直接渡さないでください', '別の人へ直接渡してください'], 'invariant': 'Keep borrower responsibility, logging, no direct handoff and the closed-desk exception.'},
+    'judgment-v2-heldout-31': {'axis': 'natural', 'control': 'technical', 'topic': 'acoustic-spectrum-report', 'origin': 'synthetic-v2-heldout/acoustic-spectrum-report', 'anchors': ['周波数', '音圧レベル', 'Hz', 'dB'], 'witness': '周波数', 'invariant': 'Keep both axis assignments and units; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-32': {'axis': 'natural', 'control': 'technical', 'topic': 'fermentation-density-log', 'origin': 'synthetic-v2-heldout/fermentation-density-log', 'anchors': ['測定日と比重', 'そのまま記録', '別の欄'], 'witness': '比重', 'invariant': 'Keep raw and corrected readings in different fields; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-33': {'axis': 'natural', 'control': 'repetition', 'topic': 'costume-rental-cover', 'origin': 'synthetic-v2-heldout/costume-rental-cover', 'anchors': ['カバー', '貸出番号', '受付へ連絡'], 'witness': 'カバー', 'invariant': 'Keep the return container, identifier and missing-cover exception; repeated references distinguish the assigned cover.'},
+    'judgment-v2-heldout-34': {'axis': 'natural', 'control': 'technical', 'topic': 'braille-page-index', 'origin': 'synthetic-v2-heldout/braille-page-index', 'anchors': ['点字', '墨字', '右上', '一致しない'], 'witness': '点字', 'invariant': 'Keep the two numbering systems, position and inquiry instruction; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-35': {'axis': 'natural', 'control': 'repetition', 'topic': 'classroom-homework-box', 'origin': 'synthetic-v2-heldout/classroom-homework-box', 'anchors': ['提出箱', '朝の会が始まる前', '先生へ渡'], 'witness': '提出箱', 'invariant': 'Keep ordinary and late-submission destinations and the collection time; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-36': {'axis': 'natural', 'control': 'condition', 'topic': 'inscription-rubbing-copy', 'origin': 'synthetic-v2-heldout/inscription-rubbing-copy', 'anchors': ['展示用の複製', '実物の石碑は会場にありません', '読めない箇所'], 'witness': '複製', 'invariant': 'Keep the replica status, absent original and unreadable portions; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-37': {'axis': 'natural', 'control': 'repetition', 'topic': 'rental-rainwear-drying', 'origin': 'synthetic-v2-heldout/rental-rainwear-drying', 'anchors': ['雨具', '袋に密閉せず', '返却期限は延長されません'], 'witness': '雨具', 'invariant': 'Keep drying, the wet-return exception and unchanged deadline; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-38': {'axis': 'natural', 'control': 'technical', 'topic': 'sample-timeout-setting', 'origin': 'synthetic-v2-heldout/sample-timeout-setting', 'anchors': ['timeout_ms', '3000', 'ミリ秒', '0を指定'], 'witness': 'timeout_ms', 'invariant': 'Keep the sample value, unit, zero behavior and separate production choice; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-39': {'axis': 'natural', 'control': 'style', 'topic': 'travel-ticket-album', 'origin': 'synthetic-v2-heldout/travel-ticket-album', 'anchors': ['切符', '一枚ずつ', '日付', '寄り道'], 'witness': 'あの日の寄り道', 'invariant': 'Keep the concrete memory invitation and permissive product voice; keep every decoded character unchanged.'},
+    'judgment-v2-heldout-40': {'axis': 'natural', 'control': 'style', 'topic': 'movable-type-display', 'origin': 'synthetic-v2-heldout/movable-type-display', 'anchors': ['活字', '側面についた傷', '触れずに'], 'witness': '近くでご覧ください', 'invariant': 'Keep the gentle invitation and no-touch condition; keep every decoded character unchanged.'},
 }
 
 HELDOUT = [c for c in CASES if c['id'].startswith('judgment-v2-heldout-')]
 
 
 def test_heldout_subset_has_independent_topics_origins_and_bodies():
-    expected = [f'judgment-v2-heldout-{i:02}' for i in range(1, 31)]
+    expected = [f'judgment-v2-heldout-{i:02}' for i in range(1, 41)]
     assert list(MANIFEST) == [c['id'] for c in HELDOUT] == expected
     assert Counter(m['axis'] for m in MANIFEST.values()) == dict(
-        stiffness=6, abstraction=6, formulaic=6, roundabout=6, repetition=6)
+        stiffness=6, abstraction=6, formulaic=6, roundabout=6, repetition=6, natural=10)
     old_topics = {m[1] for m in (CALIBRATION_MANIFEST | ACCEPTANCE_MANIFEST).values()}
     old_topics |= {m['topic'] for m in CALIBRATION_V2.values()}
     assert len({m['topic'] for m in MANIFEST.values()}) == len(expected)
@@ -60,7 +70,7 @@ def test_heldout_subset_has_independent_topics_origins_and_bodies():
     assert not origins & {m['origin'] for m in CALIBRATION_V2.values()}
     other = {c[k] for c in CASES if c not in HELDOUT for k in ('bad', 'good')} | {r['text'] for r in REFERENCES}
     texts = [c[k] for c in HELDOUT for k in ('bad', 'good')]
-    assert len(set(texts)) == len(texts)
+    assert len({c['bad'] for c in HELDOUT}) == len({c['good'] for c in HELDOUT}) == 40
     assert not set(texts) & other
     assert all(a not in b and b not in a for a in texts for b in other)
 
@@ -68,12 +78,16 @@ def test_heldout_subset_has_independent_topics_origins_and_bodies():
 @pytest.mark.parametrize('case', HELDOUT, ids=lambda c: c['id'])
 def test_heldout_improvement_preserves_conditions_and_exposes_meaning_traps(case):
     draft = MANIFEST[case['id']]
-    assert case['must_change'] and case['bad'] != case['good']
-    assert draft['witness'] in case['bad'] and draft['witness'] not in case['good']
+    natural = draft['axis'] == 'natural'
+    assert case['must_change'] is not natural
+    assert (case['bad'] == case['good']) is natural
+    assert draft['witness'] in case['bad']
+    assert (draft['witness'] in case['good']) is natural
     assert all(a in case['bad'] and a in case['good'] for a in draft['anchors'])
-    source, broken = draft['trap']
-    assert source in case['bad'] and source in case['good'] and broken not in case['good']
-    assert case['good'].replace(source, broken) != case['good']
+    if not natural:
+        source, broken = draft['trap']
+        assert source in case['bad'] and source in case['good'] and broken not in case['good']
+        assert case['good'].replace(source, broken) != case['good']
     assert draft['invariant'] and draft['origin'] == 'synthetic-v2-heldout/' + draft['topic']
     assert case['background'] == {} and case['degree'] == 'polish' and case['format'] == 'text'
     config, snapshot = adapter.environment(case, 'fixture')
@@ -81,7 +95,74 @@ def test_heldout_improvement_preserves_conditions_and_exposes_meaning_traps(case
     assert not check(case['bad'], case['good'], snapshot.languages['ja'].protected_terms, ratio).failed
 
 
-def test_incomplete_heldout_cannot_be_selected_for_acceptance():
+def test_complete_heldout_freezes_all_trials_separate_from_calibration():
+    import judgment_evaluation as evaluation
+    plan = evaluation.freeze(1, name='acceptance')
+    population = plan['sets'][0]
+    assert population['name'] == 'judgment-acceptance-v4'
+    assert population['population_hash'] == evaluation.POPULATION_PINS['acceptance'][2]
+    assert population['owner_labels'] == population['native_review'] == 'pending'
+    assert Counter(c['kind'] for c in population['cases']) == dict(problem=30, natural=10)
+    assert all(c['origin'] == 'synthetic-v2:' + c['id'] and c['sha256'] for c in population['cases'])
+    assert len(plan['planned_trials']) == len(plan['request_layouts']) == 800
+    assert set(t['example_id'] for t in plan['planned_trials']) == set(MANIFEST)
+    assert not set(MANIFEST) & set(CALIBRATION_V2)
+    assert all(t['layout'] == 'text' for t in plan['planned_trials'])
+    assert len(evaluation.population('existing')) == 24
+    assert len(evaluation.population('calibration')) == 30
+    assert not plan['acceptance_criteria']['quality_accepted']
+    assert Counter(m.get('control') for m in MANIFEST.values() if m['axis'] == 'natural') == dict(
+        technical=4, repetition=3, condition=1, style=2)
+
+
+@pytest.mark.parametrize('change', ['empty', 'missing', 'extra', 'changed', 'historical', 'calibration'])
+def test_heldout_hash_rejects_missing_or_contaminated_assets(tmp_path, monkeypatch, change):
+    import shutil
+    import judgment_evaluation as evaluation
+    source = evaluation.legacy.ROOT
+    target = tmp_path / 'examples/ja'
+    target.mkdir(parents=True)
+    if change != 'empty':
+        for path in (source / 'examples/ja').glob('judgment-v2-heldout-*.yaml'):
+            shutil.copyfile(path, target / path.name)
+        first = target / 'judgment-v2-heldout-01.yaml'
+        if change == 'missing': first.unlink()
+        elif change == 'extra': shutil.copyfile(first, target / 'judgment-v2-heldout-99.yaml')
+        elif change == 'changed': first.write_text(first.read_text() + '\n# changed\n')
+        else:
+            prefix = 'judgment-acceptance' if change == 'historical' else 'judgment-v2-calibration'
+            shutil.copyfile(source / f'examples/ja/{prefix}-01.yaml', first)
+    monkeypatch.setattr(evaluation.legacy, 'ROOT', tmp_path)
+    with pytest.raises(ValueError, match='Missing or changed evaluation population'):
+        evaluation.population('acceptance')
+
+
+def test_complete_heldout_does_not_authorize_live_or_historical_acceptance():
     import judgment_evaluation as evaluation
     with pytest.raises(ValueError, match='not complete'):
-        evaluation.freeze(1, name='acceptance')
+        evaluation.freeze(1, name='acceptance', mode='live')
+    with pytest.raises(ValueError, match='Invalid comparison plan'):
+        evaluation.freeze(1, name='judgment-acceptance-v3')
+
+
+@pytest.mark.asyncio
+async def test_failed_heldout_retains_denominators_and_rejects_label_or_trial_contamination(tmp_path, monkeypatch):
+    from copy import deepcopy
+    import judgment_evaluation as evaluation
+    plan = evaluation.freeze(1, name='acceptance')
+    monkeypatch.setattr(evaluation.legacy, 'save', lambda *args: None)
+    async def failed(*args):
+        raise RuntimeError('synthetic failure')
+    artifact = await evaluation.run(plan, tmp_path / 'heldout.json', failed)
+    summary = evaluation.summarize(plan, artifact)
+    assert sum(g['counts']['planned'] for g in summary['groups'].values()) == 800
+    assert all(g['counts']['problem'] == 150 and g['counts']['natural'] == 50 for g in summary['groups'].values())
+    assert not summary['criteria_met'] and not summary['quality_accepted']
+    changed = deepcopy(plan)
+    changed['sets'][0]['cases'][0]['kind'] = 'natural'
+    with pytest.raises(ValueError, match='Comparison inputs changed'):
+        evaluation.audit(changed, artifact)
+    changed = deepcopy(artifact)
+    changed['trials'][0]['example_id'] = 'judgment-v2-calibration-01'
+    with pytest.raises(ValueError, match='Missing, duplicate or moved trials'):
+        evaluation.audit(plan, changed)

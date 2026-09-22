@@ -21,9 +21,9 @@ from examples_to_promptfoo import load_examples
 COMPARISON = dict(acceptance=dict(problem=30, natural=10, per_example=4, per_repeat=24),
                   existing=dict(problem=18, natural=6, per_example=4, per_repeat=15), repeats=5, required_gain=1)
 
-SETS = dict(calibration="calibration-v4", acceptance="judgment-acceptance-v3", existing="existing-rewrite-v4", regression="packing-regression-v4")
+SETS = dict(calibration="calibration-v4", acceptance="judgment-acceptance-v4", existing="existing-rewrite-v4", regression="packing-regression-v4")
 
-POPULATION_PINS = {'calibration': ('judgment-v2-calibration', 30, '65292c4234855ff9b55d3d3c7d9d6f7e0df687897838c693364b9bc99d00dfc5')}
+POPULATION_PINS = {'acceptance': ('judgment-v2-heldout', 40, '915867574207ba3970f5a8df9ee49ccb5b690182ecd14474abcb413872f90f19'), 'calibration': ('judgment-v2-calibration', 30, '65292c4234855ff9b55d3d3c7d9d6f7e0df687897838c693364b9bc99d00dfc5')}
 
 
 def encoded(value):
@@ -39,7 +39,7 @@ def population(name):
         if [p.stem for p in paths] != [f'{prefix}-{i:02}' for i in range(1, count + 1)] or legacy.digest(json.dumps(rows).encode()) != expected:
             raise ValueError('Missing or changed evaluation population')
     cases = {c['id']: c for c in load_examples(legacy.ROOT / 'examples', load_rules(legacy.ROOT / 'rules', None)) if c['language'] == 'ja'}
-    prefix, count = {'calibration': ('judgment-v2-calibration', 30), 'acceptance': ('judgment-acceptance', 40), 'existing': ('rewrite', 24)}.get(name, ('', 0))
+    prefix, count = {'calibration': ('judgment-v2-calibration', 30), 'acceptance': ('judgment-v2-heldout', 40), 'existing': ('rewrite', 24)}.get(name, ('', 0))
     if name == 'regression':
         return [dict(cases['judgment-calibration-01'], id=f'packing-{i}', bad=str(i) + 'あ' * 2390, good=str(i) + 'あ' * 2390, must_change=True) for i in range(1, 6)]
     return [cases[f'{prefix}-{i:02}'] for i in range(1, count + 1)]
@@ -48,7 +48,7 @@ def population(name):
 def freeze(revision, mode='fixture', name='existing', created_at=None, pairs=None):
     name = next((k for k, v in SETS.items() if v == name), name)
     if type(revision) is not int or revision < 1 or mode not in ('fixture', 'live') or name not in ('calibration', 'acceptance', 'existing', 'regression'): raise ValueError('Invalid comparison plan')
-    if name == 'acceptance' or name == 'calibration' and mode == 'live' or pairs is not None:
+    if name in ('calibration', 'acceptance') and mode == 'live' or pairs is not None:
         raise ValueError('Generation-four evaluation population and owner manifest are not complete')
     created_at = created_at or datetime.now(timezone.utc).isoformat()
     cases = population(name)

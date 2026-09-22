@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-39"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "旅先の切符を、一枚ずつ差し込めるアルバムです。行き先も日付もばらばらでかまいません。めくるたびに、あの日の寄り道を思い出せます。"
+good: "旅先の切符を、一枚ずつ差し込めるアルバムです。行き先も日付もばらばらでかまいません。めくるたびに、あの日の寄り道を思い出せます。"
+reason: "Natural style control: Keep the concrete memory invitation and permissive product voice; keep every decoded character unchanged."
+lint: null
+must_change: false

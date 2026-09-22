@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-38"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "サンプルの設定では、timeout_msは3000です。単位はミリ秒で、0を指定するとタイムアウトしません。本番の値は利用環境に合わせて決めてください。"
+good: "サンプルの設定では、timeout_msは3000です。単位はミリ秒で、0を指定するとタイムアウトしません。本番の値は利用環境に合わせて決めてください。"
+reason: "Natural technical control: Keep the sample value, unit, zero behavior and separate production choice; keep every decoded character unchanged."
+lint: null
+must_change: false

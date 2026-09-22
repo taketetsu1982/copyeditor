@@ -95,14 +95,16 @@ GENERATION4_MODULES = {
 
 # Evaluation ownership is separate from runtime consumers.
 EVALUATION_MODULES = {
+    'tests/unit/test_judgment_v2_heldout.py': (50, '689d1046205a5f83d29ead40804367b3c6c30f79bc83ad80fc6ae2678ac191fa'),
     'tests/unit/test_judgment_v2_examples.py': (39, '9267aece4f9c3243820c89cce3b5cc1b4eeb25f63162276d9f54a28484c4bafd'),
-    'tests/unit/test_generation4_evaluation.py': (22, 'fac36244eac13ddbf2646b408ca3511ddd11a191092f1d5cb8fe3fd284f8b0a3'),
+    'tests/unit/test_generation4_evaluation.py': (22, 'c513ff12e314f62721602554cf8277d9f695373b4afd1f2908fd5ac903bc7585'),
     'tests/unit/test_judgment_examples.py': (74, '27d1c498bb8639488edea49c84805e37a0410a22f97eac56aace713cceefb605'),
     'tests/unit/test_judgment_evaluation.py': (54, 'a272a2028c811f1ae5b312b02e0c98fd93569acb51aab7d057d5e75ed3381419'),
-    'tests/unit/test_judgment_calibration.py': (6, '4072328a8156adaa698f3b270a43d343c8a5cdb0b56bf601f5a91262b9c778a6'),
-    'tests/integration/test_judgment_acceptance.py': (67, 'edbe6162d82c2dc23f0e44534a68deb9bea36c68100903de897bebdad7ca0b55'),
+    'tests/unit/test_judgment_calibration.py': (6, '898571f77d1f41922db0df4e5bf1774dffee0b77a901b129a369c5212b879027'),
+    'tests/integration/test_judgment_acceptance.py': (78, '02da8879e18d4c78f869c2e0d798474930b31a7579ab4b6ce365de64c1de99a1'),
 }
 EVALUATION_SETS = {
+    'judgment-v2-heldout': (40, '915867574207ba3970f5a8df9ee49ccb5b690182ecd14474abcb413872f90f19'),
     'judgment-v2-calibration': (30, '65292c4234855ff9b55d3d3c7d9d6f7e0df687897838c693364b9bc99d00dfc5'),
     'judgment-calibration': (30, '1f5bd7410d0a73864a0576dfc5565ef6d7dc67ee80bb6d7d130e98288679ef53'),
     'judgment-acceptance': (40, '6ec1c9ce07d9812f03b7791d28935050be541d4c9d8f27615fbb73b61e19e312'),

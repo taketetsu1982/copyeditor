@@ -20,7 +20,7 @@ def test_incomplete_generation_four_calibration_refuses_before_provider_calls(tm
     assert artifact.read_text() == historical and 'QUALITY PASS' not in result.stdout
 
 
-@pytest.mark.parametrize('population, error', [('calibration-v3', 'Invalid comparison plan'), ('acceptance', 'not complete')])
+@pytest.mark.parametrize('population, error', [('calibration-v3', 'Invalid comparison plan'), ('judgment-acceptance-v3', 'Invalid comparison plan')])
 def test_old_population_cannot_freeze_current_calibration_or_acceptance(population, error):
     with pytest.raises(ValueError, match=error):
         evaluation.freeze(1, name=population)

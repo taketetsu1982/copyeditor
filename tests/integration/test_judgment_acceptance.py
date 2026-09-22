@@ -20,13 +20,13 @@ def test_ac_08_13_14_fixed_evaluation_modules_and_populations(collected_contract
     assert set(EVALUATION_MODULES) == {
         'tests/unit/test_judgment_examples.py', 'tests/unit/test_judgment_evaluation.py',
         'tests/unit/test_judgment_calibration.py', 'tests/integration/test_judgment_acceptance.py',
-        'tests/unit/test_generation4_evaluation.py', 'tests/unit/test_judgment_v2_examples.py'}
+        'tests/unit/test_generation4_evaluation.py', 'tests/unit/test_judgment_v2_examples.py', 'tests/unit/test_judgment_v2_heldout.py'}
     assert {k: v[0] for k, v in EVALUATION_SETS.items()} == {
-        'judgment-calibration': 30, 'judgment-acceptance': 40, 'rewrite': 24, 'judgment-v2-calibration': 30}
-    assert len(evaluation_inventory(ROOT)) == 6
+        'judgment-calibration': 30, 'judgment-acceptance': 40, 'rewrite': 24, 'judgment-v2-calibration': 30, 'judgment-v2-heldout': 40}
+    assert len(evaluation_inventory(ROOT)) == 7
     for module, expected in EVALUATION_MODULES.items():
         assert judgment_fingerprint(ROOT, module, collected_contracts.items) == expected
-    for name, size in [('existing', 480), ('regression', 200), ('calibration', 1200)]:
+    for name, size in [('existing', 480), ('regression', 200), ('calibration', 1200), ('acceptance', 800)]:
         plan = evaluation.freeze(1, name=name)
         assert len(plan['planned_trials']) == size
         assert {t['degree'] for t in plan['planned_trials']} == {'polish', 'rewrite'}
