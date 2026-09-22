@@ -31,16 +31,26 @@ MANIFEST = {
     'judgment-v2-heldout-18': {'axis': 'roundabout', 'topic': 'weekend-building-entry', 'origin': 'synthetic-v2-heldout/weekend-building-entry', 'anchors': ['登録済みの入館カード', 'カードの登録は平日に'], 'witness': '重要なポイントと言えるでしょう', 'trap': ['土曜日は、登録済みの入館カードで入館できます', '日曜日は、登録済みの入館カードで入館できます'], 'invariant': 'Keep Saturday access, Sunday prohibition and weekday registration; add no entry procedure.'},
     'judgment-v2-heldout-19': {'axis': 'repetition', 'topic': 'campground-numbered-pitch', 'origin': 'synthetic-v2-heldout/campground-numbered-pitch', 'anchors': ['受付で指定した区画', '空いていても無断で移らない'], 'witness': 'そして、', 'trap': ['空いていても無断で移らないでください', '空いていれば無断で移ってください'], 'invariant': 'Keep assigned placement, tag return and permission before moving; preserve repeated plot references.'},
     'judgment-v2-heldout-20': {'axis': 'repetition', 'topic': 'charity-book-sale-payments', 'origin': 'synthetic-v2-heldout/charity-book-sale-payments', 'anchors': ['会場費を差し引いて', '現金のみ', '袋を持参'], 'witness': 'さらに、', 'trap': ['会場費を差し引いて寄付します', '全額を寄付します'], 'invariant': 'Keep net proceeds rather than gross donation, cash-only payment and bring-your-own bags.'},
+    'judgment-v2-heldout-21': {'axis': 'stiffness', 'topic': 'street-leaf-collection-bags', 'origin': 'synthetic-v2-heldout/street-leaf-collection-bags', 'anchors': ['市の回収袋', '枝や石は入れない'], 'witness': '非常に大切です', 'trap': ['枝や石は入れないでください', '枝や石も入れてください'], 'invariant': 'Keep the designated bag and excluded materials; add no collection schedule.'},
+    'judgment-v2-heldout-22': {'axis': 'stiffness', 'topic': 'remote-meeting-speaking-card', 'origin': 'synthetic-v2-heldout/remote-meeting-speaking-card', 'anchors': ['名前の横の札', '司会者が順番に指名'], 'witness': '発言可視', 'trap': ['司会者が順番に指名します', '各自が自由に発言します'], 'invariant': 'Keep the signaling action and moderator-controlled order; do not add automatic microphone behavior.'},
+    'judgment-v2-heldout-23': {'axis': 'abstraction', 'topic': 'shoe-width-measurement-sheet', 'origin': 'synthetic-v2-heldout/shoe-width-measurement-sheet', 'anchors': ['足長と足囲', '左右別々'], 'witness': '歩行体験を最適化', 'trap': ['左右別々に記録します', '左右の平均だけを記録します'], 'invariant': 'Keep both measurements and separate sides; add no fit or health guarantee.'},
+    'judgment-v2-heldout-24': {'axis': 'abstraction', 'topic': 'photo-exhibit-voting-stickers', 'origin': 'synthetic-v2-heldout/photo-exhibit-voting-stickers', 'anchors': ['一人につき', '1枚', '作品の番号の下'], 'witness': '感性の共鳴を生み出す', 'trap': ['投票シールを1枚渡します', '投票シールを何枚でも渡します'], 'invariant': 'Keep one vote per person and sticker location; add no selection or prize rule.'},
+    'judgment-v2-heldout-25': {'axis': 'formulaic', 'topic': 'mountain-hut-bedding-booking', 'origin': 'synthetic-v2-heldout/mountain-hut-bedding-booking', 'anchors': ['宿泊予約と一緒', '当日の追加申込みは受け付けません'], 'witness': '意識しましょう', 'trap': ['当日の追加申込みは受け付けません', '当日の追加申込みも受け付けます'], 'invariant': 'Keep joint booking and no same-day additions; add no equipment or route advice.'},
+    'judgment-v2-heldout-26': {'axis': 'formulaic', 'topic': 'parking-pass-holiday-exclusion', 'origin': 'synthetic-v2-heldout/parking-pass-holiday-exclusion', 'anchors': ['平日の入庫', '土日と祝日は使えません', '券の裏面'], 'witness': 'ぜひ参考にしてみてください', 'trap': ['土日と祝日は使えません', '土日と祝日も使えます'], 'invariant': 'Keep weekday entry eligibility, excluded days and printed expiry location.'},
+    'judgment-v2-heldout-27': {'axis': 'roundabout', 'topic': 'public-address-test-schedule', 'origin': 'synthetic-v2-heldout/public-address-test-schedule', 'anchors': ['毎月15日の正午', '冒頭でも試験と案内'], 'witness': 'ご理解いただく形', 'trap': ['冒頭でも試験と案内します', '冒頭では実際の災害と案内します'], 'invariant': 'Keep the test date/time and explicit test announcement; do not describe a real emergency.'},
+    'judgment-v2-heldout-28': {'axis': 'roundabout', 'topic': 'concert-seat-change-request', 'origin': 'synthetic-v2-heldout/concert-seat-change-request', 'anchors': ['空席がある場合のみ', '希望する席を必ず用意できるわけでは'], 'witness': 'お伝えしておきたいと思います', 'trap': ['空席がある場合のみ受け付けます', '空席がない場合も受け付けます'], 'invariant': 'Keep vacancy as a condition and the lack of a preferred-seat guarantee.'},
+    'judgment-v2-heldout-29': {'axis': 'repetition', 'topic': 'circuit-board-revision-parts', 'origin': 'synthetic-v2-heldout/circuit-board-revision-parts', 'anchors': ['版番号', '組み立てる前', '版番号が違う部品表は使わない'], 'witness': 'そして、', 'trap': ['版番号が違う部品表は使わないでください', '版番号が違う部品表でも使ってください'], 'invariant': 'Keep matching revisions, the before-assembly check and mismatched-list prohibition; add no electrical instructions.'},
+    'judgment-v2-heldout-30': {'axis': 'repetition', 'topic': 'warehouse-key-return-log', 'origin': 'synthetic-v2-heldout/warehouse-key-return-log', 'anchors': ['借りた人が受付へ', '返却時刻を台帳に', '別の人へ直接渡さない'], 'witness': 'さらに、', 'trap': ['別の人へ直接渡さないでください', '別の人へ直接渡してください'], 'invariant': 'Keep borrower responsibility, logging, no direct handoff and the closed-desk exception.'},
 }
 
 HELDOUT = [c for c in CASES if c['id'].startswith('judgment-v2-heldout-')]
 
 
 def test_heldout_subset_has_independent_topics_origins_and_bodies():
-    expected = [f'judgment-v2-heldout-{i:02}' for i in range(1, 21)]
+    expected = [f'judgment-v2-heldout-{i:02}' for i in range(1, 31)]
     assert list(MANIFEST) == [c['id'] for c in HELDOUT] == expected
     assert Counter(m['axis'] for m in MANIFEST.values()) == dict(
-        stiffness=4, abstraction=4, formulaic=4, roundabout=4, repetition=4)
+        stiffness=6, abstraction=6, formulaic=6, roundabout=6, repetition=6)
     old_topics = {m[1] for m in (CALIBRATION_MANIFEST | ACCEPTANCE_MANIFEST).values()}
     old_topics |= {m['topic'] for m in CALIBRATION_V2.values()}
     assert len({m['topic'] for m in MANIFEST.values()}) == len(expected)
