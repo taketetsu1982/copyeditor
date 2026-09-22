@@ -100,7 +100,7 @@ EVALUATION_MODULES = {
     'tests/unit/test_generation4_evaluation.py': (22, 'c513ff12e314f62721602554cf8277d9f695373b4afd1f2908fd5ac903bc7585'),
     'tests/unit/test_judgment_examples.py': (74, '27d1c498bb8639488edea49c84805e37a0410a22f97eac56aace713cceefb605'),
     'tests/unit/test_judgment_evaluation.py': (54, 'a272a2028c811f1ae5b312b02e0c98fd93569acb51aab7d057d5e75ed3381419'),
-    'tests/unit/test_judgment_calibration.py': (6, '898571f77d1f41922db0df4e5bf1774dffee0b77a901b129a369c5212b879027'),
+    'tests/unit/test_judgment_calibration.py': (38, '0805a8d862be7e2a7331fb9966c4748fbf3b1f07c6fbb27b3a96610d15c1418e'),
     'tests/integration/test_judgment_acceptance.py': (78, '02da8879e18d4c78f869c2e0d798474930b31a7579ab4b6ce365de64c1de99a1'),
 }
 EVALUATION_SETS = {
