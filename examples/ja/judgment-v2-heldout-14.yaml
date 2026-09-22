@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-14"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "修理相談会では、受付順に番号札を渡します。番号札は相談の順番を示すもので、修理の完了を約束するものではありません。暮らしの課題に寄り添う、解決への架け橋です。"
+good: "修理相談会では、受付順に番号札を渡します。番号札は相談の順番を示すもので、修理の完了を約束するものではありません。"
+reason: "Abstraction: Keep queue order and the explicit lack of a repair-completion promise."
+lint: null
+must_change: true

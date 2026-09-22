@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-16"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "来客用Wi-Fiのパスワードは、受付で発行した当日のみ使えます。翌日も利用する場合は、再発行を依頼してください。いかがでしたか。正しい利用を意識しましょう。"
+good: "来客用Wi-Fiのパスワードは、受付で発行した当日のみ使えます。翌日も利用する場合は、再発行を依頼してください。"
+reason: "Formulaic: Keep the same-day validity and next-day reissue condition; do not include credentials."
+lint: null
+must_change: true

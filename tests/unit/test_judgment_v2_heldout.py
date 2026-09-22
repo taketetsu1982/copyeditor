@@ -21,16 +21,26 @@ MANIFEST = {
     'judgment-v2-heldout-08': {'axis': 'roundabout', 'topic': 'swimming-lane-reservation', 'origin': 'synthetic-v2-heldout/swimming-lane-reservation', 'anchors': ['練習会の時間中', '2コース', '残りのコース'], 'witness': 'お伝えしたいと思います', 'trap': ['残りのコース', '貸切のコース'], 'invariant': 'Keep the time-limited two-lane reservation and public access to remaining lanes; do not close the entire pool.'},
     'judgment-v2-heldout-09': {'axis': 'repetition', 'topic': 'puppet-making-child-session', 'origin': 'synthetic-v2-heldout/puppet-making-child-session', 'anchors': ['小学生', '材料は会場で渡します', '完成した人形は持ち帰れます'], 'witness': 'さらに、', 'trap': ['完成した人形は持ち帰れます', '完成した人形は持ち帰れません'], 'invariant': 'Keep the age group, required guardian, supplied materials and take-home permission.'},
     'judgment-v2-heldout-10': {'axis': 'repetition', 'topic': 'coffee-roast-order', 'origin': 'synthetic-v2-heldout/coffee-roast-order', 'anchors': ['注文を受けてから焙煎', '焙煎の翌日', '挽き目は注文時に'], 'witness': 'そして、', 'trap': ['挽き目は注文時に指定してください', '挽き目は発送後に指定してください'], 'invariant': 'Keep roast-after-order, dispatch timing and optional grinding with advance specification; add no arrival guarantee.'},
+    'judgment-v2-heldout-11': {'axis': 'stiffness', 'topic': 'coin-laundry-finish-alert', 'origin': 'synthetic-v2-heldout/coin-laundry-finish-alert', 'anchors': ['登録した携帯電話', '洗濯を始める前'], 'witness': 'しっかり行う', 'trap': ['洗濯を始める前', '洗濯を始めた後'], 'invariant': 'Keep the registered phone and registration timing; do not promise alerts without registration.'},
+    'judgment-v2-heldout-12': {'axis': 'stiffness', 'topic': 'rowing-boat-return-pier', 'origin': 'synthetic-v2-heldout/rowing-boat-return-pier', 'anchors': ['借りた桟橋', '別の桟橋では返却を受け付けません'], 'witness': '返却整合', 'trap': ['別の桟橋では返却を受け付けません', '別の桟橋でも返却を受け付けます'], 'invariant': 'Keep the same-pier return requirement; add no rental period or navigation advice.'},
+    'judgment-v2-heldout-13': {'axis': 'abstraction', 'topic': 'carbonless-delivery-form', 'origin': 'synthetic-v2-heldout/carbonless-delivery-form', 'anchors': ['上の紙は納品先へ', '下の紙は控え'], 'witness': '書類体験をシームレスに最適化', 'trap': ['上の紙は納品先へ渡し', '下の紙は納品先へ渡し'], 'invariant': 'Keep transfer behavior and which sheet goes to each recipient; do not reverse the copies.'},
+    'judgment-v2-heldout-14': {'axis': 'abstraction', 'topic': 'repair-cafe-number-ticket', 'origin': 'synthetic-v2-heldout/repair-cafe-number-ticket', 'anchors': ['受付順', '修理の完了を約束するものではありません'], 'witness': '解決への架け橋', 'trap': ['修理の完了を約束するものではありません', '修理の完了を約束するものです'], 'invariant': 'Keep queue order and the explicit lack of a repair-completion promise.'},
+    'judgment-v2-heldout-15': {'axis': 'formulaic', 'topic': 'shared-bread-oven-tray', 'origin': 'synthetic-v2-heldout/shared-bread-oven-tray', 'anchors': ['自分の天板を持参', '天板を貸し出していません'], 'witness': 'ぜひ参考にして', 'trap': ['天板を貸し出していません', '天板を貸し出しています'], 'invariant': 'Keep the bring-your-own tray requirement and absence of rentals; add no equipment compatibility advice.'},
+    'judgment-v2-heldout-16': {'axis': 'formulaic', 'topic': 'guest-wifi-expiration', 'origin': 'synthetic-v2-heldout/guest-wifi-expiration', 'anchors': ['当日のみ', '再発行を依頼'], 'witness': 'いかがでしたか', 'trap': ['当日のみ使えます', '翌日も使えます'], 'invariant': 'Keep the same-day validity and next-day reissue condition; do not include credentials.'},
+    'judgment-v2-heldout-17': {'axis': 'roundabout', 'topic': 'parcel-forwarding-start-date', 'origin': 'synthetic-v2-heldout/parcel-forwarding-start-date', 'anchors': ['申込みの3日後', 'すでに発送した荷物には反映され'], 'witness': 'ご理解いただく形', 'trap': ['申込みの3日後', '申込みの当日'], 'invariant': 'Keep the delay and exclusion of already dispatched parcels; add no delivery guarantee.'},
+    'judgment-v2-heldout-18': {'axis': 'roundabout', 'topic': 'weekend-building-entry', 'origin': 'synthetic-v2-heldout/weekend-building-entry', 'anchors': ['登録済みの入館カード', 'カードの登録は平日に'], 'witness': '重要なポイントと言えるでしょう', 'trap': ['土曜日は、登録済みの入館カードで入館できます', '日曜日は、登録済みの入館カードで入館できます'], 'invariant': 'Keep Saturday access, Sunday prohibition and weekday registration; add no entry procedure.'},
+    'judgment-v2-heldout-19': {'axis': 'repetition', 'topic': 'campground-numbered-pitch', 'origin': 'synthetic-v2-heldout/campground-numbered-pitch', 'anchors': ['受付で指定した区画', '空いていても無断で移らない'], 'witness': 'そして、', 'trap': ['空いていても無断で移らないでください', '空いていれば無断で移ってください'], 'invariant': 'Keep assigned placement, tag return and permission before moving; preserve repeated plot references.'},
+    'judgment-v2-heldout-20': {'axis': 'repetition', 'topic': 'charity-book-sale-payments', 'origin': 'synthetic-v2-heldout/charity-book-sale-payments', 'anchors': ['会場費を差し引いて', '現金のみ', '袋を持参'], 'witness': 'さらに、', 'trap': ['会場費を差し引いて寄付します', '全額を寄付します'], 'invariant': 'Keep net proceeds rather than gross donation, cash-only payment and bring-your-own bags.'},
 }
 
 HELDOUT = [c for c in CASES if c['id'].startswith('judgment-v2-heldout-')]
 
 
 def test_heldout_subset_has_independent_topics_origins_and_bodies():
-    expected = [f'judgment-v2-heldout-{i:02}' for i in range(1, 11)]
+    expected = [f'judgment-v2-heldout-{i:02}' for i in range(1, 21)]
     assert list(MANIFEST) == [c['id'] for c in HELDOUT] == expected
     assert Counter(m['axis'] for m in MANIFEST.values()) == dict(
-        stiffness=2, abstraction=2, formulaic=2, roundabout=2, repetition=2)
+        stiffness=4, abstraction=4, formulaic=4, roundabout=4, repetition=4)
     old_topics = {m[1] for m in (CALIBRATION_MANIFEST | ACCEPTANCE_MANIFEST).values()}
     old_topics |= {m['topic'] for m in CALIBRATION_V2.values()}
     assert len({m['topic'] for m in MANIFEST.values()}) == len(expected)

@@ -1,0 +1,10 @@
+id: "judgment-v2-heldout-12"
+language: "ja"
+section: "syntax"
+degree: "polish"
+format: "text"
+bad: "貸しボートは、借りた桟橋へ返してください。別の桟橋では返却を受け付けません。返却整合を保つための決まりです。"
+good: "貸しボートは、借りた桟橋へ返してください。別の桟橋では返却を受け付けません。"
+reason: "Stiffness: Keep the same-pier return requirement; add no rental period or navigation advice."
+lint: null
+must_change: true
