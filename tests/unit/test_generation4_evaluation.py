@@ -160,6 +160,17 @@ async def test_rewrite_runner_retains_independent_population_and_unreviewed_stat
     assert all(t['response']['schema_version'] == 4 and t['error'] is None for t in artifact['trials'])
     result = runner.summarize(plan, artifact, prepared=prepared)
     assert result['status'] == 'unreviewed' and not result['criteria_met'] and not result['quality_accepted']
+    cases = runner.fixtures()
+    for trial in artifact['trials']:
+        required = 'abc' if cases[trial['id']]['must_change'] else 'bcd'
+        trial['judgment'].update({key: True for key in required}, reason='Synthetic positive control only.')
+    assert runner.summarize(plan, artifact, prepared=prepared)['criteria_met']
+    trial = artifact['trials'][0]
+    trial['response'] = await evaluation.adapter.compare_request([cases[trial['id']]], 'polish', False,
+        'text', 'fixture', [], prepared=prepared)
+    assert trial['response']['status'] == 'ok' and trial['response']['degree'] == 'polish'
+    result = runner.summarize(plan, artifact, prepared=prepared)
+    assert result['must_failures'] == 1 and not result['criteria_met'] and not result['quality_accepted']
 
 
 def test_prepared_manifest_cannot_silently_use_the_legacy_runner(completed):

@@ -129,6 +129,7 @@ def summarize(plan, artifact, *, prepared=None):
                 raise ValueError()
             if prepared:
                 from copyeditor.edit_protocol import validate_final
+                if response['degree'] != 'rewrite' or response['language'] != case['language']: raise ValueError()
                 if response['providers'][0]['model'] != entry['model']: raise ValueError()
                 validate_final(response, (SourceItem("text", case["bad"], ""),), expected_enabled=False, format=case['format'])
             else:
