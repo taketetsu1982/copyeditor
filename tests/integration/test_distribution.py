@@ -61,7 +61,7 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
     assert [s["if"] for s in steps if "pytest tests " in s.get("run", "")] == [full]
     assert next(s for s in steps if s.get("name") == "Check documentation and distribution")["if"] == docs
     assert "--dist=loadfile" in suites[0] and "--max-worker-restart=0" in suites[0]
-    assert suites[0][suites[0].index("-n") + 1] == "2"
+    assert suites[0][suites[0].index("-n") + 1] == "4"
     assert all(s.get("if") == full for s in steps if s.get("uses") in (
         "docker/setup-buildx-action@v4", "actions/cache@v5"))
     assert CI["concurrency"] == {
