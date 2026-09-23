@@ -75,6 +75,12 @@ def test_ac_05_7_ctr04_distribution_permissions_and_order():
 
 @pytest.fixture
 def runner(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.1.0"\n')
+    for client in ("claude", "codex"):
+        manifest = tmp_path / f"plugins/{client}/.{client}-plugin/plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"version": "0.1.0"}))
     values = dict(GITHUB_EVENT_NAME="push", GITHUB_REF_TYPE="tag", GITHUB_REF_NAME="v0.1.0",
                   GITHUB_REPOSITORY_OWNER="Owner", GITHUB_REPOSITORY="Owner/copyeditor", GITHUB_ACTOR="actor",
                   COPYEDITOR_OWNER="owner", COPYEDITOR_NATIVE_PR="7",
@@ -125,11 +131,30 @@ def test_ac_05_7_ctr04_tag_gate(runner, tag):
     state, patch, path = runner
     patch.setenv("GITHUB_REF_NAME", tag)
     if tag in ("v0.1.0", "v1.2.3"):
+        if tag == "v1.2.3":
+            (path / "pyproject.toml").write_text('[project]\nversion = "1.2.3"\n')
+            for client in ("claude", "codex"):
+                (path / f"plugins/{client}/.{client}-plugin/plugin.json").write_text(json.dumps({"version": "1.2.3"}))
         exec(GATE, {})
         assert (path / "outputs").read_text() == f"commit={SHA}\nimage=ghcr.io/owner/copyeditor:{tag}\n"
     else:
         with pytest.raises(AssertionError): exec(GATE, {})
         assert not state["commands"]
+
+
+@pytest.mark.parametrize("metadata", ["pyproject.toml", "plugins/claude/.claude-plugin/plugin.json",
+                                            "plugins/codex/.codex-plugin/plugin.json"])
+def test_ac_05_7_ctr04_tag_gate_rejects_version_mismatch(runner, metadata):
+    state, _, path = runner
+    target = path / metadata
+    if metadata == "pyproject.toml":
+        target.write_text('[project]\nversion = "0.3.0"\n')
+    else:
+        target.write_text(json.dumps({"version": "0.3.0"}))
+    with pytest.raises(AssertionError):
+        exec(GATE, {})
+    assert not state["commands"]
+    assert not (path / "outputs").exists()
 
 
 @pytest.mark.parametrize("failure", ["pr", "branch", "gate"])

@@ -3,7 +3,7 @@ Your agent writes, a polishing model rewrites, and you confirm the meaning. An M
 
 Reference implementation: Claude Code or Codex CLI as the writing agent, Gemini on Vertex AI as the polishing model.
 
-**Version 0.2.0.** Both degrees and lint now use schema_version=4, including OFF. Update the matching Skill and reconnect/refresh discovery before sending. Judgment remains disabled by default; calibration, native review and real-client quality acceptance are pending. Offline CI does not establish quality. Tagging/publication remain separate owner operations.
+**Version 0.3.0.** Both degrees and lint now use schema_version=4, including OFF. Update the matching Skill and reconnect/refresh discovery before sending. Judgment remains disabled by default; calibration, native review and real-client quality acceptance are pending. Offline CI does not establish quality. Tagging/publication remain separate owner operations.
 
 ## Setup and Vertex AI
 
@@ -31,7 +31,7 @@ The example fixes `auth.mode: none`; change it before using Google authenticatio
 
 **Optional judgment.** The fixed model is jev-1.13.0 and policy is reference-gate-v2. Production thresholds default to null; ON requires calibrated, registered values. Remove default_language and COPYEDITOR_DEFAULT_LANGUAGE. Explicit language selects installed rules; omission uses local body detection. Omitted tone uses the language rule's default style. See [configuration](contracts/config.md#judgment-fields). Disabled mode does not read or require TYPESAFE_API_KEY. Supply this key only through the runtime secret environment, never config, placeholders, argv or logs. Vertex ADC and OAuth remain separate.
 
-Supply `TYPESAFE_API_KEY` only through the runtime secret environment, never config, placeholders, Docker build arguments, image contents, or committed files. Disabled mode does not read or require this key. Rollback means setting `judgment.enabled=false` (or `COPYEDITOR_JUDGMENT_ENABLED=false` when no explicit config overrides it) and restarting: subsequent requests return to v1/v2 without changing Vertex ADC or OAuth requirements. There is no per-request switch or change to an in-flight request.
+Supply `TYPESAFE_API_KEY` only through the runtime secret environment, never config, placeholders, Docker build arguments, image contents, or committed files. Disabled mode does not read or require this key. To disable judgment, set `judgment.enabled=false` (or `COPYEDITOR_JUDGMENT_ENABLED=false` when no explicit config overrides it) and restart: responses keep schema_version=4, `polish_text` uses Vertex AI editing without TypeSafe AI judgment, and `lint_text` remains local. Vertex ADC and OAuth requirements do not change. There is no per-request switch or change to an in-flight request.
 
 ## Local Docker: none
 
@@ -174,7 +174,7 @@ The owner records approval in one PR comment with a `copyeditor-provenance-v1` f
 
 参照実装: 執筆エージェントはClaude CodeまたはCodex CLI、校正モデルはVertex AI上のGeminiです。
 
-**Version 0.2.0。** 両degreeとlintはOFFも含めschema_version=4へ移行します。対応Skillを更新し、再接続またはdiscovery更新後に送信してください。判定は既定でoffです。校正・native確認・実client品質受入は未完了で、offline CIは品質を証明しません。tag・公開は所有者の別操作です。
+**Version 0.3.0。** 両degreeとlintはOFFも含めschema_version=4へ移行します。対応Skillを更新し、再接続またはdiscovery更新後に送信してください。判定は既定でoffです。校正・native確認・実client品質受入は未完了で、offline CIは品質を証明しません。tag・公開は所有者の別操作です。
 
 ### 準備とVertex AI
 
@@ -202,7 +202,7 @@ Dockerと、課金およびVertex AI APIを有効にしたGoogle Cloudプロジ�
 
 **任意の判定。** モデルはjev-1.13.0、policyはreference-gate-v2です。本番閾値の既定はnullで、ONには校正・登録済みの値が必要です。default_languageとCOPYEDITOR_DEFAULT_LANGUAGEは削除してください。明示言語でルールを選び、省略時は本文をローカル判定します。tone省略時は言語ルールの既定文体を使います。[設定](contracts/config.md#judgment-fields)を参照してください。無効時はTYPESAFE_API_KEYを参照せず、要求もしません。keyは実行時のsecret環境変数だけから渡し、config・placeholder・argv・ログへ置かないでください。Vertex ADCとOAuthは別です。
 
-`TYPESAFE_API_KEY` は実行時のsecret環境変数だけから渡し、config、placeholder、Docker build引数、image、commitするファイルには含めません。無効時はこのkeyを参照せず、要求もしません。元へ戻すには、`judgment.enabled=false`（明示configが優先していなければ `COPYEDITOR_JUDGMENT_ENABLED=false`）にして再起動します。以後の依頼はv1/v2へ戻り、Vertex ADCやOAuthの要件は変わりません。依頼単位の切替や、処理中の依頼への途中適用はありません。
+`TYPESAFE_API_KEY` は実行時のsecret環境変数だけから渡し、config、placeholder、Docker build引数、image、commitするファイルには含めません。無効時はこのkeyを参照せず、要求もしません。判定を無効にするには、`judgment.enabled=false`（明示configが優先していなければ `COPYEDITOR_JUDGMENT_ENABLED=false`）にして再起動します。応答はschema_version=4のままで、`polish_text` はTypeSafe AIの判定なしでVertex AIによる推敲を行い、`lint_text` はローカル処理のままです。Vertex ADCやOAuthの要件は変わりません。依頼単位の切替や、処理中の依頼への途中適用はありません。
 
 ### ローカルDocker: none
 

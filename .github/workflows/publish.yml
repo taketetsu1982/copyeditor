@@ -34,12 +34,18 @@ jobs:
           COPYEDITOR_OWNER: ${{ vars.COPYEDITOR_OWNER }}
           COPYEDITOR_NATIVE_PR: ${{ vars.COPYEDITOR_NATIVE_PR }}
         run: |
-          import os, re, subprocess
+          import json, os, re, subprocess, tomllib
+          from pathlib import Path
           env = os.environ
           tag = env['GITHUB_REF_NAME']
           assert env['GITHUB_EVENT_NAME'] == 'push' and env['GITHUB_REF_TYPE'] == 'tag'
           assert re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
           assert tuple(map(int, tag[1:].split('.'))) >= (0, 1, 0)
+          version = tag[1:]
+          assert tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'] == version
+          for client in ('claude', 'codex'):
+              manifest = Path('plugins') / client / f'.{client}-plugin/plugin.json'
+              assert json.loads(manifest.read_text(encoding='utf-8'))['version'] == version
           owner = env['GITHUB_REPOSITORY_OWNER'].lower()
           assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,38}', owner)
           commit = subprocess.check_output(['git', 'rev-parse', 'HEAD^{commit}'], text=True).strip()

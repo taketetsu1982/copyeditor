@@ -106,7 +106,7 @@ SHOULD_MODULES = {
     'tests/integration/test_rewrite_skill.py': (21, '4706f2f69a809738a222a4096801c42b40baae32193820cd88c680177fb3217b'),
     'tests/integration/test_plugin_claude.py': (31, '0253ea0eb03b094ff199d8d01e6951f3b96bf7d97a446b97223cd5cd27772be2'),
     'tests/integration/test_plugin_codex.py': (53, '78544a6cf8357a703540fcaff815559a39536cc67f799b437625dc6f2334a550'),
-    'tests/integration/test_plugin_distribution.py': (17, '15736043d81322c75cbe9cc8ee50558fe3a138f1c45eb627250f0f760f3708c2'),
+    'tests/integration/test_plugin_distribution.py': (17, 'b00120b3f69bed4e390618b3bebd33335e2217f6c7d0b8b31aee52ee0694f290'),
 }
 
 
