@@ -104,3 +104,84 @@ def test_ac_08_13_14_evaluation_execution_cannot_be_replaced_by_collection(colle
     session = SimpleNamespace(exitstatus=0)
     gate.pytest_sessionfinish(session, 0)
     assert session.exitstatus == (0 if outcome == 'passed' else pytest.ExitCode.TESTS_FAILED)
+
+
+@pytest.mark.parametrize('reviewed', ['acceptance'], indirect=True)
+class TestCurrentHeldoutCriteria:
+    def test_ac_08_13_all_800_trials_keep_separate_denominators_and_fixture_status(self, reviewed):
+        plan, artifact, cases = reviewed
+        result = evaluation.summarize(plan, artifact)
+        assert plan['sets'][0]['name'] == 'judgment-acceptance-v4' and len(cases) == 40
+        assert len(artifact['trials']) == 800 and result['criteria_met'] and result['complete']
+        assert result['added_value'] == 1 and not result['quality_accepted']
+        assert set(result['groups']) == {'polish/on/text', 'polish/off/text', 'rewrite/on/text', 'rewrite/off/text'}
+        for group in result['groups'].values():
+            assert group['counts']['planned'] == group['requests'] == 200
+            assert (group['counts']['problem'], group['counts']['natural']) == (150, 50)
+            assert group['counts']['natural_changes'] == group['counts']['natural_failures'] == 0
+            assert len(group['per_example']) == 30
+            assert {row['planned'] for row in group['per_example'].values()} == {5}
+            assert {row['planned'] for row in group['per_repeat'].values()} == {30}
+
+    @pytest.mark.parametrize('degree', ['polish', 'rewrite'])
+    @pytest.mark.parametrize('scope,failures,passed', [('example', 1, True), ('example', 2, False),
+                                                    ('repeat', 6, True), ('repeat', 7, False)])
+    def test_ac_08_13_problem_boundaries_use_four_of_five_and_24_of_30(self, reviewed, degree, scope, failures, passed):
+        plan, artifact, cases = deepcopy(reviewed)
+        problems = [identity for identity, case in cases.items() if case['must_change']]
+        for trial in artifact['trials']:
+            if trial['degree'] != degree or not trial['judgment_enabled']: continue
+            if ((scope == 'example' and trial['example_id'] == problems[0] and trial['repeat'] <= failures) or
+                    (scope == 'repeat' and trial['repeat'] == 1 and trial['example_id'] in problems[:failures])):
+                trial['decision']['a'] = False
+        result = evaluation.summarize(plan, artifact)
+        group = result['groups'][degree + '/on/text']
+        assert group['criteria_met'] is passed
+        assert group['per_example'][problems[0]]['planned'] == 5 and group['per_repeat']['1']['planned'] == 30
+        assert not result['quality_accepted']
+
+    @pytest.mark.parametrize('failure', ['all_keep', 'natural', 'meaning', 'unnecessary', 'unjudged',
+                                       'missing', 'duplicate', 'historical', 'equal_quality'])
+    def test_ac_08_13_incomplete_or_unsafe_heldout_is_never_quality_pass(self, reviewed, failure):
+        plan, artifact, cases = deepcopy(reviewed)
+        trials = artifact['trials']
+        problem = next(t for t in trials if t['judgment_enabled'] and cases[t['example_id']]['must_change'])
+        if failure == 'all_keep':
+            for trial in trials:
+                if trial['judgment_enabled']: trial['full_response']['text'] = cases[trial['example_id']]['bad']
+        elif failure == 'natural':
+            next(t for t in trials if t['judgment_enabled'] and not cases[t['example_id']]['must_change'])['full_response']['text'] += ' '
+        elif failure in ('meaning', 'unnecessary'): problem['decision']['b' if failure == 'meaning' else 'c'] = False
+        elif failure == 'unjudged': problem['reviewer'] = None
+        elif failure == 'missing': trials.pop()
+        elif failure == 'duplicate': trials.append(deepcopy(trials[0]))
+        elif failure == 'historical': problem['example_id'] = 'judgment-acceptance-01'
+        else:
+            for trial in trials:
+                if trial['decision']['a'] is False:
+                    trial['decision']['a'] = True
+                    trial['full_response']['text'] = cases[trial['example_id']]['good']
+        if failure in ('missing', 'duplicate', 'historical'):
+            with pytest.raises(ValueError): evaluation.summarize(plan, artifact)
+            return
+        result = evaluation.summarize(plan, artifact)
+        assert not result['criteria_met'] and not result['quality_accepted']
+        assert all(g['counts']['planned'] == 200 for g in result['groups'].values())
+        if failure == 'all_keep':
+            assert all(g['counts']['improved'] == 0 for key, g in result['groups'].items() if '/on/' in key)
+        elif failure == 'equal_quality':
+            assert result['added_value'] == 0 and result['status'] == 'no_added_value'
+
+    def test_ac_08_13_report_cli_preserves_fixture_limits_for_complete_heldout(self, reviewed, tmp_path):
+        import subprocess
+        import sys
+        plan, artifact, _ = reviewed
+        frozen, path = tmp_path / 'plan.json', tmp_path / 'artifact.json'
+        evaluation.legacy.save(frozen, plan)
+        evaluation.legacy.save(path, artifact)
+        result = subprocess.run([sys.executable, 'scripts/judgment_evaluation.py', 'report',
+            '--plan', str(frozen), '--artifact', str(path)], capture_output=True, text=True)
+        assert result.returncode == 0 and result.stdout.strip() == 'criteria_met', result.stderr
+        saved = json.loads(path.read_text())
+        assert saved['summary']['criteria_met'] and not saved['summary']['quality_accepted']
+        assert len(saved['trials']) == 800 and saved['summary']['set'] == 'judgment-acceptance-v4'
