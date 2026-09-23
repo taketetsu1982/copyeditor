@@ -61,7 +61,7 @@ def test_ac_07_3_ac_07_6_ctr02_common_update_is_atomic_across_packages(checkout)
     assert all(path.read_bytes() == raw for path, raw in fixed.items())
 
 
-def test_ac_08_11_ac_08_18_version_020_matches_server_and_both_plugins():
+def test_ac_08_11_ac_08_18_version_030_matches_server_and_both_plugins():
     import json
     import tomllib
     from pathlib import Path
@@ -72,11 +72,11 @@ def test_ac_08_11_ac_08_18_version_020_matches_server_and_both_plugins():
     for client in ("claude", "codex"):
         check_plugin(root, client)
         versions.append(json.loads((root / f"plugins/{client}/.{client}-plugin/plugin.json").read_text())["version"])
-    assert versions == ["0.2.0"] * 3
+    assert versions == ["0.3.0"] * 3
     assert load_config(root / "config.example.yaml", {"GOOGLE_CLOUD_PROJECT": "fixture"})["judgment.enabled"] is False
     en, ja = (root / "README.md").read_text().split("## 日本語\n")
     for section in (en, ja):
-        for term in ("Version 0.2.0", "judgment.enabled=false", "schema_version=4"):
+        for term in ("Version 0.3.0", "judgment.enabled=false", "schema_version=4"):
             assert term in section
     assert all(term in en for term in ("matching Skill", "calibration, native review and real-client quality acceptance are pending",
                                        "Offline CI does not establish quality", "Tagging/publication remain separate owner operations"))

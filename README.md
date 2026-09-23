@@ -3,7 +3,7 @@ Your agent writes, a polishing model rewrites, and you confirm the meaning. An M
 
 Reference implementation: Claude Code or Codex CLI as the writing agent, Gemini on Vertex AI as the polishing model.
 
-**Version 0.2.0.** Both degrees and lint now use schema_version=4, including OFF. Update the matching Skill and reconnect/refresh discovery before sending. Judgment remains disabled by default; calibration, native review and real-client quality acceptance are pending. Offline CI does not establish quality. Tagging/publication remain separate owner operations.
+**Version 0.3.0.** Both degrees and lint now use schema_version=4, including OFF. Update the matching Skill and reconnect/refresh discovery before sending. Judgment remains disabled by default; calibration, native review and real-client quality acceptance are pending. Offline CI does not establish quality. Tagging/publication remain separate owner operations.
 
 ## Setup and Vertex AI
 
@@ -174,7 +174,7 @@ The owner records approval in one PR comment with a `copyeditor-provenance-v1` f
 
 参照実装: 執筆エージェントはClaude CodeまたはCodex CLI、校正モデルはVertex AI上のGeminiです。
 
-**Version 0.2.0。** 両degreeとlintはOFFも含めschema_version=4へ移行します。対応Skillを更新し、再接続またはdiscovery更新後に送信してください。判定は既定でoffです。校正・native確認・実client品質受入は未完了で、offline CIは品質を証明しません。tag・公開は所有者の別操作です。
+**Version 0.3.0。** 両degreeとlintはOFFも含めschema_version=4へ移行します。対応Skillを更新し、再接続またはdiscovery更新後に送信してください。判定は既定でoffです。校正・native確認・実client品質受入は未完了で、offline CIは品質を証明しません。tag・公開は所有者の別操作です。
 
 ### 準備とVertex AI
 
