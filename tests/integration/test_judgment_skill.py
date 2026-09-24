@@ -21,12 +21,21 @@ def skill(request):
 
 def test_discovery_and_permission_cover_unknown_and_refused_destinations(skill):
     for clause in ("Fetch the connected tool definition for every request without a body probe",
-                   "single judgment destination marker", "unknown discovery leaves the body unsent",
+                   "single judgment destination marker that is known and noncontradictory",
+                   "unknown tool name, missing or unknown input schema",
+                   "missing, contradictory, or unknown marker leaves the body unsent",
                    "withdrawal or \"do not send\" overrides earlier permission", "normal approval flow",
                    "do not retry through another tool, provider, route, or relaxed approval setting",
-                   "Do not add a separate per-request TypeSafe confirmation", "Unknown schemas remain unsent",
+                   "Do not add a separate per-request TypeSafe confirmation",
+                   "Unknown input schemas or destination markers remain unsent",
+                   "Require explicit rewrite support in the degree enum",
                    "reauthentication alone is not a refresh", "matching legacy Skill, not a fallback"):
         assert clause in skill
+    preflight = skill.split("## Extract and discover before sending", 1)[1].split("## Validate the complete result", 1)[0]
+    assert "complete generation-4 output schema" not in preflight
+    assert "Do not block submission because the host hides the output schema" in preflight
+    assert "description's statements about regeneration, candidate guarantees, or permission" in preflight
+    assert "destination and permission checks still apply" in preflight
 
 
 def test_public_contract_is_referenced_without_repeating_classification_rules(skill):
@@ -38,7 +47,10 @@ def test_public_contract_is_referenced_without_repeating_classification_rules(sk
     assert set(refs) <= headings
     section = skill.split("## Validate the complete result", 1)[1].split("## Apply only permitted local edits", 1)[0]
     assert not any(value in section for value in ("0.53", "0.30", "0.70", "|", "Fixed reporting examples"))
-    assert "mode mismatch is unprocessed, never a legacy fallback or partial success" in section
+    assert "Select the response schema by (invoked tool name, schema_version); require schema_version=4" in section
+    assert "A malformed response, unsupported generation, or mode mismatch is unprocessed as invalid_response" in section
+    assert "never a legacy fallback or partial success" in section
+    assert "complete generation-4 shape, envelope/content equality, status, expected judgment mode" in section
     assert "all original IDs exactly once in original order" in section
 
 

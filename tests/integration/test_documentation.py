@@ -85,7 +85,7 @@ def test_ac_07_1_ac_07_2_ac_07_7_ac_07_10_ac_07_12_rewrite_guidance_matches_both
                    "missing components remain unknown", "independent judgments", "remain pending",
                    "English and Chinese rewrite quality is unverified"):
         assert phrase in EN
-    for phrase in ("未知schemaでは旧版へfallbackせず本文を送りません", "全候補・見立てを破棄",
+    for phrase in ("入力schemaや送信先マーカーが未知の場合は本文を送りません", "旧版へのfallbackは行いません", "全候補・見立てを破棄",
                    "context\u3068\u80cc\u666f\u306e\u5408\u8a08\u30824,000", "\u672a\u691c\u8a3c", "\u672a\u5b8c\u4e86"):
         assert phrase in JA
     assert "minimal confirm" not in EN and "not implemented by this Skill yet" not in EN

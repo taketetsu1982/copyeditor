@@ -33,7 +33,7 @@ def scenarios(text):
     ("inseparable_secret", "unprocessed_without_echo"),
     ("html_needs_exclusion", "unprocessed_whole_document"),
     ("rewrite_unsupported", "unprocessed_no_polish_fallback"),
-    ("unknown_schema", "unprocessed")])
+    ("unknown_input_schema", "unprocessed")])
 def test_ac_01_1_ac_01_2_ac_01_3_ac_01_7_ac_02_9_unsent_scenarios(condition, outcome):
     assert scenarios(SKILL.read_text())[condition] == ("no", "no", outcome)
 

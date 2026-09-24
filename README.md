@@ -106,7 +106,7 @@ Put a scoped permission statement in your project's `CLAUDE.md` or `AGENTS.md`, 
 
 The server does not persist text, candidates or diagnoses; provider retention and infrastructure logs remain outside this guarantee. The Skill retains source IDs and authorized ranges, uses host approval, and applies permitted local edits. Refusal ends the attempt without changing routes or permissions. It does not infer language, purpose, tone or message.
 
-**Enabled judgment** also sends permitted body/context/background and candidates to TypeSafe AI. Each request checks complete generation-4 discovery and destination disclosure; unknown or contradictory disclosure leaves the body unsent. Permission must cover the actual destinations. Direct MCP calls do not guarantee per-request consent; inform users before enabling the provider.
+**Enabled judgment** also sends permitted body/context/background and candidates to TypeSafe AI. Each request checks the tool name, input schema and single known destination marker; missing, unknown or contradictory destination disclosure leaves the body unsent. Permission must cover the actual destinations. Direct MCP calls do not guarantee per-request consent; inform users before enabling the provider.
 
 Judgment is not permission or proof of meaning preservation. Detection insufficient/not_run returns the original. Verification is an internal retry signal; no verification rejection or score is public. The final candidate remains in the response, with a rejected flag only for deterministic preservation violations. See [current payloads](contracts/tools.md#current-edit-payloads).
 
@@ -116,7 +116,7 @@ Judgment is not permission or proof of meaning preservation. Detection insuffici
 {"text":"The team will carry out a review of the draft.","language":"en","degree":"rewrite"}
 ```
 
-Discovery must advertise rewrite and the complete current schema before sending. A rewrite diagnosis is one nonblank line of at most 320 code points in the selected language; detection-exempt items have null diagnosis. Keep it separate from findings, flags and permission. Unknown schemas leave the body unsent, without legacy fallback.
+Discovery must explicitly advertise rewrite in the degree enum before sending. Unknown input schemas or destination markers leave the body unsent. A host hiding the output schema or the description's regeneration, guarantee or permission statements does not block submission. Validate the complete response using (invoked tool name, schema_version); an unsupported generation, malformed response or mode mismatch remains unprocessed as invalid_response, without legacy fallback. A rewrite diagnosis is one nonblank line of at most 320 code points in the selected language; detection-exempt items have null diagnosis. Keep it separate from findings, flags and permission.
 
 **Limits and failures.** Rewrite keeps the existing input budgets: at most 32 items, 12,000 decoded Unicode code points of body text in total, 1,000 per-item context, 4,000 total context, and 4,000 total background; context plus background also total at most 4,000; body/context/background combined are at most 16,000. Background fields each allow 1,000. The raw HTTP body limit remains 262,144 bytes. Typical Skill batches target 16 items / 6,000 body code points while satisfying every hard limit. See [CTR-01 limits](contracts/tools.md#requests).
 
@@ -277,7 +277,7 @@ projectの `CLAUDE.md` または `AGENTS.md` に、例えば「校正を依頼�
 
 本文・候補・見立ては永続保存しませんが、providerの保持・インフラログは保証外です。Skillは原文IDと許可範囲を保持し、ホスト承認を通して局所編集を反映します。拒否時は経路や権限を変えず終了します。language・purpose・tone・messageは推測しません。
 
-**判定有効時**は許可された本文/context/背景・候補をTypeSafe AIにも送ります。毎回、完全な世代4 discoveryと送信先を確認し、不明・矛盾時は未送信にします。許可には実際の送信先を含めてください。直接MCP呼出しの依頼ごとの同意は保証されないため、有効化前に利用者へ知らせてください。
+**判定有効時**は許可された本文/context/背景・候補をTypeSafe AIにも送ります。毎回、ツール名・入力schema・既知の送信先マーカーが1つだけあることを確認し、送信先の表示がない・不明・矛盾する場合は未送信にします。許可には実際の送信先を含めてください。直接MCP呼出しの依頼ごとの同意は保証されないため、有効化前に利用者へ知らせてください。
 
 判定は許可や意味保持の証明ではありません。検出がinsufficient/not_runなら原文を返します。検証は内部再生成の信号で、検証による拒否やscoreは公開しません。最終候補は応答に残し、決定的な保持違反だけをrejectedで示します。[現行応答](contracts/tools.md#current-edit-payloads)を参照してください。
 
@@ -287,7 +287,7 @@ projectの `CLAUDE.md` または `AGENTS.md` に、例えば「校正を依頼�
 {"text":"The team will carry out a review of the draft.","language":"en","degree":"rewrite"}
 ```
 
-送信前にrewriteと完全な現行schemaの対応を確認します。見立ては選択言語による空白だけでない一行・320コードポイント以内で、検出対象外itemではnullです。findings・flag・許可とは区別します。未知schemaでは旧版へfallbackせず本文を送りません。
+送信前にdegree enumでrewriteが明示されていることを確認します。入力schemaや送信先マーカーが未知の場合は本文を送りません。ホストが出力schemaや、再生成・保証・許可に関するdescriptionの定型句を表示しないことは、送信を止める理由にしません。応答は(invoked tool name, schema_version)で選んだ完全なschemaで検証し、未対応の世代・不正な応答・modeの不一致はinvalid_responseとして未処理にします。旧版へのfallbackは行いません。見立ては選択言語による空白だけでない一行・320コードポイント以内で、検出対象外itemではnullです。findings・flag・許可とは区別します。
 
 **上限と失敗時の扱い。** 書き直しでも入力上限は変わりません。最大32 items、本文合計12,000 Unicodeコードポイント、itemごとのcontextは1,000、context合計4,000、背景合計4,000、contextと背景の合計も4,000、本文・context・背景の合計16,000です。背景の各fieldは1,000までです。raw HTTP bodyの上限は262,144 bytesです。Skillの通常目安は16 items / 本文6,000コードポイントですが、すべての厳密な上限を満たす必要があります。[CTR-01の入力上限](contracts/tools.md#requests)を参照してください。
 
