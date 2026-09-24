@@ -211,3 +211,203 @@ def test_ac_08_14_domain_endpoints_remain_inclusive_candidates(ledger, meaning):
     result = evaluation.calibrate(plan, artifact, pairs, measured)
     assert result['thresholds'] == dict(floor='0.55', gap='1', meaning_floor=str(meaning))
     assert result['accepted_improvement_trials'] == 150
+
+
+@pytest.fixture
+def measurement_inputs():
+    """Labelled synthetic controls; never owner approval for a live run."""
+    cases = evaluation.population('calibration')
+    return dict(owner='fixture-owner', editing_model='gemini-3.1-flash-lite', tone='plain',
+        search_limit=10000,
+        labels={c['id']: dict(kind='problem' if c['must_change'] else 'natural', reason='Fixture source label.') for c in cases},
+        pairs=[dict(id=c['id']+'/'+kind, source_id=c['id'], kind=kind,
+                    candidate=c['bad'] if kind == 'same' else kind + ': ' + c['good'],
+                    accepted=kind == 'improved', reason='Fixture pair label.')
+               for c in cases for kind in sorted(evaluation.PAIR_KINDS)],
+        budget=dict(max_calls=5400, max_input_units=100000000, max_output_tokens=5400*65536,
+                    max_seconds=600, max_cost='10000', currency='USD', input_per_million='1', output_per_million='1'))
+
+
+def measurement_approval(plan, output):
+    from datetime import datetime, timedelta, timezone
+    import calibration_measurement as measurement
+    now = datetime.now(timezone.utc)
+    return dict(owner='fixture-owner', manifest_hash=measurement.fingerprint(plan), approved=True,
+                scope=measurement.SCOPE, mode=plan['mode'], approved_at=(now-timedelta(minutes=1)).isoformat(),
+                expires_at=(now+timedelta(hours=1)).isoformat(), artifact_path=str(output.resolve()))
+
+
+@pytest.fixture(scope='module')
+def raw_measurements(tmp_path_factory):
+    import asyncio
+    import calibration_measurement as measurement
+    from unittest.mock import patch
+    # A separate fixture value keeps the existing calibration ledger unchanged.
+    bundle = measurement_inputs.__wrapped__()
+    plan = measurement.freeze(1, 'fixture', bundle)
+    output = tmp_path_factory.mktemp('raw-calibration') / 'measurements.json'
+    approval = measurement_approval(plan, output)
+    # Checkpoint semantics are exercised by stopped-run tests; avoid quadratic fixture disk I/O.
+    with patch.object(evaluation.legacy, 'save'):
+        artifact = asyncio.run(measurement.run(plan, output, approval))
+    evaluation.legacy.save(output, artifact)
+    return plan, artifact, output
+
+
+def test_raw_calibration_has_no_registry_dependency_and_is_never_quality_acceptance(raw_measurements):
+    import calibration_measurement as measurement
+    from copyeditor.judgment_v2 import THRESHOLDS, COMPATIBLE_PAIRS
+    plan, artifact, _ = raw_measurements
+    assert len(plan['planned_trials']) == 3000 and plan['reservations']['calls'] == 5400
+    measured, pairs = measurement.audit(plan, artifact)
+    assert len(measured) == 600 and len(pairs) == 2400
+    assert {r['condition'] for r in plan['planned_trials']} == {'background-none', 'explicit-tone'}
+    result = measurement.calibrate(plan, artifact)
+    assert result['status'] == 'candidate' and result['thresholds']['floor'] == '0.55'
+    report = measurement.verify(plan, artifact, result['thresholds'])
+    assert report['feasible'] and report['accepted_improvement_trials'] == 300
+    assert not report['quality_accepted'] and not report['production_registered']
+    assert not THRESHOLDS and not COMPATIBLE_PAIRS
+
+
+@pytest.mark.parametrize('change', ['approval', 'owner', 'manifest', 'mode', 'expiry', 'path',
+                                    'labels', 'pairs', 'budget', 'model', 'tone', 'source'])
+def test_raw_live_gate_refuses_before_secret_or_provider(tmp_path, measurement_inputs, monkeypatch, change):
+    import asyncio
+    import calibration_measurement as measurement
+    plan = measurement.freeze(1, 'live', measurement_inputs)
+    output = tmp_path / 'out.json'
+    approval = measurement_approval(plan, output)
+    if change == 'approval': approval['approved'] = False
+    elif change == 'owner': approval['owner'] = 'another-owner'
+    elif change == 'manifest': approval['manifest_hash'] = 'changed'
+    elif change == 'mode': approval['mode'] = 'fixture'
+    elif change == 'expiry': approval['expires_at'] = '2000-01-01T00:00:00+00:00'
+    elif change == 'path': approval['artifact_path'] = str(tmp_path / 'other.json')
+    elif change == 'labels': plan['inputs']['labels'].clear()
+    elif change == 'pairs': plan['inputs']['pairs'].pop()
+    elif change == 'budget': plan['inputs']['budget']['max_cost'] = None
+    elif change == 'model': plan['pins']['judgment_model'] = 'changed'
+    elif change == 'tone': plan['inputs']['tone'] = ''
+    elif change == 'source': plan['source_commit'] = 'changed'
+    touched = []
+    monkeypatch.setattr(measurement, 'live_client', lambda: touched.append(True))
+    with pytest.raises((ValueError, KeyError)):
+        asyncio.run(measurement.run(plan, output, approval))
+    assert not touched and not output.exists()
+
+
+@pytest.mark.parametrize('field,value', [('max_calls', 1), ('max_input_units', 1), ('max_output_tokens', 1),
+    ('max_seconds', 0), ('max_cost', '0.000001'), ('input_per_million', None), ('output_per_million', 'NaN')])
+def test_measurement_budget_must_cover_all_frozen_reservations(measurement_inputs, field, value):
+    import calibration_measurement as measurement
+    measurement_inputs['budget'][field] = value
+    with pytest.raises(ValueError):
+        measurement.freeze(1, 'live', measurement_inputs)
+
+
+@pytest.mark.parametrize('failure', ['provider', 'usage', 'timeout', 'cancel', 'expired'])
+def test_raw_measurement_stops_without_second_call_and_retains_started_slot(tmp_path, measurement_inputs, monkeypatch, failure):
+    import asyncio
+    import calibration_measurement as measurement
+    from copyeditor.judgment import JudgmentFailure
+    from copyeditor.providers.base import Usage
+    plan = measurement.freeze(1, 'fixture', measurement_inputs)
+    output = tmp_path / 'out.json'
+    touched = []
+    clock = [0]
+    class Failing(measurement.FixtureJudgment):
+        async def evaluate(self, wire, **kw):
+            touched.append(json.loads(wire))
+            if failure == 'timeout': raise TimeoutError()
+            if failure == 'cancel': raise asyncio.CancelledError()
+            if failure == 'provider': return JudgmentFailure('provider_error', Usage(None, None, None))
+            response = await super().evaluate(wire, **kw)
+            if failure == 'expired': clock[0] = 601
+            return response._replace(usage=Usage(None, 1, None)) if failure == 'usage' else response
+    with pytest.raises(ValueError, match='stopped'):
+        asyncio.run(measurement.run(plan, output, measurement_approval(plan, output),
+                                   client_factory=lambda: Failing(plan), clock=lambda: clock[0]))
+    artifact = json.loads(output.read_text())
+    assert artifact['status'] == 'stopped' and len(touched) == 1
+    assert len(artifact['trials'][0]['calls']) == 1
+    assert 'reason' not in repr(touched) and 'accepted' not in repr(touched)
+    assert set(touched[0]['state']) == {'language', 'background', 'references', 'texts'}
+    with pytest.raises(ValueError): measurement.calibrate(plan, artifact)
+    with pytest.raises(ValueError):
+        asyncio.run(measurement.run(plan, output, measurement_approval(plan, output)))
+
+
+@pytest.mark.parametrize('change', ['missing', 'duplicate', 'wire', 'usage', 'score', 'approval'])
+def test_raw_artifact_changes_cannot_supply_calibration(raw_measurements, change):
+    import calibration_measurement as measurement
+    from copy import deepcopy
+    plan, artifact, _ = raw_measurements
+    artifact = deepcopy(artifact)
+    if change == 'missing': artifact['trials'].pop()
+    elif change == 'duplicate': artifact['trials'].append(artifact['trials'][0])
+    elif change == 'wire': artifact['trials'][0]['calls'][0]['wire_hash'] = 'changed'
+    elif change == 'usage': artifact['trials'][0]['calls'][0]['usage']['input_tokens'] = None
+    elif change == 'score': artifact['trials'][0]['calls'][0]['result']['gate'] = True
+    elif change == 'approval': artifact['approval']['approved'] = False
+    with pytest.raises(ValueError): measurement.calibrate(plan, artifact)
+
+
+def test_candidate_evaluation_cli_accepts_exact_unregistered_numbers_without_live_calls(raw_measurements, tmp_path):
+    import calibration_measurement as measurement
+    plan, artifact, _ = raw_measurements
+    paths = {k: tmp_path / (k+'.json') for k in ('plan', 'artifact', 'thresholds')}
+    for key, value in [('plan', plan), ('artifact', artifact),
+                       ('thresholds', {'floor': '0.55', 'gap': '0.1', 'meaning_floor': '0.95'})]:
+        evaluation.legacy.save(paths[key], value)
+    base = [sys.executable, 'scripts/judgment_evaluation.py']
+    args = ['--plan', str(paths['plan']), '--artifact', str(paths['artifact'])]
+    for operation in ('verify', 'verify-report'):
+        result = subprocess.run(base + [operation] + args + ['--thresholds', str(paths['thresholds'])], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        report = json.loads(result.stdout)
+        assert report['feasible'] and report['mode'] == 'fixture' and not report['production_registered']
+    report = measurement.verify(plan, artifact, {'floor': '.55', 'gap': '0.00001', 'meaning_floor': '0'})
+    assert not report['feasible'] and report['unsafe_controls'] > 0
+
+
+@pytest.mark.asyncio
+async def test_live_measurement_uses_fixed_typesafe_wire_and_stops_on_failure(tmp_path, measurement_inputs, monkeypatch):
+    import calibration_measurement as measurement
+    import httpx
+    from copyeditor.providers import typesafe
+    from unittest.mock import patch
+    real_client = typesafe.TypeSafe
+    wires = []
+    def reply(request):
+        data = json.loads(request.content)
+        wires.append(data)
+        if len(wires) == 2:
+            return httpx.Response(503)
+        return httpx.Response(200, json=dict(model='jev-1.13.0',
+            answers={'b0001.gate': dict(type='Noul', noul=.9)}, usage=dict(input_tokens=1, output_tokens=1)))
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'fixture-only')
+    monkeypatch.setattr(typesafe, 'TypeSafe', lambda secret, **kw: real_client(secret, **kw, transport=httpx.MockTransport(reply)))
+    plan = measurement.freeze(1, 'live', measurement_inputs)
+    output = tmp_path / 'live-fake.json'
+    with patch('socket.socket', side_effect=AssertionError('No live network')), patch('socket.getaddrinfo', side_effect=AssertionError('No live network')):
+        with pytest.raises(ValueError, match='stopped'):
+            await measurement.run(plan, output, measurement_approval(plan, output))
+    result = json.loads(output.read_text())
+    assert len(wires) == 2 and result['status'] == 'stopped'
+    assert result['trials'][1]['calls'][0]['error'] == 'provider_error'
+    assert all(w['model'] == 'jev-1.13.0' and list(w['questions']) == ['b0001.gate'] for w in wires)
+    assert not any(label in repr(wires) for label in ('Fixture source label', 'Fixture pair label', 'fixture-owner'))
+
+
+def test_measurement_plan_cli_and_missing_approval_are_offline(tmp_path, measurement_inputs):
+    inputs, plan, output = (tmp_path / name for name in ('input.json', 'plan.json', 'artifact.json'))
+    evaluation.legacy.save(inputs, measurement_inputs)
+    command = [sys.executable, 'scripts/judgment_evaluation.py']
+    args = ['--plan', str(plan), '--mode', 'live']
+    planned = subprocess.run(command + ['plan'] + args + ['--set', 'calibration', '--pairs', str(inputs)], capture_output=True, text=True)
+    assert planned.returncode == 0, planned.stderr
+    frozen = json.loads(plan.read_text())
+    assert frozen['schema'] == 'copyeditor-calibration-measurement-v1'
+    refused = subprocess.run(command + ['run'] + args + ['--artifact', str(output)], capture_output=True, text=True)
+    assert refused.returncode == 2 and not output.exists()
