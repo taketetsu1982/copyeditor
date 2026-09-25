@@ -70,3 +70,16 @@ def test_failed_atomic_write_preserves_previous_report(tmp_path, monkeypatch):
         evaluation.atomic_write(path, {"new": True})
     assert json.loads(path.read_text()) == {"previous": True}
     assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_retains_failed_call_usage_and_retries_without_exception_text():
+    usage = {"prompt_tokens": 17, "total_tokens": 23}
+    provider = AsyncMock()
+    provider.polish.side_effect = [ProviderFailure(retries=2, usage=usage), RuntimeError("PRIVATE_EXCEPTION")] * 7 + [ProviderFailure()]
+    progress = []
+    report = await evaluation.evaluate(synthetic_cases(), provider, progress=progress.append)
+    assert report["matches"] == 0
+    assert report["cases"][0]["usage"] == usage and report["cases"][0]["retries"] == 2
+    assert report["cases"][1]["usage"] == {} and report["cases"][1]["retries"] == 0
+    assert "PRIVATE_EXCEPTION" not in json.dumps(report) + json.dumps(progress)

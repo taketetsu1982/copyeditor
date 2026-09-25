@@ -28,6 +28,7 @@ def validate_cases(cases):
 
 
 async def evaluate(cases, provider, progress=None):
+    from copyeditor.providers.vertex import ProviderFailure
     validate_cases(cases)
     rows = []
     for index, case in enumerate(cases, 1):
@@ -39,6 +40,8 @@ async def evaluate(cases, provider, progress=None):
             changed = generation.text != case["sent_text"]
             row.update(result="success", changed=changed, matched=changed == expected,
                        text=generation.text, retries=generation.retries, usage=generation.usage)
+        except ProviderFailure as error:
+            row.update(retries=error.retries, usage=error.usage)
         except Exception:
             pass
         rows.append(row)

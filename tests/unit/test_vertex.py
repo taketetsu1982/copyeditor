@@ -165,3 +165,17 @@ def test_sdk_construction_disables_sdk_retries(monkeypatch):
     options = client.call_args.kwargs
     assert options["vertexai"] is True and options["project"] == "test" and options["location"] == "global"
     assert options["http_options"].retry_options.attempts == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("finish,body", [("MAX_TOKENS", '{"text":"PRIVATE_OUTPUT"}'), ("SAFETY", '{"text":"PRIVATE_OUTPUT"}'), ("STOP", "PRIVATE_INVALID_JSON")])
+@pytest.mark.parametrize("invalid_count", [True, "PRIVATE_USAGE", -1])
+async def test_failed_responses_preserve_only_available_safe_usage(finish, body, invalid_count):
+    vertex, generate = provider(response(body, finish=finish, prompt_token_count=17,
+                                         candidates_token_count=0, thoughts_token_count=invalid_count,
+                                         total_token_count=23))
+    with pytest.raises(ProviderFailure) as failure:
+        await vertex.polish("PRIVATE_INPUT")
+    assert failure.value.usage == {"prompt_tokens": 17, "candidates_tokens": 0, "total_tokens": 23}
+    assert failure.value.retries == 0 and "PRIVATE" not in str(failure.value)
+    generate.assert_awaited_once()

@@ -134,3 +134,14 @@ async def test_authenticated_audit_uses_stable_distinct_pseudonyms(monkeypatch):
         result = await client.call_tool("polish_text", {"text": "\u672c\u6587"}, raise_on_error=False)
     assert result.is_error and records[-1]["result"] == "auth_error"
     assert provider.polish.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_model_failure_audit_preserves_usage_without_private_details(capsys, caplog):
+    usage = {"prompt_tokens": 17, "candidates_tokens": 0, "total_tokens": 23}
+    result, provider, records = await invoke({"text": "PRIVATE_BODY"}, failure=ProviderFailure(retries=2, usage=usage))
+    assert result.is_error and len(result.content) == 1 and result.structured_content is None
+    assert len(records) == 1 and records[0]["result"] == "model_error"
+    assert records[0]["usage"] == usage and records[0]["retries"] == 2
+    assert "PRIVATE" not in result.content[0].text + json.dumps(records) + repr(capsys.readouterr()) + caplog.text
+    provider.polish.assert_awaited_once_with("PRIVATE_BODY")

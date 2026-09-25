@@ -60,6 +60,7 @@ def build_server(config, provider, auth=None, audit_sink=None):
                                   retries=result.retries, usage=result.usage)
             except ProviderFailure as error:
                 record["retries"] = error.retries
+                record["usage"] = error.usage
             except Exception:
                 pass
             finally:
