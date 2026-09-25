@@ -49,6 +49,9 @@ def population(name):
 def freeze(revision, mode='fixture', name='existing', created_at=None, pairs=None):
     name = next((k for k, v in SETS.items() if v == name), name)
     if type(revision) is not int or revision < 1 or mode not in ('fixture', 'live') or name not in ('calibration', 'acceptance', 'existing', 'regression'): raise ValueError('Invalid comparison plan')
+    if name == 'calibration' and pairs is not None:
+        from calibration_measurement import freeze as freeze_measurement
+        return freeze_measurement(revision, mode, pairs, created_at)
     if name in ('calibration', 'acceptance') and mode == 'live' or pairs is not None:
         raise ValueError('Generation-four evaluation population and owner manifest are not complete')
     created_at = created_at or datetime.now(timezone.utc).isoformat()
@@ -478,6 +481,11 @@ def calibrate(plan, artifact, pair_plan, pair_artifact):
             raise ValueError('Failed pair observation')
         values = tuple(Decimal(str(_probability(trial[key]))) for key in ('source_gate', 'candidate_gate', 'meaning'))
         pair_values.append((by_id[trial['pair_id']]['accepted'], *values))
+    return select_thresholds(measured, pair_values, source_hash, legacy.digest(pair_bytes.encode()), limit)
+
+
+def select_thresholds(measured, pair_values, source_hash, pair_hash, limit):
+    """Share the exact finite search between legacy fixtures and raw measurements."""
     values = [v for _, v in measured] + [v for row in pair_values for v in row[1:]]
     # Work in decimal input precision; converting candidates to float can collapse a midpoint.
     with localcontext() as context:
@@ -487,7 +495,7 @@ def calibrate(plan, artifact, pair_plan, pair_artifact):
         gap = problem - natural
         result = dict(status='not_separated', N=format(natural, 'f'), U=format(problem, 'f'), G=format(gap, 'f'),
             thresholds=None, quality_accepted=False, production_registered=False,
-            source_manifest_hash=source_hash, pair_manifest_hash=legacy.digest(pair_bytes.encode()))
+            source_manifest_hash=source_hash, pair_manifest_hash=pair_hash)
         if gap <= 0: return result
         floor = (natural + problem) / 2
         scores = [(accepted, source - candidate, meaning) for accepted, source, candidate, meaning in pair_values]
@@ -529,10 +537,20 @@ def main():
     parser.add_argument('--mode', choices=('fixture', 'live'), default='fixture')
     parser.add_argument('--set', dest='name', choices=('calibration', 'acceptance', 'existing', 'regression'), default='existing')
     parser.add_argument('--pairs', type=Path)
+    parser.add_argument('--approval', type=Path)
+    parser.add_argument('--thresholds', type=Path)
     args = parser.parse_args()
     if args.operation == 'plan': return legacy.save(args.plan, freeze(args.revision, args.mode, args.name, pairs=json.loads(args.pairs.read_text()) if args.pairs else None))
     plan = json.loads(args.plan.read_text())
     if args.mode != plan['mode']: parser.error('Mode must match frozen plan; live requires --mode live')
+    if plan.get('schema') == 'copyeditor-calibration-measurement-v1':
+        from calibration_measurement import command
+        try:
+            return command(args, plan)
+        except (ValueError, KeyError, TypeError, OSError):
+            parser.error('Calibration measurement refused; check inputs, approval and artifact status')
+    if args.mode == 'live':
+        parser.error('Live execution requires an approved calibration measurement plan')
     if args.operation == 'run': asyncio.run(run(plan, args.artifact))
     elif args.operation == 'calibrate':
         try:
