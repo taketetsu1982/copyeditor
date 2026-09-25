@@ -1,379 +1,136 @@
-import hashlib
-import hmac
 import json
-import logging
-import secrets
-from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from fastmcp import Client
-from fastmcp.server.auth import AccessToken
-from mcp.server.auth.middleware.auth_context import auth_context_var
-from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
 from copyeditor.config import load_config
-from copyeditor.providers.base import GenerationResult, Usage
-from copyeditor.requests import edit_input_schema
-from copyeditor.edit_protocol import output_schema as tool_output_schema, validate_final
-from copyeditor.providers.base import SourceItem
-from copyeditor.rules import load_rules
-from copyeditor.server import INSTRUCTIONS, build_server
-from copyeditor.service import Service
-
-ROOT = Path(__file__).resolve().parents[2]
-MARKER = "SYNTHETIC_PRIVATE_DETAIL"
-FIELDS = {"timestamp", "user", "tool", "language", "rules_version", "model", "usage", "cost", "latency_ms", "status",
-          "error_code", "model_calls", "regenerated", "rejected_count", "unfixable_count"}
+from copyeditor.providers.vertex import Generation, ProviderFailure
+from copyeditor.server import build_server
 
 
-@pytest.fixture
-def setup(tmp_path, capsys, caplog):
-    disabled = logging.root.manager.disable
-    created, records = [], []
-    def make(mode="none", flag=None, asynchronous=False, candidate=None):
-        env = {"GOOGLE_CLOUD_PROJECT": "test"}
-        if mode == "google":
-            env.update(COPYEDITOR_AUTH_MODE="google", GOOGLE_OAUTH_CLIENT_ID="client", BASE_URL="https://service.example",
-                       COPYEDITOR_ALLOWED_DOMAINS='["example.com"]', GOOGLE_OAUTH_CLIENT_SECRET=secrets.token_urlsafe(32),
-                       OAUTH_SIGNING_KEY=secrets.token_urlsafe(32))
-        config = load_config(tmp_path / "absent", env)
-        snapshot = load_rules(ROOT / "rules", None)
-        class Provider:
-            async def estimate_input(self, value): return 0
-            async def generate(self, value):
-                items = [dict(id=i.id, text=i.text if flag != "reject" else i.text.replace("10", "11"),
-                              flag=dict(kind="unfixable", reason="Cannot edit.") if flag == "unfixable" else None, diagnosis=None) for i in value.items]
-                if candidate is not None:
-                    items = [dict(item, text=candidate) for item in items]
-                return GenerationResult(json.dumps({"items": items}), "stop", Usage(1, 2, 3))
-        def factory():
-            created.append(True)
-            return Provider()
-        async def sink(record): records.append(record)
-        server = build_server(config, snapshot, Service(config, snapshot, factory), None, sink if asynchronous else records.append)
-        return server, config, snapshot
-    yield make, created, records
-    logging.disable(disabled)
-    assert MARKER not in repr(capsys.readouterr()) and MARKER not in repr(caplog.records)
+async def invoke(arguments, output="result", failure=None):
+    provider = AsyncMock()
+    provider.polish.return_value = Generation(output, retries=1, usage={"total_tokens": 12})
+    provider.polish.side_effect = failure
+    records = []
+    server = build_server(load_config({"GOOGLE_CLOUD_PROJECT": "test"}), provider, audit_sink=records.append)
+    async with Client(server) as client:
+        result = await client.call_tool("polish_text", arguments, raise_on_error=False)
+    return result, provider, records
 
 
 @pytest.mark.asyncio
-async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_discovery(setup):
-    make, _, records = setup
-    server, config, snapshot = make()
+async def test_discovery_has_only_text_tool_with_closed_schema():
+    server = build_server(load_config({"GOOGLE_CLOUD_PROJECT": "test"}), AsyncMock(), audit_sink=lambda record: None)
     async with Client(server) as client:
-        assert client.instructions == INSTRUCTIONS
-        contract = (ROOT / "contracts/tools.md").read_text().split("Initialization instructions (disabled:")[1].splitlines()[1].strip(chr(34)).replace(" and TypeSafe AI", "")
-        assert INSTRUCTIONS == contract
         tools = await client.list_tools()
-        assert {tool.name for tool in tools} == {"polish_text", "lint_text"}
-        for tool in tools:
-            assert tool.input_schema == edit_input_schema(tool.name, config, snapshot)
-            assert tool.output_schema == tool_output_schema(tool.name)
-            if tool.name == "polish_text": assert tool.description == "copyeditor.judgment=off; destinations=Vertex AI"
-            assert tool.annotations.read_only_hint and tool.annotations.destructive_hint is False
-            assert tool.annotations.open_world_hint == (tool.name == "polish_text")
-        with pytest.raises(Exception): await client.call_tool("unknown", {"text": MARKER})
-    assert records == []
+    assert [tool.name for tool in tools] == ["polish_text"]
+    tool = tools[0]
+    assert set(tool.input_schema["properties"]) == {"text"}
+    assert tool.input_schema["required"] == ["text"]
+    assert tool.input_schema["additionalProperties"] is False
+    assert tool.input_schema["properties"]["text"]["minLength"] == 1
+    assert tool.input_schema["properties"]["text"]["maxLength"] == 12000
+    assert tool.output_schema is None
+    assert tool.annotations.read_only_hint is True
+    assert tool.annotations.destructive_hint is False
+    assert tool.annotations.open_world_hint is True
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["success", "lint", "invalid", "unfixable", "reject"])
-async def test_ac_02_1_ac_02_5_ctr01_fixed_results_and_single_audit(setup, kind):
-    make, created, records = setup
-    server, _, _ = make(flag=kind, asynchronous=kind == "lint")
-    tool = "lint_text" if kind == "lint" else "polish_text"
-    args = {"text": "Pay 10.", "language": "en"} if kind != "invalid" else {"text": MARKER, "unknown": MARKER}
-    async with Client(server) as client:
-        result = await client.call_tool(tool, args, raise_on_error=False)
-    payload = result.structured_content
-    validate_final(payload, (SourceItem("text", "Pay 10.", ""),), tool=tool)
+@pytest.mark.parametrize("body", ["x", "\U0001f600" * 12000, "e\u0301" * 6000, "  body\n"])
+async def test_valid_codepoint_boundaries_and_unchanged_output(body):
+    result, provider, records = await invoke({"text": body}, output=body)
+    assert not result.is_error and result.structured_content is None
+    assert len(result.content) == 1 and result.content[0].type == "text"
+    assert result.content[0].text == body
+    provider.polish.assert_awaited_once_with(body)
+    assert len(records) == 1
+    assert records[0]["input_chars"] == records[0]["output_chars"] == len(body)
+    assert records[0]["changed"] is False and records[0]["result"] == "success"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("arguments", [{}, {"text": ""}, {"text": " \n\t\u3000"}, {"text": "\U0001f600" * 12001}, {"text": None}, {"text": 1}, {"text": ["PRIVATE_BODY"]}, {"text": "PRIVATE_BODY", "degree": "rewrite"}])
+async def test_invalid_arguments_are_safe_tool_errors_without_generation(arguments):
+    result, provider, records = await invoke(arguments)
+    assert result.is_error and result.structured_content is None
     assert len(result.content) == 1
-    assert result.content[0].text == json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-    assert result.is_error == (kind == "invalid")
-    assert len(records) == 1 and set(records[0]) == FIELDS
+    assert "PRIVATE_BODY" not in result.content[0].text
+    provider.polish.assert_not_awaited()
+    assert len(records) == 1 and records[0]["result"] == "input_error"
+    assert "PRIVATE_BODY" not in json.dumps(records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [ProviderFailure(retries=2), RuntimeError("PRIVATE_EXCEPTION")])
+async def test_model_errors_have_fixed_message_and_safe_audit(failure, capsys, caplog):
+    result, provider, records = await invoke({"text": "PRIVATE_BODY"}, failure=failure)
+    assert result.is_error and len(result.content) == 1
+    assert result.structured_content is None
+    assert "PRIVATE" not in result.content[0].text
+    assert len(records) == 1 and records[0]["result"] == "model_error"
+    assert records[0]["output_chars"] == 0
+    assert records[0]["retries"] == (2 if isinstance(failure, ProviderFailure) else 0)
+    assert "PRIVATE" not in json.dumps(records) + repr(capsys.readouterr()) + caplog.text
+
+
+@pytest.mark.asyncio
+async def test_success_audit_contains_counts_without_body(capsys):
+    result, provider, records = await invoke({"text": "PRIVATE_BODY"}, output="PRIVATE_OUTPUT")
+    assert not result.is_error
     record = records[0]
-    assert record["user"] is None and record["tool"] == tool
-    assert record["status"] == ("error" if kind == "invalid" else "flagged" if kind in ("unfixable", "reject") else "ok")
-    assert record["unfixable_count"] == (kind == "unfixable") and record["rejected_count"] == (kind == "reject")
-    assert record["regenerated"] == (kind == "reject")
-    assert len(created) == (kind not in ("invalid", "lint"))
-    assert MARKER not in json.dumps(payload) and MARKER not in json.dumps(records)
+    assert record["input_chars"] == 12 and record["output_chars"] == 14
+    assert record["changed"] is True and record["retries"] == 1
+    assert record["usage"] == {"total_tokens": 12}
+    assert record["user"] is None and record["latency_ms"] >= 0
+    assert record["timestamp"] and record["model"] == "gemini-3.7-flash"
+    assert "PRIVATE" not in json.dumps(record) + repr(capsys.readouterr())
 
 
 @pytest.mark.asyncio
-async def test_ctr04_ctr01_authenticated_audit_hmac(setup):
-    make, created, records = setup
-    server, config, _ = make("google")
-    token = AccessToken(token=secrets.token_urlsafe(32), client_id="client", scopes=[], claims={"sub": MARKER, "email": MARKER})
-    context = auth_context_var.set(AuthenticatedUser(token))
-    try:
-        async with Client(server) as client:
-            result = await client.call_tool("lint_text", {"text": "Hello.", "language": "en"})
-        assert not result.is_error
-    finally:
-        auth_context_var.reset(context)
-    assert len(records) == 1 and not created
-    assert records[0]["user"] == hmac.new(config.secrets["OAUTH_SIGNING_KEY"].encode(), ("copyeditor-audit:" + MARKER).encode(), hashlib.sha256).hexdigest()[:24]
-    assert MARKER not in json.dumps(records)
+async def test_default_sink_writes_one_safe_json_line(capsys):
+    provider = AsyncMock()
+    provider.polish.return_value = Generation("PRIVATE_OUTPUT")
+    server = build_server(load_config({"GOOGLE_CLOUD_PROJECT": "test"}), provider)
+    capsys.readouterr()
     async with Client(server) as client:
-        denied = await client.call_tool("polish_text", {"text": MARKER}, raise_on_error=False)
-    assert denied.is_error and len(records) == 1 and not created
-    assert MARKER not in repr(denied)
+        result = await client.call_tool("polish_text", {"text": "PRIVATE_BODY"})
+    assert not result.is_error
+    output = capsys.readouterr()
+    lines = output.out.splitlines()
+    assert len(lines) == 1 and json.loads(lines[0])["result"] == "success"
+    assert "PRIVATE" not in output.out + output.err
 
 
 @pytest.mark.asyncio
-async def test_ctr01_unexpected_service_exception_is_fixed_and_audited(setup, monkeypatch):
-    make, created, records = setup
-    server, _, _ = make()
-    async def fail(self, arguments): raise RuntimeError(MARKER)
-    monkeypatch.setattr(Service, "polish", fail)
+async def test_authenticated_audit_uses_stable_distinct_pseudonyms(monkeypatch):
+    import secrets
+    from types import SimpleNamespace
+    import copyeditor.server as module
+
+    config = load_config({"GOOGLE_CLOUD_PROJECT": "test", "COPYEDITOR_AUTH_MODE": "google",
+                          "BASE_URL": "https://service.example", "GOOGLE_OAUTH_CLIENT_ID": "client",
+                          "COPYEDITOR_ALLOWED_DOMAINS": '["example.com"]',
+                          "GOOGLE_OAUTH_CLIENT_SECRET": secrets.token_urlsafe(32),
+                          "OAUTH_SIGNING_KEY": secrets.token_urlsafe(32)})
+    provider = AsyncMock()
+    provider.polish.return_value = Generation("\u672c\u6587")
+    records = []
+    server = build_server(config, provider, audit_sink=records.append)
     async with Client(server) as client:
-        result = await client.call_tool("polish_text", {"text": MARKER}, raise_on_error=False)
-    assert result.is_error and result.structured_content["error"]["code"] == "internal_error"
-    validate_final(result.structured_content)
-    assert len(records) == 1 and records[0]["status"] == "error" and not created
-    assert MARKER not in repr(result) and MARKER not in json.dumps(records)
-
-
-@pytest.mark.asyncio
-@pytest.mark.consumer("CTR-01")
-@pytest.mark.consumer("CTR-04")
-@pytest.mark.parametrize("authenticated", [False, True])
-async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_raw_asgi(setup, authenticated):
-    import httpx
-    from fastmcp.server.auth import StaticTokenVerifier
-    make, created, records = setup
-    server, _, _ = make("google" if authenticated else "none")
-    if authenticated:
-        server.auth = StaticTokenVerifier(tokens={"test-token": {"client_id": "test", "scopes": [], "sub": "tester"}})
-    app = server.http_app(path=None, json_response=True, stateless_http=True)
-    headers = {"accept": "application/json, text/event-stream", "content-type": "application/json"}
-    def call(arguments):
-        return dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="lint_text", arguments=arguments))
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost", headers=headers) as client:
-            assert (await client.get("/health")).json() == {"status": "ok"}
-            invalid = [b'{"jsonrpc":"2.0","id":1,"method":"ping","method":"ping"}', b'{"x":"\xff"}',
-                       json.dumps(dict(jsonrpc="2.0", id=1, method=MARKER)).encode(),
-                       json.dumps(call({}) | {"params": {"name": MARKER}}).encode(), b'{}',
-                       json.dumps(dict(jsonrpc="2.0", id="\ud800", method=MARKER)).encode()]
-            if authenticated:
-                for body in [*invalid, b" " * 262145, json.dumps(call([])).encode()]:
-                    denied = await client.post("/mcp", content=body)
-                    assert denied.status_code == 401 and "www-authenticate" in denied.headers
-                    assert MARKER not in denied.text + str(denied.headers)
-                assert not created and not records
-                client.headers["authorization"] = "Bearer test-token"
-            for body, code in zip(invalid, (-32700, -32700, -32601, -32602, -32600, -32600)):
-                rejected = await client.post("/mcp", content=body)
-                assert rejected.status_code == 400 and "error" in rejected.json() and "result" not in rejected.json()
-                assert rejected.json()["error"]["code"] == code
-                assert MARKER not in rejected.text + str(rejected.headers)
-            assert not created and not records
-            ping = b'{"jsonrpc":"2.0","id":1,"method":"ping"}'
-            assert (await client.post("/mcp", content=ping + b" " * (262144 - len(ping)))).json()["result"] == {}
-            assert (await client.post("/mcp", content=ping + b" " * (262145 - len(ping)))).status_code == 413
-            for arguments in ([], None, MARKER, 1, True, {"text": MARKER, "extra": MARKER}, {"text": "Hello.", "language": "en"}):
-                response = await client.post("/mcp", json=call(arguments))
-                assert response.status_code == 200
-                result = response.json()["result"]
-                payload = result["structuredContent"]
-                validate_final(payload, tool="lint_text")
-                assert json.loads(result["content"][0]["text"]) == payload
-                assert result["isError"] == (arguments != {"text": "Hello.", "language": "en"})
-                assert MARKER not in response.text + str(response.headers)
-            assert len(records) == 7 and not created and MARKER not in json.dumps(records)
-            polished = await client.post("/mcp", json=call({"text": "Hello.", "language": "en"}) | {"params": {"name": "polish_text", "arguments": {"text": "Hello.", "language": "en"}}})
-            assert polished.json()["result"]["structuredContent"]["text"] == "Hello."
-            assert len(records) == 8 and len(created) == 1
-
-
-@pytest.fixture
-def tcp_server(setup):
-    import asyncio
-    from contextlib import asynccontextmanager
-    import socket
-    import threading
-    import httpx
-    import uvicorn
-    from fastmcp.server.auth import StaticTokenVerifier
-    from pydantic import AnyHttpUrl
-    make, created, records = setup
-    @asynccontextmanager
-    async def start(authenticated, candidate=None):
-        server, config, snapshot = make("google" if authenticated else "none", candidate=candidate)
-        if authenticated:
-            server.auth = StaticTokenVerifier(tokens={"tcp-token": {"client_id": "test", "scopes": [], "sub": MARKER}})
-            server.auth.resource_base_url = AnyHttpUrl("https://service.example")
-        listener = socket.socket()
-        thread, runner = None, None
-        try:
-            listener.bind(("127.0.0.1", 0))
-            address = listener.getsockname()
-            runner = uvicorn.Server(uvicorn.Config(server.http_app(json_response=True, stateless_http=True),
-                log_config=None, access_log=False, timeout_graceful_shutdown=2))
-            thread = threading.Thread(target=runner.run, kwargs={"sockets": [listener]}, daemon=True)
-            thread.start()
-            async with asyncio.timeout(5):
-                while not runner.started:
-                    assert thread.is_alive(), "Server exited before startup"
-                    await asyncio.sleep(.02)
-            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{address[1]}", trust_env=False, timeout=5,
-                    headers={"accept": "application/json, text/event-stream", "content-type": "application/json"}) as client:
-                yield client, config, snapshot, created, records
-        finally:
-            if runner:
-                runner.should_exit = True
-            if thread:
-                await asyncio.to_thread(thread.join, 5)
-                if thread.is_alive():
-                    runner.force_exit = True
-                    await asyncio.to_thread(thread.join, 5)
-            listener.close()
-            assert thread is None or not thread.is_alive()
-            assert listener.fileno() == -1
-            if runner and runner.started:
-                with socket.socket() as probe:
-                    probe.settimeout(.2)
-                    assert probe.connect_ex(address) != 0, "Listener survived cleanup"
-    return start
-
-
-@pytest.mark.asyncio
-@pytest.mark.consumer("CTR-01")
-@pytest.mark.consumer("CTR-04")
-@pytest.mark.parametrize("authenticated", [False, True])
-async def test_ac_02_1_ac_02_5_ac_02_6_ac_02_8_ctr01_ctr04_tcp_acceptance(tcp_server, authenticated):
-    def rpc(method, **params):
-        return dict(jsonrpc="2.0", id=1, method=method, params=params)
-    async def chunks(body):
-        for offset in range(0, len(body), 997):
-            yield body[offset:offset + 997]
-    async with tcp_server(authenticated) as (client, config, snapshot, created, records):
-        health = await client.get("/health")
-        assert health.status_code == 200 and health.json() == {"status": "ok"}
-        negatives = [(b'{"jsonrpc":"2.0","id":1,"method":"ping","method":"ping"}', -32700),
-                     (b'{"x":"\xff"}', -32700), (b'{', -32700), (b'{}', -32600),
-                     (json.dumps(rpc(MARKER)).encode(), -32601),
-                     (json.dumps(rpc("tools/call", name=MARKER, arguments={})).encode(), -32602)]
-        if authenticated:
-            for token in (None, MARKER):
-                if token:
-                    client.headers["authorization"] = "Bearer " + token
-                for body in [*[b for b, _ in negatives], b" " * 262145,
-                             json.dumps(rpc("tools/call", name="polish_text", arguments=[])).encode()]:
-                    response = await client.post("/mcp", content=chunks(body))
-                    assert response.status_code == 401
-                    assert 'resource_metadata="https://service.example/.well-known/oauth-protected-resource/mcp"' in response.headers["www-authenticate"]
-                    assert MARKER not in response.text + str(response.headers)
-            assert not created and not records
-            client.headers["authorization"] = "Bearer tcp-token"
-        for body, code in negatives:
-            response = await client.post("/mcp", content=chunks(body))
-            assert response.status_code == 400 and response.json()["error"]["code"] == code
-            assert "result" not in response.json() and MARKER not in response.text + str(response.headers)
-        ping = json.dumps(rpc("ping", padding="界" * 60000), ensure_ascii=False).encode("utf-8")
-        for size in (262143, 262144, 262145):
-            body = ping + b" " * (size - len(ping))
-            for chunked in (False, True):
-                response = await client.post("/mcp", content=chunks(body) if chunked else body)
-                assert response.status_code == (413 if size > 262144 else 200)
-                if size <= 262144:
-                    assert response.json()["result"] == {}
-                assert MARKER not in response.text + str(response.headers)
-        initialized = await client.post("/mcp", json=rpc("initialize", protocolVersion="2025-11-25", capabilities={},
-                                                            clientInfo={"name": "tcp-test", "version": "1"}))
-        assert initialized.json()["result"]["instructions"] == INSTRUCTIONS
-        listed = await client.post("/mcp", json=rpc("tools/list"))
-        tools = listed.json()["result"]["tools"]
-        assert {t["name"] for t in tools} == {"polish_text", "lint_text"}
-        for tool in tools:
-            assert tool["inputSchema"] == edit_input_schema(tool["name"], config, snapshot)
-            assert tool["outputSchema"] == tool_output_schema(tool["name"])
-            assert tool["annotations"]["readOnlyHint"] and not tool["annotations"]["destructiveHint"]
-            assert tool["annotations"]["openWorldHint"] == (tool["name"] == "polish_text")
-        assert not created and not records
-        for tool in ("polish_text", "lint_text"):
-            for arguments in ([], None, 1, True, MARKER, {"text": MARKER, "extra": MARKER}, {"text": "Hello.", "language": "en"}):
-                before = len(records)
-                response = await client.post("/mcp", json=rpc("tools/call", name=tool, arguments=arguments))
-                result = response.json()["result"]
-                payload = result["structuredContent"]
-                validate_final(payload, (SourceItem("text", "Hello.", ""),), tool=tool)
-                assert response.status_code == 200 and len(result["content"]) == 1
-                assert result["content"][0]["text"] == json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-                failed = arguments != {"text": "Hello.", "language": "en"}
-                assert result["isError"] == failed and (payload["status"] == "error") == failed
-                if failed:
-                    assert payload["error"]["code"] == "invalid_input" and payload.get("providers", [payload])[0]["model_calls"] == 0
-                assert len(records) == before + 1 and set(records[-1]) == FIELDS
-                assert records[-1]["tool"] == tool and records[-1]["status"] == ("error" if failed else "ok")
-                assert MARKER not in response.text + str(response.headers) + json.dumps(records)
-        assert len(records) == 14 and len(created) == 1
-        assert all(bool(r["user"]) == authenticated for r in records)
-
-
-def input_boundaries():
-    yield "items", {"items": [{"id": "a", "text": "Hello."}]}, "en", None
-    yield "both", {"text": "Hello.", "items": [{"id": "a", "text": "Hello."}]}, "en", "invalid_input"
-    yield "neither", {}, "en", "invalid_input"
-    yield "explicit", {"text": "Hello.", "language": "ja"}, "ja", None
-    yield "unsupported", {"text": "Hello.", "language": "zz"}, None, "unsupported_language"
-    for offset in (-1, 0, 1):
-        error = "input_limit" if offset > 0 else None
-        yield f"items-{offset}", {"items": [{"id": f"i{i}", "text": "Hello."} for i in range(32 + offset)]}, "en", error
-        yield f"body-{offset}", {"text": "x" * (12000 + offset)}, "en", error
-        yield f"items-body-total-{offset}", {"items": [{"id": "a", "text": "x" * 6000},
-                                                      {"id": "b", "text": "y" * (6000 + offset)}]}, "en", error
-        background = {k: "b" * (1000 + (offset if k == "message" else 0)) for k in ("audience", "purpose", "tone", "message")}
-        yield f"background-{offset}", dict(text="Hello.", **background), "en", error
-        items = [{"id": f"i{i}", "text": "x" * 3000, "context": "c" * 1000} for i in range(3)]
-        items.append({"id": "last", "text": "x" * 3000})
-        items[0]["context"] = "c" * (1000 + min(offset, 0))
-        items[-1]["context"] = "c" * max(offset, 0)
-        yield f"combined-total-{offset}", dict(items=items, audience="b" * 1000), "en", error
-        items = [{"id": f"i{i}", "text": "Hello.", "context": "c" * (1000 + (min(offset, 0) if i == 3 else 0))} for i in range(4)]
-        items.append({"id": "last", "text": "Hello.", "context": "c" * max(offset, 0)})
-        yield f"contexts-{offset}", dict(items=items), "en", error
-
-
-@pytest.mark.asyncio
-@pytest.mark.consumer("CTR-01")
-@pytest.mark.parametrize("case,arguments,language,error", list(input_boundaries()), ids=lambda x: x if type(x) is str else None)
-async def test_ac_02_1_ac_02_5_ac_02_6_ctr01_tcp_input_boundaries(tcp_server, case, arguments, language, error):
-    arguments = {"language": "en", **arguments}
-    originals = tuple(SourceItem(i["id"], i["text"], i.get("context", "")) for i in arguments.get("items", [dict(id="text", text=arguments.get("text", ""))]))
-    async with tcp_server(False) as (client, config, snapshot, created, records):
-        response = await client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="polish_text", arguments=arguments)))
-        result = response.json()["result"]
-        payload = result["structuredContent"]
-        validate_final(payload, originals)
-        assert response.status_code == 200 and payload["language"] == language
-        assert result["isError"] == bool(error) and payload.get("error", {}).get("code") == error
-        assert payload["providers"][0]["model_calls"] == len(created) == (0 if error else 1)
-        if error:
-            assert payload["model_called"] is False
-        else:
-            assert payload["status"] == "ok"
-            if "items" in arguments:
-                assert [item["id"] for item in payload["items"]] == [item["id"] for item in arguments["items"]]
-        assert len(records) == 1 and records[0]["language"] == language and records[0]["error_code"] == error
-        assert records[0]["model_calls"] == payload["providers"][0]["model_calls"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("route", ["text", "items"])
-async def test_ac_02_8_ctr01_tcp_success_never_logs_private_text(tcp_server, capsys, caplog, route):
-    body, context, background, candidate = (MARKER + suffix for suffix in ("_BODY", "_CONTEXT", "_BACKGROUND", "_CANDIDATE"))
-    arguments = {"text": body} if route == "text" else {"items": [{"id": "a", "text": body, "context": context}]}
-    arguments.update({key: background + key for key in ("audience", "purpose", "tone", "message")})
-    async with tcp_server(False, candidate=candidate) as (client, _, _, created, records):
-        response = await client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/call", params=dict(name="polish_text", arguments=arguments)))
-        payload = response.json()["result"]["structuredContent"]
-        item = payload if route == "text" else payload["items"][0]
-        assert payload["status"] == "ok" and item["flag"] is None and item["text"] == candidate
-        assert len(created) == len(records) == 1
-        assert MARKER not in str(response.headers) + json.dumps(records)
-    captured = repr(capsys.readouterr()) + repr(caplog.records)
-    assert all(secret not in captured for secret in (body, context, background, candidate))
+        for subject in ("PRIVATE_SUBJECT", "PRIVATE_SUBJECT", "OTHER_PRIVATE_SUBJECT"):
+            token = SimpleNamespace(claims={"sub": subject, "email": "PRIVATE@example.com"})
+            monkeypatch.setattr(module, "get_access_token", lambda: token)
+            result = await client.call_tool("polish_text", {"text": "\u672c\u6587"}, raise_on_error=False)
+            assert not result.is_error
+    users = [record["user"] for record in records]
+    assert users[0] == users[1] and users[0] != users[2]
+    assert all(len(user) == 24 and all(character in "0123456789abcdef" for character in user) for user in users)
+    assert "PRIVATE" not in json.dumps(records)
+    monkeypatch.setattr(module, "get_access_token", lambda: None)
+    async with Client(server) as client:
+        result = await client.call_tool("polish_text", {"text": "\u672c\u6587"}, raise_on_error=False)
+    assert result.is_error and records[-1]["result"] == "auth_error"
+    assert provider.polish.await_count == 3

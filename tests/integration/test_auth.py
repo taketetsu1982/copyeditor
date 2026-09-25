@@ -110,7 +110,7 @@ async def oauth(tmp_path, monkeypatch, capsys, caplog):
     thread.start()
     state.origin = f"http://127.0.0.1:{server.server_port}"
     try:
-        state.config = load_config(tmp_path / "absent", {"GOOGLE_CLOUD_PROJECT": "test",
+        state.config = load_config({"GOOGLE_CLOUD_PROJECT": "test",
             "COPYEDITOR_AUTH_MODE": "google", "BASE_URL": ORIGIN, "GOOGLE_OAUTH_CLIENT_ID": "client",
             "COPYEDITOR_ALLOWED_DOMAINS": '["example.com"]', "GOOGLE_OAUTH_CLIENT_SECRET": secrets.token_urlsafe(32),
             "OAUTH_SIGNING_KEY": secrets.token_urlsafe(32)})

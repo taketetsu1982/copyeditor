@@ -68,7 +68,7 @@ async def test_ac_05_3_identity_through_google_verifier(case, capsys, caplog):
 @pytest.mark.parametrize("domains,emails,hint", [(["example.com"], [], "example.com"),
     (["example.com", "other.com"], [], None), (["example.com"], ["A@example.com"], None), ([], ["A@example.com"], None)])
 def test_ctr04_factory_settings_and_hint(tmp_path, domains, emails, hint, monkeypatch, capsys, caplog):
-    config = load_config(tmp_path / "absent", {"GOOGLE_CLOUD_PROJECT": "test", "COPYEDITOR_AUTH_MODE": "google",
+    config = load_config({"GOOGLE_CLOUD_PROJECT": "test", "COPYEDITOR_AUTH_MODE": "google",
         "GOOGLE_OAUTH_CLIENT_ID": "client", "BASE_URL": "https://service.example",
         "COPYEDITOR_ALLOWED_DOMAINS": json.dumps(domains), "COPYEDITOR_ALLOWED_EMAILS": json.dumps(emails),
         "GOOGLE_OAUTH_CLIENT_SECRET": secrets.token_urlsafe(32), "OAUTH_SIGNING_KEY": secrets.token_urlsafe(32)})
