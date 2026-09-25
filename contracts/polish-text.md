@@ -4,7 +4,7 @@ The only MCP tool rewrites Japanese prose using Vertex AI. Callers decide what m
 
 ## Input and output
 
-`polish_text({"text": "..."})` accepts exactly one argument: a nonblank string of 1ï¿½€“12,000 Unicode code points. No trimming, normalization, language detection, or automatic splitting occurs. Other arguments and invalid types are rejected.
+`polish_text({"text": "..."})` accepts exactly one argument: a nonblank string of 1-12,000 Unicode code points. No trimming, normalization, language detection, or automatic splitting occurs. Other arguments and invalid types are rejected.
 
 Success is exactly one MCP text content containing the rewritten body. An unnecessary rewrite returns the original string. There is no JSON envelope, structuredContent, outputSchema, diagnosis, or quality judgment.
 
