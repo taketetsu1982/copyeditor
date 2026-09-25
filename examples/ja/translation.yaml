@@ -1,7 +1,0 @@
-id: translation
-language: ja
-section: translation
-bad: この画面は、申請の確認を行うために設計されています。
-good: この画面は、申請を確認するために設計されています。
-reason: Use a verb for the action without dropping the statement about design purpose.
-lint: null

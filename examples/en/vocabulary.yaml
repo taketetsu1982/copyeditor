@@ -1,7 +1,0 @@
-id: vocabulary
-language: en
-section: vocabulary
-bad: "Use the search box in order to find archived requests."
-good: "Use the search box to find archived requests."
-reason: "The shorter connector keeps the purpose of using the search box."
-lint: {rule_ids: [en-vocabulary-001]}

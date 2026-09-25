@@ -1,7 +1,0 @@
-id: translation
-language: zh
-section: translation
-bad: "这个页面的设计目的是显示申请状态。"
-good: "这个页面旨在显示申请状态。"
-reason: "The concise purpose statement preserves intention rather than promising a result."
-lint: null

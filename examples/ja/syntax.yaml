@@ -1,7 +1,0 @@
-id: syntax
-language: ja
-section: syntax
-bad: 担当者は、申請を確認した後で、承認する場合は理由を記録します。
-good: 担当者は申請を確認し、承認する場合は理由を記録します。
-reason: Keep the actor, sequence, and condition for recording a reason.
-lint: null

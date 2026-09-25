@@ -1,11 +1,11 @@
 ## Why
 
-<!-- What problem does this solve, and why this way? The diff shows what changed; explain what
-     it does not show: the motivation, and alternatives you rejected. -->
+<!-- Explain the problem and resulting behavior, plus any important tradeoffs. -->
 
-## Checklist
+## Validation
 
-- [ ] Rule changes (`rules/<lang>.md`) come with at least one bad / good / reason example under `examples/<lang>/`
-- [ ] No text from a user's document, no credentials, and no real project ids in the diff or the PR description
-- [ ] Server changes keep text, context, and candidates out of logs
-- [ ] Tests or CI checks cover the change, or the description says what was verified by hand
+<!-- Tests run, evaluation summary where authorized, and unverified behavior. -->
+
+- [ ] No private document text, credentials, or real project identifiers
+- [ ] Submitted/generated text, email addresses, tokens, and exceptions stay out of logs
+- [ ] The public contract and documentation match the change

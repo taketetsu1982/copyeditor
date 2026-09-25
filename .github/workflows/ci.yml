@@ -4,7 +4,6 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
-# PR updates supersede earlier checks; main and release callers keep their runs.
 concurrency:
   group: copyeditor-tests-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -16,47 +15,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements.generated.txt
-      - name: Select checks
-        id: scope
-        run: python scripts/ci_scope.py
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      - uses: docker/setup-buildx-action@v4
-        if: steps.scope.outputs.scope == 'full'
-      - uses: actions/cache@v5
-        if: steps.scope.outputs.scope == 'full'
-        with:
-          path: ${{ runner.temp }}/copyeditor-build-cache
-          key: ${{ runner.os }}-${{ runner.arch }}-copyeditor-buildx-v1-${{ hashFiles('Dockerfile', 'tests/fixtures/Dockerfile.benchmark', 'requirements.generated.txt', 'package-lock.json') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-copyeditor-buildx-v1-${{ hashFiles('Dockerfile', 'tests/fixtures/Dockerfile.benchmark', 'requirements.generated.txt', 'package-lock.json') }}-
       - run: python -m pip install -r requirements.generated.txt
-      # Use all four public-runner CPUs without splitting module fixtures or inventory checks.
-      - run: python -m pytest tests --require-phase1-contracts -n 4 --dist=loadfile --max-worker-restart=0 --junitxml=phase1.xml --durations=20 -q
-        if: steps.scope.outputs.scope == 'full'
-        env:
-          COPYEDITOR_BUILD_CACHE_DIR: ${{ runner.temp }}/copyeditor-build-cache
-      - name: Check documentation and distribution
-        if: steps.scope.outputs.scope == 'docs'
-        run: >-
-          python -m pytest tests/integration/test_documentation.py
-          tests/integration/test_distribution.py tests/integration/test_plugin_distribution.py
-          tests/contracts/test_ctr03_rules.py tests/contracts/test_ctr05_examples.py
-          tests/acceptance/test_provenance.py tests/acceptance/test_publication_gate.py
-          tests/acceptance/test_release_evidence.py --junitxml=phase1.xml -q
-      - name: Upload test timings and results
+      - run: python -m pytest tests -n 4 --dist=loadfile --junitxml=tests.xml -q
+      - run: docker build -t copyeditor:test .
+      - uses: actions/upload-artifact@v4
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
-          path: phase1.xml
+          path: tests.xml
           if-no-files-found: warn
           retention-days: 14

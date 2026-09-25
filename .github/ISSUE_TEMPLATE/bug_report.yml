@@ -6,13 +6,13 @@ body:
     attributes:
       value: |
         Do not paste confidential text. If the bug needs an input to reproduce, replace the words
-        with placeholder text that shows the same structure (numbers, URLs, protected terms, markup).
+        with placeholder text that shows the same problem.
   - type: input
     id: version
     attributes:
       label: Version
       description: Tag or commit of copyeditor, and how you run it (Docker image, local).
-      placeholder: v0.1.0 (ghcr.io image)
+      placeholder: v0.4.0 (ghcr.io image)
     validations:
       required: true
   - type: dropdown
@@ -20,11 +20,9 @@ body:
     attributes:
       label: Where does it happen?
       options:
-        - MCP server (polish_text / lint_text)
-        - Agent skill (Claude Code / Codex)
-        - Language rules or examples
+        - MCP server (polish_text)
         - Docker image or configuration
-        - Authentication (google-workspace)
+        - Authentication (google)
         - Not sure
     validations:
       required: true
@@ -45,6 +43,6 @@ body:
     id: actual
     attributes:
       label: Actual behavior
-      description: Include the error, flag, or finding you got. Server logs never contain text, so they are safe to paste.
+      description: Describe the result or error. Review logs for confidential information before sharing.
     validations:
       required: true

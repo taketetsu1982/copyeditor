@@ -1,5 +1,0 @@
-interface:
-  display_name: "Copyeditor"
-  short_description: "Polish writing with shared preservation rules"
-policy:
-  allow_implicit_invocation: true

@@ -25,13 +25,12 @@ Only the latest tagged release receives security fixes.
 
 ## What counts as a security issue here
 
-copyeditor sends the text you ask it to polish to a model provider (Vertex AI
-in the reference implementation). Reports in these areas are especially
+copyeditor sends the text you ask it to polish to Vertex AI. Reports in these areas are especially
 welcome:
 
-- Text, context, or credentials leaking into server logs or responses
+- Text or credentials leaking into server logs or responses
 - Text being sent somewhere other than the configured provider
-- Bypassing the `google-workspace` authentication mode when it is enabled
+- Bypassing the `google` authentication mode when it is enabled
 - Prompt or input handling that lets one request read or alter another
 
 Questions about configuration hardening that are not vulnerabilities belong in

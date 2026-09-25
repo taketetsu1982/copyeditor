@@ -1,7 +1,0 @@
-id: vocabulary
-language: ja
-section: vocabulary
-bad: 一覧画面から申請の状況を確認することが可能です。
-good: 一覧画面から申請の状況を確認できます。
-reason: Shorten the ending while retaining the same available action.
-lint: {rule_ids: [ja-vocabulary-001]}

@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a change to the server, the skill, or the configuration.
+description: Propose a change to the server or its configuration.
 labels: ["enhancement"]
 body:
   - type: markdown
