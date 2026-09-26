@@ -28,7 +28,7 @@ CHALLENGE = base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest())
 async def auth(tmp_path, monkeypatch, capsys, caplog):
     previous = logging.root.manager.disable
     try:
-        proxy = make_auth(load_config(tmp_path / "absent", {"GOOGLE_CLOUD_PROJECT": "test",
+        proxy = make_auth(load_config({"GOOGLE_CLOUD_PROJECT": "test",
             "COPYEDITOR_AUTH_MODE": "google", "GOOGLE_OAUTH_CLIENT_ID": "client", "BASE_URL": "https://service.example",
             "COPYEDITOR_ALLOWED_DOMAINS": '["example.com"]', "GOOGLE_OAUTH_CLIENT_SECRET": secrets.token_urlsafe(32),
             "OAUTH_SIGNING_KEY": secrets.token_urlsafe(32)}))

@@ -6,8 +6,6 @@
 !src/copyeditor/*.py
 !src/copyeditor/providers/
 !src/copyeditor/providers/*.py
-!rules/
-!rules/*.md
-!examples/
-!examples/*/
-!examples/*/*.yaml
+**/__pycache__
+**/*.pyc
+**/.DS_Store

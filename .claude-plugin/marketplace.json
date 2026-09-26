@@ -1,7 +1,0 @@
-{
-  "name": "copyeditor-local",
-  "owner": {"name": "copyeditor maintainers"},
-  "plugins": [
-    {"name": "copyeditor", "source": "./plugins/claude"}
-  ]
-}

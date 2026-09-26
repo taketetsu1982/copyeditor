@@ -1,7 +1,0 @@
-id: syntax
-language: zh
-section: syntax
-bad: "审核人员在检查申请之后，如果批准，就记录批准理由。"
-good: "审核人员先检查申请；如果批准，就记录批准理由。"
-reason: "The sequence is explicit and recording a reason still depends on approval."
-lint: null

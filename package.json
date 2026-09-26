@@ -1,7 +1,0 @@
-{
-  "name": "copyeditor-fixtures",
-  "private": true,
-  "engines": {"node": ">=22.22.0"},
-  "scripts": {"test:fixtures": "bash scripts/test_fixtures.sh"},
-  "devDependencies": {"promptfoo": "0.123.0"}
-}

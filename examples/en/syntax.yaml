@@ -1,7 +1,0 @@
-id: syntax
-language: en
-section: syntax
-bad: "The reviewer, after checking the request, records the decision."
-good: "After checking the request, the reviewer records the decision."
-reason: "The introductory phrase keeps the sequence clear without interrupting the subject and verb."
-lint: null

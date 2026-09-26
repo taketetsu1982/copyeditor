@@ -1,15 +1,11 @@
 [project]
 name = "copyeditor"
-version = "0.3.0"
+version = "0.4.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastmcp==4.0.3",
     "google-genai==2.23.0",
     "py-key-value-aio[memory]==0.4.5",
-    "html5lib==1.1",
-    "lingua-language-detector==2.2.0",
-    "ruamel.yaml",
-    "google-re2",
 ]
 
 [project.optional-dependencies]
@@ -21,4 +17,3 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-markers = ["consumer(contract_id): tests connected to a real contract consumer"]

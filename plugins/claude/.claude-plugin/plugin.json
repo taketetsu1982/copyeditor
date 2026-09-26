@@ -1,7 +1,0 @@
-{
-  "name": "copyeditor",
-  "version": "0.3.0",
-  "description": "Polish writing through an explicitly configured MCP server.",
-  "skills": "./skills/",
-  "mcpServers": "./.mcp.json"
-}

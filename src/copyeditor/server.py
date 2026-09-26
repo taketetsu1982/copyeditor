@@ -1,171 +1,86 @@
+"""The public MCP boundary and privacy-preserving request log."""
 import hashlib
 import hmac
 import inspect
 import json
+import time
 from datetime import datetime, timezone
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
 
-from .auth import disable_library_logging
-from .requests import MESSAGES, edit_input_schema
-from .edit_protocol import output_schema
-from .edit_service import error_payload
+from .auth_boundary import disable_library_logging
+from .providers.vertex import MODEL_ERROR, ProviderFailure
 
-INSTRUCTIONS = (
-    'copyeditor sends polish_text body and context/background to Vertex AI. '
-    'This server does not persist body, candidates or judgments; providers govern retention. '
-    'Use text or items [{id,text,context?}], never both; html uses text only. '
-    'Set language when known; otherwise the server detects it without a default. lint_text calls no provider. '
-    'Compare results before applying them manually. Keep originals on errors and flags. '
-    'Judgment may cause one shared retry; it is not proof of correctness.'
-)
+INPUT_ERROR = "Provide nonblank text of 1 to 12,000 Unicode code points. Split longer text."
+INPUT_SCHEMA = {"type": "object", "properties": {"text": {"type": "string", "minLength": 1,
+                "maxLength": 12000}}, "required": ["text"], "additionalProperties": False}
 
 
-def build_server(config, snapshot, service, auth, audit_sink):
+def write_audit(record):
+    print(json.dumps(record, ensure_ascii=True, separators=(",", ":")), flush=True)
+
+
+def build_server(config, provider, auth=None, audit_sink=None):
     disable_library_logging()
-    enabled = config["judgment.enabled"]
-    disclosure = ("Body, permitted context/background and candidates may also be sent to TypeSafe AI. "
-                  "Provider retention and processing region follow its own policy.")
-    marker = "copyeditor.judgment=" + ("on; destinations=Vertex AI, TypeSafe AI" if enabled else "off; destinations=Vertex AI")
+    sink = audit_sink if audit_sink is not None else write_audit
 
-    class PublicTool(Tool):
+    class PolishTool(Tool):
         async def run(self, arguments):
-            user = None
-            if config["auth.mode"] == "google":
-                token = get_access_token()
-                sub = token.claims.get("sub") if token else None
-                if type(sub) is not str or not sub:
-                    raise ToolError("Authentication failed.")
-                user = hmac.new(config.secrets["OAUTH_SIGNING_KEY"].encode(),
-                                ("copyeditor-audit:" + sub).encode(), hashlib.sha256).hexdigest()[:24]
-            language = arguments.get("language")
-            payload = error_payload(self.name, config, snapshot, arguments,
-                language=language if type(language) is str and language in snapshot.languages else None,
-                registry=service.registry)
+            started = time.monotonic()
+            original = arguments.get("text") if isinstance(arguments, dict) else None
+            record = dict(timestamp=datetime.now(timezone.utc).isoformat(), result="model_error",
+                          input_chars=len(original) if isinstance(original, str) else 0, output_chars=0,
+                          changed=None, model=config["model"], latency_ms=0, retries=0, usage={}, user=None)
+            message, failed = MODEL_ERROR, True
             try:
-                try:
-                    payload = await getattr(service, "polish" if self.name == "polish_text" else "lint")(arguments)
-                except Exception:
-                    pass
-                encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-                return ToolResult(content=[TextContent(type="text", text=encoded)], structured_content=payload,
-                                  is_error=payload["status"] == "error")
+                if config["auth.mode"] == "google":
+                    token = get_access_token()
+                    sub = token.claims.get("sub") if token else None
+                    if type(sub) is not str or not sub:
+                        record["result"], message = "auth_error", "Authentication failed."
+                        return ToolResult(content=[TextContent(type="text", text=message)], is_error=True)
+                    record["user"] = hmac.new(config.secrets["OAUTH_SIGNING_KEY"].encode(),
+                        ("copyeditor-audit:" + sub).encode(), hashlib.sha256).hexdigest()[:24]
+                valid = (type(arguments) is dict and set(arguments) == {"text"}
+                         and type(original) is str and 1 <= len(original) <= 12000 and bool(original.strip()))
+                if valid:
+                    try:
+                        original.encode("utf-8")
+                    except UnicodeError:
+                        valid = False
+                if not valid:
+                    record["result"], message = "input_error", INPUT_ERROR
+                else:
+                    result = await provider.polish(original)
+                    message, failed = result.text, False
+                    record.update(result="success", output_chars=len(message), changed=message != original,
+                                  retries=result.retries, usage=result.usage)
+            except ProviderFailure as error:
+                record["retries"] = error.retries
+                record["usage"] = error.usage
+            except Exception:
+                pass
             finally:
-                failed = payload["status"] == "error"
-                items = [] if failed else payload.get("items", [payload] if "text" in payload else [])
-                kinds = [item["flag"]["kind"] for item in items if item["flag"]]
-                projected = payload
-                if self.name == "polish_text":
-                    projected = {**payload, **{key: payload["providers"][0][key] for key in ("model", "usage", "cost", "model_calls")}}
-                record = {key: projected[key] for key in ("language", "rules_version", "model", "usage", "cost", "latency_ms", "model_calls")}
-                record.update(timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), user=user,
-                              tool=self.name, status="error" if failed else "flagged" if kinds else "ok",
-                              error_code=payload["error"]["code"] if failed else None,
-                              regenerated=payload["regeneration_attempted"] if failed else any(item["regenerated"] for item in items),
-                              rejected_count=kinds.count("rejected"), unfixable_count=kinds.count("unfixable"))
-                result = audit_sink(record)
-                if inspect.isawaitable(result):
-                    await result
+                record["latency_ms"] = round((time.monotonic() - started) * 1000)
+                written = sink(record)
+                if inspect.isawaitable(written):
+                    await written
+            return ToolResult(content=[TextContent(type="text", text=message)], is_error=failed)
 
-    server = PublicServer("copyeditor", instructions=INSTRUCTIONS.replace("Vertex AI.", "Vertex AI and TypeSafe AI.") if enabled else INSTRUCTIONS, auth=auth, mask_error_details=True)
-    server.judgment_enabled = enabled
-    for name in ("polish_text", "lint_text"):
-        server.add_tool(PublicTool(name=name, parameters=edit_input_schema(name, config, snapshot), output_schema=output_schema(name),
-                                  description=marker + ("\n" + disclosure if enabled else "") if name == "polish_text" else None,
-                                  annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=name == "polish_text")))
+    server = FastMCP("copyeditor", version="0.4.0", auth=auth, mask_error_details=True,
+        instructions="Send Japanese text to polish_text. It sends the body to Vertex AI in the configured "
+                     "location (global by default). Compare the returned text with the original before using it. "
+                     "On errors, keep the original. The server does not check preservation of meaning.")
+    server.add_tool(PolishTool(name="polish_text", parameters=INPUT_SCHEMA,
+        description="Polish Japanese text with Gemini; return only the rewritten body. No change if unnecessary.",
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True)))
+
     @server.custom_route("/health", methods=["GET"])
     async def health(request):
         from starlette.responses import JSONResponse
         return JSONResponse({"status": "ok"})
+
     return server
-
-
-class RawBoundary:
-    def __init__(self, app, path, auth, judgment_enabled=False):
-        from fastmcp.server.http import RequireAuthMiddleware, build_resource_metadata_url
-        self.app, self.path = app, path
-        self.judgment_enabled = judgment_enabled
-        self.post = self.receive_post
-        if auth:
-            resource = auth._get_resource_url(path)
-            self.post = RequireAuthMiddleware(self.post, auth.required_scopes,
-                build_resource_metadata_url(resource) if resource else None, auth.challenge_scopes)
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and scope["path"] == self.path and scope["method"] == "POST":
-            await self.post(scope, receive, send)
-        else:
-            await self.app(scope, receive, send)
-
-    async def receive_post(self, scope, receive, send):
-        from mcp import types
-        from pydantic import TypeAdapter
-        from starlette.responses import JSONResponse, Response
-        from typing import get_args
-        from .responses import unique_object, reject_constant
-        body = bytearray()
-        while True:
-            event = await receive()
-            if event["type"] == "http.disconnect":
-                return
-            chunk = event.get("body", b"")
-            if len(body) + len(chunk) > 262144:
-                await Response(status_code=413)(scope, receive, send)
-                return
-            body.extend(chunk)
-            if not event.get("more_body", False):
-                break
-        identity, code, message = None, -32700, "Parse error"
-        try:
-            data = json.loads(body.decode("utf-8"), object_pairs_hook=unique_object, parse_constant=reject_constant)
-            code, message = -32600, "Invalid Request"
-            TypeAdapter(types.JSONRPCMessage).validate_python(data, strict=True)
-            if "method" in data and "id" in data:
-                if type(data["id"]) is str:
-                    data["id"].encode("utf-8")
-                identity = data["id"]
-                methods = {c.model_fields["method"].default for c in get_args(types.ClientRequest)}
-                if data["method"] not in methods:
-                    code, message = -32601, "Method not found"
-                    raise ValueError()
-                if data["method"] == "tools/call":
-                    params = data.get("params")
-                    if not isinstance(params, dict) or type(params.get("name")) is not str:
-                        raise ValueError()
-                    if params["name"] not in ("polish_text", "lint_text"):
-                        code, message = -32602, "Unknown tool"
-                        raise ValueError()
-                    # The SDK rejects non-dicts before Tool.run; an invalid dict preserves service/audit handling.
-                    if "arguments" in params and type(params["arguments"]) is not dict:
-                        params["arguments"] = {"_invalid_arguments": True}
-                        params["arguments"]["degree"] = None
-                code, message = -32602, "Invalid params"
-                TypeAdapter(types.ClientRequest).validate_python(data, strict=True)
-            encoded = json.dumps(data, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode()
-        except (ValueError, TypeError, RecursionError):
-            await JSONResponse(dict(jsonrpc="2.0", id=identity, error=dict(code=code, message=message)),
-                               status_code=400)(scope, receive, send)
-            return
-        replayed = False
-        async def replay():
-            nonlocal replayed
-            if replayed:
-                return await receive()
-            replayed = True
-            return dict(type="http.request", body=encoded, more_body=False)
-        scope = dict(scope, headers=[(k, v) for k, v in scope["headers"] if k.lower() != b"content-length"]
-                     + [(b"content-length", str(len(encoded)).encode())])
-        await self.app(scope, replay, send)
-
-
-class PublicServer(FastMCP):
-    def http_app(self, path="/mcp", middleware=None, **kwargs):
-        from starlette.middleware import Middleware
-        path = path or "/mcp"
-        return super().http_app(path=path, middleware=[Middleware(RawBoundary, path=path, auth=self.auth,
-                                                                 judgment_enabled=getattr(self, "judgment_enabled", False)),
-                                                       *(middleware or [])], **kwargs)

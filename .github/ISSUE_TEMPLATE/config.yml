@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas
     url: https://github.com/taketetsu1982/copyeditor/discussions
-    about: Ask how to run copyeditor, discuss language rules, or share how you use it.
+    about: Ask how to run copyeditor, discuss Japanese text polishing, or share how you use it.
   - name: Security vulnerability
     url: https://github.com/taketetsu1982/copyeditor/security/advisories/new
     about: Report privately. Do not open a public issue for security problems.
