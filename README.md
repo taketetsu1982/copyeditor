@@ -30,6 +30,18 @@ Configuration is environment-only. `COPYEDITOR_MODEL` overrides the model; `GOOG
 
 The [public contract](contracts/polish-text.md) describes validation, errors, all settings, and logging. The Dockerfile builds the same HTTP service. Tag publication builds versioned GHCR images after CI; deploying an image is a separate step.
 
+## Claude Desktop plugin
+
+`plugin/` holds an optional Skill for Claude Desktop. It asks for the reader when the conversation does not show one. It splits documents longer than 20,000 characters and sends them. It then compares the result with the original and lists lost English words, numbers, titles, link texts, hedging words, changed claims, and register or parenthesis shifts. Connect the server as a connector first; the plugin does not register the server.
+
+Build the upload archive with `.claude-plugin/plugin.json` at its top level; an archive that holds only `SKILL.md` is rejected:
+
+```sh
+cd plugin && zip -X -r ../copyeditor-plugin.zip .claude-plugin skills -x '*.DS_Store'
+```
+
+Upload `copyeditor-plugin.zip` in Claude Desktop under Your plugins → Upload a plugin.
+
 ## Tests and evaluation
 
 ```sh
@@ -68,6 +80,18 @@ Python 3.12 と認証済みの ADC 環境で、上記の起動コマンドを実
 設定は環境変数だけです。モデルの変更は `COPYEDITOR_MODEL`、location は `GOOGLE_CLOUD_LOCATION`（既定 global）、ポートは `PORT`（既定8080）です。Google ログインには `COPYEDITOR_AUTH_MODE=google`、`BASE_URL`、`GOOGLE_OAUTH_CLIENT_ID` を設定します。`GOOGLE_OAUTH_CLIENT_SECRET` と `OAUTH_SIGNING_KEY` は実行環境の秘密管理から注入してください。Google OAuth のリダイレクト URI は `BASE_URL/auth/callback` です。`COPYEDITOR_ALLOWED_EMAILS` または `COPYEDITOR_ALLOWED_DOMAINS` の一方以上を JSON 配列で指定します。OAuth の状態はメモリにあり、再デプロイやスケールゼロの後は再ログインが必要です。
 
 入力検査・エラー・設定・ログの詳細は[公開契約](contracts/polish-text.md)に記載しています。Dockerfile は同じ HTTP サービスを構築します。タグ公開時に CI を通して版付き GHCR イメージを作り、デプロイは別途行います。
+
+## Claude Desktop 用 plugin
+
+`plugin/` に、Claude Desktop で使う任意の Skill を置いています。会話から読者が分からなければ読者を尋ね、20,000 字を超える文書は分けて送ります。結果を原文と比べ、消えた英字の語・数字・タイトル・リンクの文字列・程度の語、変わった主張、語調や括弧の変化を示します。先にサーバーをコネクタとして接続してください。plugin はサーバーを登録しません。
+
+アップロードする ZIP は、一番上に `.claude-plugin/plugin.json` を置いて作ります。`SKILL.md` だけの ZIP は受け付けられません。
+
+```sh
+cd plugin && zip -X -r ../copyeditor-plugin.zip .claude-plugin skills -x '*.DS_Store'
+```
+
+Claude Desktop の Your plugins → Upload a plugin から `copyeditor-plugin.zip` をアップロードします。
 
 ## テストと評価
 
