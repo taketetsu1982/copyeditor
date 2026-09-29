@@ -1,58 +1,115 @@
-"""Evaluate authorized external cases; never bundle private examples in this repository."""
+"""Evaluate authorized external documents; never bundle private examples in this repository."""
 import argparse
 import asyncio
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
-from collections import Counter
+import time
 from pathlib import Path
 
-TIERS = ("\u5909\u3048\u306a\u3044", "\u30ae\u30ea\u5909\u3048\u306a\u3044",
-         "\u30ae\u30ea\u5909\u3048\u308b", "\u5909\u3048\u308b", "AI\u81ed\u3059\u304e\u308b")
+TEXT_LIMIT = 20000
+READER_LIMIT = 500
+MAX_DOCUMENTS = 50
+MAX_RUNS = 10
+# ASCII words and numbers stand in for the names, sources, labels and figures a rewrite must keep.
+PROTECTED = re.compile(r"[A-Za-z][A-Za-z0-9&@.\-]*[A-Za-z0-9]|[A-Za-z]\d|\d[\d,.]*(?:%|/\d+)?")
+MARKDOWN_LINK = re.compile(r"\[([^\]\n]+)\]\([^)\n]*\)")
+HTML_LINK = re.compile(r"<a\b[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
+TAG = re.compile(r"<[^>]+>")
+DESU_MASU = re.compile(r"(?:です|ます|ません|でした|ました)(?=。|$)", re.MULTILINE)
 
 
-def validate_cases(cases):
-    if not isinstance(cases, list) or len(cases) != 15:
-        raise ValueError("Expected 15 external cases, three per tier.")
-    for case in cases:
-        if (not isinstance(case, dict) or case.get("tier") not in TIERS
-                or not isinstance(case.get("sent_text"), str) or not case["sent_text"].strip()
-                or not 1 <= len(case["sent_text"]) <= 12000):
-            raise ValueError("Invalid external case.")
-        case["sent_text"].encode("utf-8")
-    if Counter(case["tier"] for case in cases) != Counter({tier: 3 for tier in TIERS}):
-        raise ValueError("Expected three cases per tier.")
-    return cases
+def nonblank(value, limit):
+    if not isinstance(value, str) or not 1 <= len(value) <= limit or not value.strip():
+        return False
+    value.encode("utf-8")
+    return True
 
 
-async def evaluate(cases, provider, progress=None):
+def validate_documents(documents):
+    if not isinstance(documents, list) or not 1 <= len(documents) <= MAX_DOCUMENTS:
+        raise ValueError("Expected 1 to 50 external documents.")
+    seen = set()
+    for document in documents:
+        if not isinstance(document, dict) or set(document) - {"id", "text", "reader"}:
+            raise ValueError("Invalid external document.")
+        identifier = document.get("id")
+        if (not nonblank(identifier, 100) or identifier in seen or not nonblank(document.get("text"), TEXT_LIMIT)
+                or ("reader" in document and not nonblank(document["reader"], READER_LIMIT))):
+            raise ValueError("Invalid external document.")
+        seen.add(identifier)
+    return documents
+
+
+def prose_chars(text):
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    text = TAG.sub("", MARKDOWN_LINK.sub(r"\1", text))
+    text = re.sub(r"(?m)^[\s|:\-]+$", "", text)
+    text = re.sub(r"(?m)^\s*(?:#+|[-*+]|\d+\.|>)\s+(?:\[[ xX]\]\s+)?|\*\*|\|", "", text)
+    return len(re.sub(r"\s", "", text))
+
+
+def nonblank_lines(text):
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
+def link_texts(text):
+    found = set(MARKDOWN_LINK.findall(text)) | {TAG.sub("", inner).strip() for inner in HTML_LINK.findall(text)}
+    return {value for value in found if value}
+
+
+def metrics(original, output):
+    base = prose_chars(original)
+    return {
+        "prose_ratio": round(prose_chars(output) / base, 3) if base else None,
+        "line_ratio": round(nonblank_lines(output) / nonblank_lines(original), 3),
+        "lost_tokens": sorted(set(PROTECTED.findall(original)) - set(PROTECTED.findall(output))),
+        "lost_link_texts": sorted(link_texts(original) - link_texts(output)),
+        "desu_masu_delta": len(DESU_MASU.findall(output)) - len(DESU_MASU.findall(original)),
+        "fullwidth_paren_delta": output.count("（") - original.count("（"),
+    }
+
+
+def summarize(documents, rows, runs):
+    summary = []
+    for document in documents:
+        done = [row for row in rows if row["id"] == document["id"] and row["result"] == "success"]
+        ratios = [row["metrics"]["prose_ratio"] for row in done if row["metrics"]["prose_ratio"] is not None]
+        summary.append(dict(id=document["id"], runs=runs, successes=len(done),
+                            prose_ratio_min=min(ratios, default=None), prose_ratio_max=max(ratios, default=None),
+                            lost_tokens=[len(row["metrics"]["lost_tokens"]) for row in done],
+                            lost_link_texts=[len(row["metrics"]["lost_link_texts"]) for row in done]))
+    return summary
+
+
+async def evaluate(documents, provider, runs=3, progress=None, clock=time.monotonic):
     from copyeditor.providers.vertex import ProviderFailure
-    validate_cases(cases)
+    validate_documents(documents)
+    if not 1 <= runs <= MAX_RUNS:
+        raise ValueError("Expected 1 to 10 runs.")
     rows = []
-    for index, case in enumerate(cases, 1):
-        expected = case["tier"] not in TIERS[:2]
-        row = dict(index=index, tier=case["tier"], expected_change=expected,
-                   result="model_error", changed=None, matched=False, text=None, retries=0, usage={})
-        try:
-            generation = await provider.polish(case["sent_text"])
-            changed = generation.text != case["sent_text"]
-            row.update(result="success", changed=changed, matched=changed == expected,
-                       text=generation.text, retries=generation.retries, usage=generation.usage)
-        except ProviderFailure as error:
-            row.update(retries=error.retries, usage=error.usage)
-        except Exception:
-            pass
-        rows.append(row)
-        if progress is not None:
-            progress({key: row[key] for key in ("index", "result", "matched")})
-    matches = sum(row["matched"] for row in rows)
-    unchanged = sum(row["matched"] for row in rows if row["tier"] == TIERS[0])
-    return dict(matches=matches, total=15, unchanged_tier_matches=unchanged,
-                passed=matches >= 9 and unchanged == 3,
-                by_tier={tier: sum(row["matched"] for row in rows if row["tier"] == tier) for tier in TIERS},
-                cases=rows)
+    for document in documents:
+        for run in range(1, runs + 1):
+            row = dict(id=document["id"], run=run, result="model_error", seconds=None, retries=0, usage={},
+                       text=None, metrics=None)
+            started = clock()
+            try:
+                generation = await provider.polish(document["text"], document.get("reader"))
+                row.update(result="success", retries=generation.retries, usage=generation.usage,
+                           text=generation.text, metrics=metrics(document["text"], generation.text))
+            except ProviderFailure as error:
+                row.update(retries=error.retries, usage=error.usage)
+            except Exception:
+                pass
+            row["seconds"] = round(clock() - started, 1)
+            rows.append(row)
+            if progress is not None:
+                progress({key: row[key] for key in ("id", "run", "result")})
+    return dict(runs=runs, documents=summarize(documents, rows, runs), results=rows)
 
 
 def atomic_write(path, report):
@@ -71,33 +128,35 @@ def atomic_write(path, report):
 
 async def run(args):
     from copyeditor.config import load_config
-    from copyeditor.providers.vertex import SYSTEM_INSTRUCTION, Vertex
-    cases_bytes = args.input.read_bytes()
-    cases = validate_cases(json.loads(cases_bytes))
+    from copyeditor.providers.vertex import DEFAULT_READER, SYSTEM_INSTRUCTION, USER_TEMPLATE, Vertex
+    documents_bytes = args.input.read_bytes()
+    documents = validate_documents(json.loads(documents_bytes))
     config = load_config()
     provider = Vertex(config)
     try:
-        report = await evaluate(cases, provider, lambda value: print(json.dumps(value), flush=True))
+        report = await evaluate(documents, provider, args.runs, lambda value: print(json.dumps(value), flush=True))
     finally:
         await provider.aclose()
+    instruction = "\n".join((SYSTEM_INSTRUCTION, USER_TEMPLATE, DEFAULT_READER))
     report.update(model=config["model"], location=config["vertex.location"],
-                  input_sha256=hashlib.sha256(cases_bytes).hexdigest(),
-                  prompt_sha256=hashlib.sha256(SYSTEM_INSTRUCTION.encode()).hexdigest())
+                  input_sha256=hashlib.sha256(documents_bytes).hexdigest(),
+                  instruction_sha256=hashlib.sha256(instruction.encode()).hexdigest())
     atomic_write(args.output, report)
-    print(json.dumps({key: value for key, value in report.items() if key != "cases"}), flush=True)
-    return 0 if report["passed"] else 1
+    print(json.dumps(report["documents"], ensure_ascii=False), flush=True)
+    return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--runs", type=int, default=3, help="Generations per document (1-10).")
     parser.add_argument("--truststore", action="store_true", help="Use OS certificates for this evaluation only.")
     args = parser.parse_args()
     from copyeditor.auth_boundary import disable_library_logging
     disable_library_logging()
     try:
-        if args.input.resolve() == args.output.resolve():
+        if args.input.resolve() == args.output.resolve() or not 1 <= args.runs <= MAX_RUNS:
             raise ValueError()
         if args.truststore:
             import truststore

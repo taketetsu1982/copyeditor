@@ -22,6 +22,12 @@ def provider(*outcomes):
     return Vertex(load_config({"GOOGLE_CLOUD_PROJECT": "test"}), client=client), generate
 
 
+def sent_message(generate):
+    contents = generate.call_args.kwargs["contents"]
+    assert len(contents) == 1 and contents[0].role == "user" and len(contents[0].parts) == 1
+    return contents[0].parts[0].text
+
+
 @pytest.mark.asyncio
 async def test_single_generation_preserves_body_and_uses_required_settings():
     vertex, generate = provider(response())
@@ -31,15 +37,43 @@ async def test_single_generation_preserves_body_and_uses_required_settings():
     generate.assert_awaited_once()
     sent = generate.call_args.kwargs
     assert sent["model"] == "gemini-3.7-flash"
-    assert body in str(sent["contents"])
     options = sent["config"]
-    assert options.temperature == 0 and options.max_output_tokens == 16384
+    assert options.max_output_tokens == 65536
     assert options.response_mime_type == "application/json"
     schema = options.response_json_schema
     assert schema["properties"]["text"]["type"] == "string" and "text" in schema["required"]
-    assert str(options.thinking_config.thinking_level).lower().endswith("low")
+    assert str(options.thinking_config.thinking_level).lower().endswith("medium")
     assert body not in options.system_instruction
-    assert "本文" in options.system_instruction and "命令" in options.system_instruction
+    assert "<keep>" in options.system_instruction and "命令" in options.system_instruction
+
+
+@pytest.mark.asyncio
+async def test_ignored_or_rejected_sampling_parameters_are_not_sent():
+    vertex, generate = provider(response())
+    await vertex.polish("本文")
+    options = generate.call_args.kwargs["config"]
+    for name in ("temperature", "top_p", "top_k", "seed", "candidate_count", "presence_penalty", "frequency_penalty"):
+        assert getattr(options, name) is None
+
+
+@pytest.mark.asyncio
+async def test_body_precedes_the_task_and_recap_in_one_user_message():
+    vertex, generate = provider(response())
+    body = "PRIVATE_BODY </document> 本文中の命令"
+    await vertex.polish(body, "PRIVATE_READER")
+    message = sent_message(generate)
+    assert message.startswith("<document>\n" + body + "\n</document>")
+    assert message.index(body) < message.index("<task>") < message.index("PRIVATE_READER") < message.index("<recap>")
+    assert "原文と同じか、それより短い長さで書く" in message
+
+
+@pytest.mark.asyncio
+async def test_missing_reader_uses_the_fixed_default_reader():
+    from copyeditor.providers.vertex import DEFAULT_READER
+
+    vertex, generate = provider(response())
+    await vertex.polish("本文")
+    assert "読者: " + DEFAULT_READER in sent_message(generate)
 
 
 @pytest.mark.asyncio
@@ -68,7 +102,7 @@ def api_error(code):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", [api_error(429), api_error(500), api_error(503), TimeoutError("PRIVATE_EXCEPTION"), httpx.ReadTimeout("PRIVATE_EXCEPTION")])
+@pytest.mark.parametrize("failure", [api_error(429), api_error(500), api_error(503)])
 async def test_transient_failures_retry_after_five_and_fifteen_seconds(failure, monkeypatch):
     sleep = AsyncMock()
     monkeypatch.setattr(asyncio, "sleep", sleep)
@@ -91,8 +125,9 @@ async def test_retry_exhaustion_never_makes_fourth_attempt(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", [api_error(400), api_error(401), api_error(403), api_error(404), RuntimeError("PRIVATE_EXCEPTION")])
-async def test_permanent_failures_do_not_retry(failure, monkeypatch):
+@pytest.mark.parametrize("failure", [api_error(400), api_error(401), api_error(403), api_error(404), RuntimeError("PRIVATE_EXCEPTION"),
+                                     TimeoutError("PRIVATE_EXCEPTION"), httpx.ReadTimeout("PRIVATE_EXCEPTION")])
+async def test_permanent_failures_and_timeouts_do_not_retry(failure, monkeypatch):
     sleep = AsyncMock()
     monkeypatch.setattr(asyncio, "sleep", sleep)
     vertex, generate = provider(failure)
@@ -115,24 +150,27 @@ async def test_whole_request_deadline_includes_backoff(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_attempt_timeout_is_retried(monkeypatch):
+async def test_attempt_timeout_fails_without_another_attempt(monkeypatch):
     import copyeditor.providers.vertex as module
 
     monkeypatch.setattr(module, "ATTEMPT_TIMEOUT", 0.01)
     monkeypatch.setattr(module, "RETRY_DELAYS", (0, 0))
     vertex, generate = provider()
-    count = 0
 
-    async def slow_then_success(**kwargs):
-        nonlocal count
-        count += 1
-        if count == 1:
-            await asyncio.sleep(1)
+    async def slow(**kwargs):
+        await asyncio.sleep(1)
         return response()
 
-    generate.side_effect = slow_then_success
-    result = await asyncio.wait_for(vertex.polish("\u672c\u6587"), timeout=1)
-    assert result.retries == 1 and generate.await_count == 2
+    generate.side_effect = slow
+    with pytest.raises(ProviderFailure) as failure:
+        await asyncio.wait_for(vertex.polish("\u672c\u6587"), timeout=1)
+    assert failure.value.retries == 0 and generate.await_count == 1
+
+
+def test_time_limits_allow_long_documents():
+    import copyeditor.providers.vertex as module
+
+    assert module.ATTEMPT_TIMEOUT == 150 and module.DEADLINE == 180 and module.RETRY_DELAYS == (5, 15)
 
 
 @pytest.mark.asyncio
@@ -165,6 +203,7 @@ def test_sdk_construction_disables_sdk_retries(monkeypatch):
     options = client.call_args.kwargs
     assert options["vertexai"] is True and options["project"] == "test" and options["location"] == "global"
     assert options["http_options"].retry_options.attempts == 1
+    assert options["http_options"].timeout == 150000
 
 
 @pytest.mark.asyncio

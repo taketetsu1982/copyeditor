@@ -21,17 +21,18 @@ async def invoke(arguments, output="result", failure=None):
 
 
 @pytest.mark.asyncio
-async def test_discovery_has_only_text_tool_with_closed_schema():
+async def test_discovery_has_one_tool_with_text_and_optional_reader():
     server = build_server(load_config({"GOOGLE_CLOUD_PROJECT": "test"}), AsyncMock(), audit_sink=lambda record: None)
     async with Client(server) as client:
         tools = await client.list_tools()
     assert [tool.name for tool in tools] == ["polish_text"]
     tool = tools[0]
-    assert set(tool.input_schema["properties"]) == {"text"}
+    properties = tool.input_schema["properties"]
+    assert set(properties) == {"text", "reader"}
     assert tool.input_schema["required"] == ["text"]
     assert tool.input_schema["additionalProperties"] is False
-    assert tool.input_schema["properties"]["text"]["minLength"] == 1
-    assert tool.input_schema["properties"]["text"]["maxLength"] == 12000
+    assert properties["text"]["minLength"] == 1 and properties["text"]["maxLength"] == 20000
+    assert properties["reader"]["minLength"] == 1 and properties["reader"]["maxLength"] == 500
     assert tool.output_schema is None
     assert tool.annotations.read_only_hint is True
     assert tool.annotations.destructive_hint is False
@@ -39,28 +40,44 @@ async def test_discovery_has_only_text_tool_with_closed_schema():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("body", ["x", "\U0001f600" * 12000, "e\u0301" * 6000, "  body\n"])
+@pytest.mark.parametrize("body", ["x", "\U0001f600" * 20000, "e\u0301" * 10000, "  body\n"])
 async def test_valid_codepoint_boundaries_and_unchanged_output(body):
     result, provider, records = await invoke({"text": body}, output=body)
     assert not result.is_error and result.structured_content is None
     assert len(result.content) == 1 and result.content[0].type == "text"
     assert result.content[0].text == body
-    provider.polish.assert_awaited_once_with(body)
+    provider.polish.assert_awaited_once_with(body, None)
     assert len(records) == 1
     assert records[0]["input_chars"] == records[0]["output_chars"] == len(body)
     assert records[0]["changed"] is False and records[0]["result"] == "success"
+    assert records[0]["reader"] == "default"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("arguments", [{}, {"text": ""}, {"text": " \n\t\u3000"}, {"text": "\U0001f600" * 12001}, {"text": None}, {"text": 1}, {"text": ["PRIVATE_BODY"]}, {"text": "PRIVATE_BODY", "degree": "rewrite"}])
+@pytest.mark.parametrize("reader", ["r", "\U0001f600" * 500, " PRIVATE_READER \n"])
+async def test_valid_reader_is_passed_through_but_not_logged(reader):
+    result, provider, records = await invoke({"text": "PRIVATE_BODY", "reader": reader})
+    assert not result.is_error
+    provider.polish.assert_awaited_once_with("PRIVATE_BODY", reader)
+    assert records[0]["reader"] == "given"
+    assert "PRIVATE" not in json.dumps(records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("arguments", [{}, {"text": ""}, {"text": " \n\t\u3000"}, {"text": "\U0001f600" * 20001}, {"text": None},
+                                       {"text": 1}, {"text": ["PRIVATE_BODY"]}, {"text": "PRIVATE_BODY", "degree": "rewrite"},
+                                       {"reader": "PRIVATE_READER"}, {"text": "PRIVATE_BODY", "reader": ""},
+                                       {"text": "PRIVATE_BODY", "reader": " \u3000"}, {"text": "PRIVATE_BODY", "reader": None},
+                                       {"text": "PRIVATE_BODY", "reader": 1}, {"text": "PRIVATE_BODY", "reader": "r" * 501}])
 async def test_invalid_arguments_are_safe_tool_errors_without_generation(arguments):
     result, provider, records = await invoke(arguments)
     assert result.is_error and result.structured_content is None
     assert len(result.content) == 1
-    assert "PRIVATE_BODY" not in result.content[0].text
+    assert "PRIVATE" not in result.content[0].text
     provider.polish.assert_not_awaited()
     assert len(records) == 1 and records[0]["result"] == "input_error"
-    assert "PRIVATE_BODY" not in json.dumps(records)
+    assert records[0]["reader"] is None
+    assert "PRIVATE" not in json.dumps(records)
 
 
 @pytest.mark.asyncio
@@ -144,4 +161,4 @@ async def test_model_failure_audit_preserves_usage_without_private_details(capsy
     assert len(records) == 1 and records[0]["result"] == "model_error"
     assert records[0]["usage"] == usage and records[0]["retries"] == 2
     assert "PRIVATE" not in result.content[0].text + json.dumps(records) + repr(capsys.readouterr()) + caplog.text
-    provider.polish.assert_awaited_once_with("PRIVATE_BODY")
+    provider.polish.assert_awaited_once_with("PRIVATE_BODY", None)
