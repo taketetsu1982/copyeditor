@@ -53,3 +53,6 @@ runtime/
 
 # Plugin archives built for manual upload (Desktop / plugin marketplaces)
 plugins/*.zip
+
+# Claude Desktop plugin archive built from plugin/ (see README)
+/copyeditor-plugin.zip
