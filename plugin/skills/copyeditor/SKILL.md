@@ -3,7 +3,7 @@ name: copyeditor
 description: Rewrite a Japanese document (Markdown, HTML, or plain text) for a chosen reader with the copyeditor connector's polish_text tool, then compare the result with the original and report what changed and what disappeared. Use when the user asks to proofread, polish, rewrite, or make Japanese text easier to read, to remove its "AI feel", or mentions copyeditor, 校正, 推敲, 読みやすく, or AIっぽさ. Do not use for English text or source code.
 ---
 
-# copyeditor (v0.5.0)
+# copyeditor (v0.5.1)
 
 `polish_text` sends a Japanese document to Gemini on Vertex AI and returns only the rewritten document. The server asks Gemini to restructure and reword the document for the reader. It also asks Gemini to keep these things and to stay no longer than the original:
 
@@ -29,8 +29,10 @@ Compare the result with the original and report in the user's language. Rewrites
 - **Lost or changed items**: list each item that is missing or different in the result:
   - English words, abbreviations, and numbers, including labels such as `P1` or `R1`, years, and percentages
   - titles, link texts, and file, product, or page names
+  - reference notes that point to other material, such as 〜より, 〜と同等, or 〜を参照, mentions of attachments or other pages, and names of methods
   - hedging and status words that were added or removed, such as ほぼ, 概ね, 原理的に, 〜と言える, 約, 程度, 未実施, 保留, or 封印
   - changes to claims: a different direction, cause, reason, or condition; an interpretation turned into an instruction; an example turned into a criterion
+- **Consistent renaming**: for each term the rewrite replaced, check that it used one replacement everywhere, in headings, tables, lists, text, and explanations in parentheses. Check also that no two different terms got the same replacement. If the original term still appears in names, file lists, or code blocks, the text must show the pairing once at its first use, for example 表現のズレ（借文）. List every place that breaks these rules.
 - **Style drift**: flag the polite register (です・ます) where the original used the plain style (である or 体言止め). Also flag parentheses that changed between full-width and half-width.
 - **Evidence**: show each flagged item as "original → rewrite". Do not answer with the whole document alone.
 - **Split documents**: if you sent the document in parts, check each seam for duplicated or missing text.

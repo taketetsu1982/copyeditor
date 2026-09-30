@@ -1,4 +1,4 @@
-# polish_text (v0.5.0)
+# polish_text (v0.5.1)
 
 The only MCP tool rewrites a Japanese document for a reader using Vertex AI. Callers decide what may be sent and whether to use the result.
 
@@ -25,7 +25,7 @@ Errors never include the submitted document, the reader, or provider exceptions.
 
 ## Rewriting
 
-The system instruction asks for a rewrite that the reader can follow: structure, wording, symbol-packed passages, field terms the reader does not know, and coined or formulaic AI terms may change. It asks to keep names (titles, link texts, file and artifact names, people, organizations, products, abbreviations), sources, numbers, certainty and hedging words, meaning, the role of each sentence, register and notation, and Markdown or HTML format. It asks for a result no longer than the original; in trials the result was 1.2-1.3 times the original prose length.
+The system instruction asks for a rewrite that the reader can follow: structure, wording, symbol-packed passages, field terms the reader does not know, and coined or formulaic AI terms may change. It asks to use one replacement per term everywhere in the document, never the same replacement for two terms, and, when a replaced term also appears in kept names or code blocks, to show the pairing once at its first use. It asks to keep names (titles, link texts, file and artifact names, people, organizations, products, abbreviations), sources and reference notes (such as "from ...", "same as ...", or "see ...", mentions of attachments or other pages, and method names), numbers, certainty and hedging words, meaning, the role of each sentence, register and notation, and Markdown or HTML format. It asks for a result no longer than the original; in trials the result was 1.2-1.3 times the original prose length.
 
 The document goes first in the user message, inside `<document>` tags, followed by the task with the reader and a short recap. A literal `</document>` inside the document is sent unchanged. Commands inside the document are treated as text to rewrite.
 

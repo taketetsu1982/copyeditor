@@ -68,6 +68,16 @@ async def test_body_precedes_the_task_and_recap_in_one_user_message():
 
 
 @pytest.mark.asyncio
+async def test_instruction_keeps_reference_notes_and_one_rename_per_term():
+    vertex, generate = provider(response())
+    await vertex.polish("本文")
+    system = generate.call_args.kwargs["config"].system_instruction
+    assert "出典と参照" in system and "〜と同等" in system
+    assert "言い換えは 1 つの語に 1 つと決め" in system and "「言い換え（原文の語）」" in system
+    assert "言い換えは文書全体で 1 つにそろえる" in sent_message(generate)
+
+
+@pytest.mark.asyncio
 async def test_missing_reader_uses_the_fixed_default_reader():
     from copyeditor.providers.vertex import DEFAULT_READER
 
