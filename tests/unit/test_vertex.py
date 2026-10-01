@@ -78,6 +78,17 @@ async def test_instruction_keeps_reference_notes_and_one_rename_per_term():
 
 
 @pytest.mark.asyncio
+async def test_instruction_asks_who_does_what_with_examples_and_repeats_register():
+    vertex, generate = provider(response())
+    await vertex.polish("本文")
+    system = generate.call_args.kwargs["config"].system_instruction
+    assert "誰が・何を・どうするかを書く" in system and "主文から書き始める" in system
+    assert "<examples>" in system and "→" in system
+    recap = sent_message(generate).split("<recap>")[1]
+    assert "語調（です・ます、である、体言止め）と表記" in recap
+
+
+@pytest.mark.asyncio
 async def test_missing_reader_uses_the_fixed_default_reader():
     from copyeditor.providers.vertex import DEFAULT_READER
 
