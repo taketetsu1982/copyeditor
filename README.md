@@ -4,7 +4,7 @@ An MCP server that rewrites Japanese documents for a reader with Gemini. Send a 
 
 ## Behavior
 
-The prompt asks Gemini to restructure and reword the document so the reader can follow it: unpack symbol-packed passages, explain or replace terms the reader does not know, and replace coined or formulaic AI terms. It asks to use one replacement per term throughout, and to keep names, sources and reference notes, numbers, certainty, meaning, the role of each sentence, register, notation, and Markdown or HTML format, and to stay no longer than the original. The server checks response structure but does not judge meaning or quality; in trials the result was 1.2-1.3 times the original length and sometimes dropped labels or changed the register.
+The prompt asks Gemini to restructure and reword the document so the reader can follow it: unpack symbol-packed passages, explain or replace terms the reader does not know, and rewrite metaphorical verbs and abstract words to state who does what. It asks to use one replacement per term throughout, and to keep names, sources and reference notes, numbers, certainty, meaning, the role of each sentence, register, notation, and Markdown or HTML format, and to stay no longer than the original. The server checks response structure but does not judge meaning or quality; in trials the result was 1.2-1.3 times the original length and sometimes dropped labels or changed the register.
 
 - Input: `{"text": "Japanese document", "reader": "optional reader description"}`. `text` is 1-20,000 Unicode code points and `reader` 1-500, neither whitespace alone. Without `reader`, the document is written for a colleague unfamiliar with the topic.
 - Output: one MCP text content. No reasons, scores, or JSON wrapper.
@@ -32,7 +32,7 @@ The [public contract](contracts/polish-text.md) describes validation, errors, al
 
 ## Claude Desktop plugin
 
-`plugin/` holds an optional Skill for Claude Desktop. It asks for the reader when the conversation does not show one. It splits documents longer than 20,000 characters and sends them. It then compares the result with the original and lists lost English words, numbers, titles, link texts, reference notes, hedging words, changed claims, terms renamed inconsistently, and register or parenthesis shifts. Connect the server as a connector first; the plugin does not register the server.
+`plugin/` holds an optional Skill for Claude Desktop. It asks for the reader when the conversation does not show one. It splits documents longer than 20,000 characters and sends them. It then compares the result with the original and lists lost English words, numbers, titles, link texts, reference notes, hedging words, changed claims, terms renamed inconsistently, and register or parenthesis shifts. It then proposes numbered fixes that only restore or align those items, and applies the ones you accept. Connect the server as a connector first; the plugin does not register the server.
 
 Build the upload archive with `.claude-plugin/plugin.json` at its top level; an archive that holds only `SKILL.md` is rejected:
 
@@ -63,7 +63,7 @@ v0.4.0 edited only four patterns and kept everything else; it remains available 
 
 ## 動作
 
-読者が追えるように、構成と言い回しを整え、記号で詰めた箇所をほどき、読者の知らない用語や AI らしい造語を言い換えるよう指示します。言い換えは文書全体で 1 つの語に 1 つにそろえ、名前・出典と参照の注記・数値・確度・意味・文の役割・語調・表記・Markdown や HTML の形式は保ち、原文より長くしないよう指示します。サーバーは応答の構造を確かめますが、意味や品質は判定しません。試行では原文の 1.2〜1.3 倍の長さになり、ラベルが落ちたり語調が変わったりする回がありました。
+読者が追えるように、構成と言い回しを整え、記号で詰めた箇所をほどき、読者の知らない用語を言い換え、比喩的な動詞や抽象語は「誰が・何を・どうするか」に書き直すよう指示します。言い換えは文書全体で 1 つの語に 1 つにそろえ、名前・出典と参照の注記・数値・確度・意味・文の役割・語調・表記・Markdown や HTML の形式は保ち、原文より長くしないよう指示します。サーバーは応答の構造を確かめますが、意味や品質は判定しません。試行では原文の 1.2〜1.3 倍の長さになり、ラベルが落ちたり語調が変わったりする回がありました。
 
 - 入力は `text` と任意の `reader`。`text` は 1〜20,000、`reader` は 1〜500 Unicode コードポイントで、どちらも空白のみは不可です。`reader` を省くと、テーマに詳しくない同じ組織の読者に向けて書き直します。
 - 出力は MCP の text content 一つ。理由・点数・JSON の包みは付きません。
@@ -83,7 +83,7 @@ Python 3.12 と認証済みの ADC 環境で、上記の起動コマンドを実
 
 ## Claude Desktop 用 plugin
 
-`plugin/` に、Claude Desktop で使う任意の Skill を置いています。会話から読者が分からなければ読者を尋ね、20,000 字を超える文書は分けて送ります。結果を原文と比べ、消えた英字の語・数字・タイトル・リンクの文字列・参照の注記・程度の語、変わった主張、そろっていない言い換え、語調や括弧の変化を示します。先にサーバーをコネクタとして接続してください。plugin はサーバーを登録しません。
+`plugin/` に、Claude Desktop で使う任意の Skill を置いています。会話から読者が分からなければ読者を尋ね、20,000 字を超える文書は分けて送ります。結果を原文と比べ、消えた英字の語・数字・タイトル・リンクの文字列・参照の注記・程度の語、変わった主張、そろっていない言い換え、語調や括弧の変化を示します。続けて、それらを元に戻す・そろえるだけの修正案を番号付きで示し、受け入れたものだけを反映します。先にサーバーをコネクタとして接続してください。plugin はサーバーを登録しません。
 
 アップロードする ZIP は、一番上に `.claude-plugin/plugin.json` を置いて作ります。`SKILL.md` だけの ZIP は受け付けられません。
 
