@@ -84,7 +84,7 @@ def build_server(config, provider, auth=None, audit_sink=None):
                     await written
             return ToolResult(content=[TextContent(type="text", text=message)], is_error=failed)
 
-    server = FastMCP("copyeditor", version="0.5.1", auth=auth, mask_error_details=True,
+    server = FastMCP("copyeditor", version="0.5.2", auth=auth, mask_error_details=True,
         instructions="Send a Japanese document to polish_text, with an optional reader description. It sends the "
                      "document to Vertex AI in the configured location (global by default). Compare the returned "
                      "document with the original before using it. On errors, keep the original. The server does "

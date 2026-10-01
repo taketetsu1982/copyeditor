@@ -1,6 +1,6 @@
 {
   "name": "copyeditor",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Rewrite Japanese documents for a reader with the copyeditor connector's polish_text and compare the result with the original.",
   "skills": "./skills/"
 }
