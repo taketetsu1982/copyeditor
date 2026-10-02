@@ -1,4 +1,4 @@
-# polish_text (v0.5.3)
+# polish_text (v0.5.4)
 
 The only MCP tool rewrites a Japanese document for a reader using Vertex AI. Callers decide what may be sent and whether to use the result.
 
