@@ -1,4 +1,4 @@
-# polish_text (v0.5.2)
+# polish_text (v0.5.3)
 
 The only MCP tool rewrites a Japanese document for a reader using Vertex AI. Callers decide what may be sent and whether to use the result.
 
@@ -31,7 +31,7 @@ The document goes first in the user message, inside `<document>` tags, followed 
 
 ## Generation
 
-Vertex AI uses ADC, location `global`, and model `gemini-3.7-flash` by default. Settings are thinking level MEDIUM and 65,536 output tokens. Temperature, top-p, top-k, and seed are not sent; Gemini 3.6 Flash and later ignore the sampling parameters. The response JSON schema has exactly one required string property, `text`. Blocked, truncated, malformed, missing, or blank output fails.
+Vertex AI uses ADC, location `global`, and model `gemini-3.7-flash` by default. Settings are thinking level MEDIUM and 65,536 output tokens. Temperature, top-p, top-k, and seed are not sent; Gemini 3.6 Flash and later ignore the sampling parameters. The model answers in plain text with the rewritten document between `<rewritten>` and `</rewritten>`; text outside the delimiters is discarded, and one line break directly inside each delimiter is removed. Blocked or unfinished output, a missing delimiter, or a blank document fails, so a cut-off answer is never returned as a rewrite.
 
 Each request makes one generation call, except retries. There is no token estimation, splitting, judging, or corrective regeneration. Only HTTP 429 and HTTP 5xx are retried: at most twice after 5 and 15 seconds. Each attempt has a 150-second limit, and a timed-out attempt is not retried. The entire operation, including waits, has a 180-second limit. SDK and transport retries are disabled.
 
