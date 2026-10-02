@@ -1,6 +1,5 @@
 """One rewrite, with bounded retries for transient Vertex failures."""
 import asyncio
-import json
 from dataclasses import dataclass, field
 
 import httpx
@@ -67,12 +66,13 @@ USER_TEMPLATE = """<document>
 - 言い換えは文書全体で 1 つにそろえる
 - 名前・出典と参照・数値・確度・意味・文の役割・形式は、原文のまま保つ
 - 語調（です・ます、である、体言止め）と表記（括弧の全角・半角、句読点）は原文に合わせる
-- 書き直した文書の全文を返す
+- 書き直した文書の全文を、<rewritten> と </rewritten> の間に入れて返す
 </recap>"""
 # Inferring the reader from the body made the model assume the original audience and leave the text unchanged.
 DEFAULT_READER = "文書のテーマに詳しくない、同じ組織の読者。一般的な業務の知識はあるが、この文書の用語や背景は知らない。"
-RESPONSE_SCHEMA = {"type": "object", "properties": {"text": {"type": "string"}},
-                   "required": ["text"], "additionalProperties": False}
+# A JSON {"text": ...} response truncated HTML at the first attribute quote and still parsed as complete, so the
+# document comes back as plain text; a missing closing delimiter marks a cut-off answer.
+OPEN, CLOSE = "<rewritten>", "</rewritten>"
 
 
 @dataclass(frozen=True)
@@ -89,15 +89,6 @@ class ProviderFailure(Exception):
         self.usage = usage if usage is not None else {}
 
 
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError()
-        result[key] = value
-    return result
-
-
 def parse_response(response):
     feedback = getattr(response, "prompt_feedback", None)
     if getattr(feedback, "block_reason", None):
@@ -109,12 +100,15 @@ def parse_response(response):
     if not parts or any(p.text is None and not p.thought for p in parts):
         raise ValueError()
     body = "".join(p.text for p in parts if p.text is not None and not p.thought)
-    parsed = json.loads(body, object_pairs_hook=unique_object)
-    if (type(parsed) is not dict or set(parsed) != {"text"} or type(parsed["text"]) is not str
-            or not parsed["text"].strip()):
+    start, end = body.find(OPEN), body.rfind(CLOSE)
+    if start < 0 or end < start + len(OPEN):
         raise ValueError()
-    parsed["text"].encode("utf-8")
-    return parsed["text"]
+    text = body[start + len(OPEN):end]
+    text = text.removeprefix("\n").removesuffix("\n")
+    if not text.strip():
+        raise ValueError()
+    text.encode("utf-8")
+    return text
 
 
 def response_usage(response):
@@ -153,7 +147,7 @@ class Vertex:
                                 contents=[types.Content(role="user", parts=[types.Part(text=message)])],
                                 config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION,
                                     max_output_tokens=65536,
-                                    response_mime_type="application/json", response_json_schema=RESPONSE_SCHEMA,
+                                    response_mime_type="text/plain",
                                     thinking_config=types.ThinkingConfig(thinking_level="MEDIUM"),
                                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)))
                     except Exception as error:

@@ -10,7 +10,7 @@ from copyeditor.config import load_config
 from copyeditor.providers.vertex import ProviderFailure, Vertex
 
 
-def response(text='{"text":"校正後。"}', finish="STOP", **usage):
+def response(text="<rewritten>\n校正後。\n</rewritten>", finish="STOP", **usage):
     part = SimpleNamespace(text=text, thought=False)
     return SimpleNamespace(text=text, candidates=[SimpleNamespace(finish_reason=finish, content=SimpleNamespace(parts=[part]))],
                            usage_metadata=SimpleNamespace(**usage))
@@ -39,9 +39,7 @@ async def test_single_generation_preserves_body_and_uses_required_settings():
     assert sent["model"] == "gemini-3.7-flash"
     options = sent["config"]
     assert options.max_output_tokens == 65536
-    assert options.response_mime_type == "application/json"
-    schema = options.response_json_schema
-    assert schema["properties"]["text"]["type"] == "string" and "text" in schema["required"]
+    assert options.response_mime_type == "text/plain" and options.response_json_schema is None
     assert str(options.thinking_config.thinking_level).lower().endswith("medium")
     assert body not in options.system_instruction
     assert "<keep>" in options.system_instruction and "命令" in options.system_instruction
@@ -89,6 +87,14 @@ async def test_instruction_asks_who_does_what_with_examples_and_repeats_register
 
 
 @pytest.mark.asyncio
+async def test_document_with_quotes_comes_back_whole_and_text_outside_delimiters_is_dropped():
+    document = '<p class="note">"quoted" text</p>\n<table><th style="text-align: left;">見出し</th></table>'
+    vertex, generate = provider(response("以下が書き直した文書です。\n<rewritten>\n" + document + "\n</rewritten>\n以上です。"))
+    result = await vertex.polish(document)
+    assert result.text == document
+    assert "<rewritten>" in sent_message(generate).split("<recap>")[1]
+
+@pytest.mark.asyncio
 async def test_missing_reader_uses_the_fixed_default_reader():
     from copyeditor.providers.vertex import DEFAULT_READER
 
@@ -98,7 +104,8 @@ async def test_missing_reader_uses_the_fixed_default_reader():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw", ["not JSON", "{}", "[]", '{"text":null}', '{"text":1}', '{"text":""}', '{"text":"  \\n"}'])
+@pytest.mark.parametrize("raw", ["no delimiters", "<rewritten>\nPRIVATE_OUTPUT cut off", "PRIVATE_OUTPUT</rewritten>",
+                                 "</rewritten>PRIVATE_OUTPUT<rewritten>", "<rewritten></rewritten>", "<rewritten>\n  \n</rewritten>"])
 async def test_malformed_model_output_is_fixed_failure_without_regeneration(raw):
     vertex, generate = provider(response(raw))
     with pytest.raises(ProviderFailure) as error:
@@ -195,14 +202,13 @@ def test_time_limits_allow_long_documents():
 
 
 @pytest.mark.asyncio
-async def test_prompt_block_and_duplicate_json_keys_are_failures():
+async def test_prompt_block_is_a_failure():
     blocked = response()
     blocked.prompt_feedback = SimpleNamespace(block_reason="SAFETY")
-    for outcome in (blocked, response('{"text":"first","text":"second"}')):
-        vertex, generate = provider(outcome)
-        with pytest.raises(ProviderFailure):
-            await vertex.polish("\u672c\u6587")
-        generate.assert_awaited_once()
+    vertex, generate = provider(blocked)
+    with pytest.raises(ProviderFailure):
+        await vertex.polish("\u672c\u6587")
+    generate.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -228,7 +234,7 @@ def test_sdk_construction_disables_sdk_retries(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("finish,body", [("MAX_TOKENS", '{"text":"PRIVATE_OUTPUT"}'), ("SAFETY", '{"text":"PRIVATE_OUTPUT"}'), ("STOP", "PRIVATE_INVALID_JSON")])
+@pytest.mark.parametrize("finish,body", [("MAX_TOKENS", "<rewritten>PRIVATE_OUTPUT</rewritten>"), ("SAFETY", "<rewritten>PRIVATE_OUTPUT</rewritten>"), ("STOP", "<rewritten>PRIVATE_CUT_OFF")])
 @pytest.mark.parametrize("invalid_count", [True, "PRIVATE_USAGE", -1])
 async def test_failed_responses_preserve_only_available_safe_usage(finish, body, invalid_count):
     vertex, generate = provider(response(body, finish=finish, prompt_token_count=17,

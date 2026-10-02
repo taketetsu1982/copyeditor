@@ -3,7 +3,7 @@ name: copyeditor
 description: Rewrite a Japanese document (Markdown, HTML, or plain text) for a chosen reader with the copyeditor connector's polish_text tool, then compare the result with the original and report what changed and what disappeared. Use when the user asks to proofread, polish, rewrite, or make Japanese text easier to read, to remove its "AI feel", or mentions copyeditor, 校正, 推敲, 読みやすく, or AIっぽさ. Do not use for English text or source code.
 ---
 
-# copyeditor (v0.5.2)
+# copyeditor (v0.5.3)
 
 `polish_text` sends a Japanese document to Gemini on Vertex AI and returns only the rewritten document. The server asks Gemini to restructure and reword the document for the reader. It also asks Gemini to keep these things and to stay no longer than the original:
 
