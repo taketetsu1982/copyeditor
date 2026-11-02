@@ -57,7 +57,7 @@ cyclopts==4.25.2
     # via fastmcp-slim
 distro==1.9.0
     # via google-genai
-dnspython==2.8.0
+dnspython==2.9.0
     # via email-validator
 docstring-parser==0.18.0
     # via cyclopts
